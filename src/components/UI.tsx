@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { SiGithub } from "@icons-pack/react-simple-icons";
 import { useFractalStore } from "./hooks/use-store";
 import { Popover, PopoverTrigger, PopoverContent } from "@radix-ui/react-popover";
@@ -6,62 +6,13 @@ import { Info, Maximize, Minimize } from "lucide-react";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useFullscreen } from "./hooks/use-full-screen";
+import { useUIVisibilityTrigger } from "./hooks/use-ui-visibility-trigger";
 
 export const UI = () => {
-  const [isVisible, setIsVisible] = useState(true);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const { params, colorScheme } = useFractalStore();
-
-  const { isFullscreen, toggle: toggleFullscreen } = useFullscreen();
-
-  const [isHovering, setIsHovering] = useState(false);
-  const [isPointerActive, setIsPointerActive] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const resetTimeout = () => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    if (!isHovering && !isPointerActive && !isPopoverOpen) {
-      timeoutRef.current = setTimeout(() => setIsVisible(false), 2000);
-    }
-  };
-
-  if (isVisible) {
-    resetTimeout();
-  }
-
-  // trigger UI visibility when the user does... stuff.
-  useEffect(() => {
-    const handleVisibilityTrigger = () => {
-      setIsVisible(true);
-    };
-
-    const handlePointerStart = () => {
-      setIsVisible(true);
-      setIsPointerActive(true);
-    };
-    const handlePointerEnd = () => {
-      setIsPointerActive(false);
-    };
-
-    // Add wheel listener
-    window.addEventListener("wheel", handleVisibilityTrigger);
-    window.addEventListener("mousemove", handleVisibilityTrigger);
-    window.addEventListener("mousedown", handlePointerStart);
-    window.addEventListener("mouseup", handlePointerEnd);
-    window.addEventListener("touchstart", handlePointerStart);
-    window.addEventListener("touchend", handlePointerEnd);
-    window.addEventListener("keydown", handleVisibilityTrigger);
-
-    return () => {
-      window.removeEventListener("wheel", handleVisibilityTrigger);
-      window.removeEventListener("mousemove", handleVisibilityTrigger);
-      window.removeEventListener("mousedown", handlePointerStart);
-      window.removeEventListener("mouseup", handlePointerEnd);
-      window.removeEventListener("touchstart", handlePointerStart);
-      window.removeEventListener("touchend", handlePointerEnd);
-      window.removeEventListener("keydown", handleVisibilityTrigger);
-    };
-  }, []);
+  const { isFullscreen, toggleFullscreen } = useFullscreen();
+  const { isVisible, setIsVisible, setIsHovering } = useUIVisibilityTrigger({ isAlwaysVisible: isPopoverOpen });
 
   return (
     <div

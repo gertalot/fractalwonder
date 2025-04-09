@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 export const useFullscreen = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const toggle = useCallback(() => {
+  const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen();
     } else {
@@ -22,12 +22,12 @@ export const useFullscreen = () => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "f" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
         e.preventDefault();
-        toggle();
+        toggleFullscreen();
       }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [toggle]);
+  }, [toggleFullscreen]);
 
-  return { isFullscreen, toggle };
+  return { isFullscreen, toggleFullscreen };
 };
