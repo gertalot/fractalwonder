@@ -4,7 +4,7 @@ import { useState } from "react";
 import { SiGithub } from "@icons-pack/react-simple-icons";
 import { useFractalStore } from "@/hooks/use-store";
 import { Popover, PopoverTrigger, PopoverContent } from "@radix-ui/react-popover";
-import { Info, Maximize, Minimize } from "lucide-react";
+import { Home, Info, Maximize, Minimize } from "lucide-react";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useFullscreen } from "@/hooks/use-full-screen";
@@ -12,7 +12,7 @@ import { useUIVisibilityTrigger } from "@/hooks/use-ui-visibility-trigger";
 
 export const UI = () => {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
-  const { params, colorScheme } = useFractalStore();
+  const { params, colorScheme, resetState } = useFractalStore();
   const { isFullscreen, toggleFullscreen } = useFullscreen();
   const { isVisible, setIsVisible, setIsHovering } = useUIVisibilityTrigger({ isAlwaysVisible: isPopoverOpen });
 
@@ -29,53 +29,58 @@ export const UI = () => {
         duration-300 ${isVisible ? "opacity-100" : "opacity-0"}
       `}
       >
-        <Popover
-          open={isPopoverOpen}
-          onOpenChange={(open) => {
-            setIsPopoverOpen(open);
-            setIsVisible(true);
-          }}
-        >
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-white hover:text-gray-200 hover:bg-white/10 mr-4 rounded-full cursor-pointer"
-            >
-              <Info size={24} />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80 bg-black/70 backdrop-blur-sm border-gray-800 mb-3 p-4">
-            <div className="space-y-2 text-white">
-              <h3 className="font-medium">Fractal Wonder</h3>
-              <p className="text-sm text-muted-foreground">
-                Use mouse/touch to pan and zoom. Keyboard shortcuts: [ and ] to cycle color schemes.
-              </p>
-              <div className="mt-8 flex items-center gap-2 text-sm text-muted-foreground">
-                <a
-                  href="https://github.com/gertalot/fractalwonder"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-white hover:text-gray-200 transition-colors"
-                >
-                  <SiGithub size={24} />
-                </a>
-                <span>Made by Gert</span>
+        <div className="flex items-center space-x-4">
+          <Popover
+            open={isPopoverOpen}
+            onOpenChange={(open) => {
+              setIsPopoverOpen(open);
+              setIsVisible(true);
+            }}
+          >
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-white hover:text-gray-200 hover:bg-white/10 rounded-full cursor-pointer"
+              >
+                <Info size={24} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 bg-black/70 backdrop-blur-sm border-gray-800 mb-3 p-4">
+              <div className="space-y-2 text-white">
+                <h3 className="font-medium">Fractal Wonder</h3>
+                <p className="text-sm text-muted-foreground">
+                  Use mouse/touch to pan and zoom. Keyboard shortcuts: [ and ] to cycle color schemes.
+                </p>
+                <div className="mt-8 flex items-center gap-2 text-sm text-muted-foreground">
+                  <a
+                    href="https://github.com/gertalot/fractalwonder"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-white hover:text-gray-200 transition-colors"
+                  >
+                    <SiGithub size={24} />
+                  </a>
+                  <span>Made by Gert</span>
+                </div>
               </div>
-            </div>
-          </PopoverContent>
-        </Popover>
-        <div className="flex space-x-4">
-          <p className="text-sm text-muted-foreground pr-12">
-            x: {params.center.x}, y: {params.center.y}
-          </p>
-          <p className="text-sm text-muted-foreground pr-12">
-            zoom: {params.zoom.toFixed(2)}, maxIter: {params.maxIterations}
-          </p>
-          <p className="text-sm text-muted-foreground pr-12">colorScheme: {colorScheme}</p>
+            </PopoverContent>
+          </Popover>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-white hover:text-gray-200 hover:bg-white/10 rounded-full cursor-pointer"
+            onClick={() => resetState()}
+          >
+            <Home size={24} />
+          </Button>
         </div>
-
-        {/* Add fullscreen toggle button */}
+        <div className="flex-1 text-center">
+          <p className="text-sm text-muted-foreground">
+            Center: x: {params.center.x}, y: {params.center.y}, zoom: {params.zoom.toFixed(2)}, maxIter:{" "}
+            {params.maxIterations}, colorScheme: {colorScheme}
+          </p>
+        </div>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

@@ -3,6 +3,7 @@ import globals from "globals";
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import pluginReact from "eslint-plugin-react";
+import pluginReactHooks from "eslint-plugin-react-hooks";
 import eslintConfigPrettier from "eslint-config-prettier/flat";
 
 export default defineConfig([
@@ -35,6 +36,14 @@ export default defineConfig([
     files: ["**/*.{jsx,tsx}"],
     rules: {
       "react/react-in-jsx-scope": "off",
+    },
+  },
+  pluginReactHooks.configs.flat.recommended,
+  {
+    files: ["**/*.{js,jsx,ts,tsx}"],
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
     },
   },
   eslintConfigPrettier,
