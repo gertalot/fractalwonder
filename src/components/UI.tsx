@@ -1,14 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { SiGithub } from "@icons-pack/react-simple-icons";
-import { useFractalStore } from "@/hooks/use-store";
-import { Popover, PopoverTrigger, PopoverContent } from "@radix-ui/react-popover";
-import { Home, Info, Maximize, Minimize } from "lucide-react";
-import { Button } from "./ui/button";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFullscreen } from "@/hooks/use-full-screen";
+import { useFractalStore } from "@/hooks/use-store";
 import { useUIVisibilityTrigger } from "@/hooks/use-ui-visibility-trigger";
+import { SiGithub } from "@icons-pack/react-simple-icons";
+import { Popover, PopoverContent, PopoverTrigger } from "@radix-ui/react-popover";
+import { Home, Info, Maximize, Minimize } from "lucide-react";
+import { useState } from "react";
+import { Button } from "./ui/button";
 
 export const UI = () => {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
