@@ -1,8 +1,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export type Point = {
+  x: number;
+  y: number;
+};
+
 export type FractalParams = {
-  center: { x: number; y: number };
+  center: Point;
   zoom: number;
   maxIterations: number;
 };

@@ -1,15 +1,15 @@
 "use client";
 
 import { ChevronDownIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export const UITrigger = ({ isOpen: isOpen }: { isOpen?: boolean }) => {
   const [isHovering, setIsHovering] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Helper function to set the hide timeout
-  const setHideTimeout = () => {
+  const setHideTimeout = useCallback(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
@@ -19,7 +19,7 @@ export const UITrigger = ({ isOpen: isOpen }: { isOpen?: boolean }) => {
         setIsVisible(false);
       }, 1000);
     }
-  };
+  }, [isHovering, isOpen]);
 
   // Handle mouse movement
   useEffect(() => {
@@ -33,7 +33,7 @@ export const UITrigger = ({ isOpen: isOpen }: { isOpen?: boolean }) => {
       window.removeEventListener("mousemove", handleMouseMove);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [isHovering, isOpen]);
+  }, [isHovering, isOpen, setHideTimeout]);
 
   // Handle popover state changes
   useEffect(() => {
@@ -46,7 +46,7 @@ export const UITrigger = ({ isOpen: isOpen }: { isOpen?: boolean }) => {
       // When popover closes, start the hide timeout
       setHideTimeout();
     }
-  }, [isOpen, isHovering]);
+  }, [isOpen, isHovering, setHideTimeout]);
 
   return (
     <ChevronDownIcon
