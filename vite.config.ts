@@ -1,24 +1,28 @@
-import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react-swc";
-import { defineConfig, mergeConfig } from "vitest/config";
+import path from "path";
 import { defineConfig as defineViteConfig } from "vite";
+import { defineConfig, mergeConfig } from "vitest/config";
 
-// Base Vite config (without test section)
-const viteConfig = defineViteConfig({
-  plugins: [react(), tailwindcss()],
-  base: "/fractalwonder/",
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
+// Export a function so Vite can inject the mode
+export default defineViteConfig(({ mode }) => {
+  const baseViteConfig = {
+    plugins: [react(), tailwindcss()],
+    base: "/fractalwonder/",
+    resolve: {
+      alias: {
+        // eslint-disable-next-line no-undef
+        "@": path.resolve(__dirname, "./src"),
+      },
     },
-  },
-});
+    // Remove console.log in production by treating it as
+    // a pure function that will be tree-shaken out
+    esbuild: {
+      pure: mode === "production" ? ["console.log"] : [],
+    },
+  };
 
-// Merge in Vitest-specific config
-export default mergeConfig(
-  viteConfig,
-  defineConfig({
+  const vitestConfig = defineConfig({
     test: {
       globals: true,
       environment: "jsdom",
@@ -28,5 +32,7 @@ export default mergeConfig(
         reporter: ["text", "json", "html"],
       },
     },
-  })
-);
+  });
+
+  return mergeConfig(baseViteConfig, vitestConfig);
+});
