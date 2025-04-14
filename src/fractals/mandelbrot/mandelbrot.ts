@@ -63,7 +63,7 @@ function mandelbrot(canvas: HTMLCanvasElement, params: FractalParams) {
         params.zoom
       );
 
-      const maxIter = 100;
+      const maxIter = params.maxIterations;
 
       const { iter } = compute(real, imag, maxIter);
       const [r, g, b] = firePalette(iter, maxIter);

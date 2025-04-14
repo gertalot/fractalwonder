@@ -23,7 +23,7 @@ type Actions = {
   resetState: () => void;
 };
 
-const initialState: State = {
+export const initialFractalParamState: State = {
   params: {
     center: { x: -1, y: 0 },
     zoom: 1,
@@ -35,8 +35,8 @@ const initialState: State = {
 export const useFractalStore = create<State & Actions>()(
   persist(
     (set) => ({
-      params: initialState.params,
-      colorScheme: initialState.colorScheme,
+      params: initialFractalParamState.params,
+      colorScheme: initialFractalParamState.colorScheme,
       setParams: (params: Partial<FractalParams>) =>
         set((state) => {
           return {
@@ -44,7 +44,7 @@ export const useFractalStore = create<State & Actions>()(
           };
         }),
       setColorScheme: (colorScheme: string) => set({ colorScheme }),
-      resetState: () => set(initialState),
+      resetState: () => set(initialFractalParamState),
     }),
     { name: "fractalwonder-store" }
   )
