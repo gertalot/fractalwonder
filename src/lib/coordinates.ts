@@ -29,7 +29,7 @@ export const fractalToPixelCoordinate = (
   zoom: number
 ) => {
   // Same scaling factor
-  const scale = 4 / height / zoom;
+  const scale = INITIAL_FRACTAL_VIEW_HEIGHT / height / zoom;
 
   // Calculate the offset in fractal units from the center
   const dx = (point.x - center.x) / scale;
