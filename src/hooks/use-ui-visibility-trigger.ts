@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export const useUIVisibilityTrigger = (props?: { isAlwaysVisible: boolean }) => {
   const [isVisible, setIsVisible] = useState(true);
   const [isHovering, setIsHovering] = useState(false);
   const [isPointerActive, setIsPointerActive] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resetTimeout = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
