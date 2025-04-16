@@ -30,7 +30,7 @@ export function useFractalInteraction({
   onInteractionEnd = noop, // callback when the user is done dragging/zooming
   onParamsChange = noopParams, // called when parameters change during interaction
 }: UseFractalInteractionProps) {
-  const { params, setParams } = useFractalStore();
+  const { params, setFractalParams } = useFractalStore();
 
   // ------------------------------------------------------------------------
   // interaction state
@@ -150,12 +150,13 @@ export function useFractalInteraction({
     }
 
     // Capture these as the starting point for calculations in updateInteracting
-    interactionStartParamsRef.current = {
-      center: startingCenter,
-      zoom: startingZoom,
-      maxIterations: params.maxIterations,
-      iterationScalingFactor: params.iterationScalingFactor,
-    };
+    // interactionStartParamsRef.current = {
+    //   center: startingCenter,
+    //   zoom: startingZoom,
+    //   maxIterations: params.maxIterations,
+    //   iterationScalingFactor: params.iterationScalingFactor,
+    // };
+    interactionStartParamsRef.current = { ...params };
     console.log(
       "Interaction start params captured:",
       interactionStartParamsRef.current.center,
@@ -180,7 +181,7 @@ export function useFractalInteraction({
     };
 
     onInteractionStart(); // Notify consumer
-  }, [lastParamsRef, onInteractionStart, startPreviewLoopIfNeeded]);
+  }, [lastParamsRef, onInteractionStart, params, startPreviewLoopIfNeeded]);
 
   // Calculates new center/zoom based on offsets relative to interactionStartParamsRef
   const updateInteractingState = useCallback(() => {
@@ -221,11 +222,11 @@ export function useFractalInteraction({
       zoom: currentZoom,
     };
     interactionParamsRef.current = newParams;
-    setParams(newParams);
+    setFractalParams(newParams);
     console.log("Interacting: zoom = ", newParams.zoom, "center = ", newParams.center);
 
     onParamsChange(newParams);
-  }, [canvasRef, onParamsChange, setParams]);
+  }, [canvasRef, onParamsChange, setFractalParams]);
 
   // The debounced version of this function is called when the user stops
   // interacting, after a COMMIT_DELAY time of inactivity.

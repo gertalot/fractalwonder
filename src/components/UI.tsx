@@ -2,7 +2,7 @@
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFullscreen } from "@/hooks/use-full-screen";
-import { useFractalStore } from "@/hooks/use-store";
+import { derivedRealIterations, useFractalStore } from "@/hooks/use-store";
 import { useUIVisibilityTrigger } from "@/hooks/use-ui-visibility-trigger";
 import { SiGithub } from "@icons-pack/react-simple-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@radix-ui/react-popover";
@@ -11,8 +11,17 @@ import { useState } from "react";
 import { Button } from "./ui/button";
 
 export const UI = () => {
+  const center = useFractalStore((state) => state.params.center);
+  const zoom = useFractalStore((state) => state.params.zoom);
+  const maxIterations = useFractalStore((state) => state.params.maxIterations);
+  const iterationScalingFactor = useFractalStore((state) => state.params.iterationScalingFactor);
+  const realMaxIterations = derivedRealIterations({ center, zoom, maxIterations, iterationScalingFactor });
+  const colorScheme = useFractalStore((state) => state.colorScheme);
+  // const setFractalParams = useFractalStore((state) => state.setFractalParams);
+  const resetFractalState = useFractalStore((state) => state.resetFractalState);
+  // const setColorScheme = useFractalStore((state) => state.setColorScheme);
+
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
-  const { params, colorScheme, resetState } = useFractalStore();
   const { isFullscreen, toggleFullscreen } = useFullscreen();
   const { isVisible, setIsVisible, setIsHovering } = useUIVisibilityTrigger({ isAlwaysVisible: isPopoverOpen });
 
@@ -70,16 +79,16 @@ export const UI = () => {
             variant="ghost"
             size="icon"
             className="text-white hover:text-gray-200 hover:bg-white/10 rounded-full cursor-pointer"
-            onClick={() => resetState()}
+            onClick={resetFractalState}
           >
             <Home size={24} />
           </Button>
         </div>
         <div className="flex-1 text-center">
-          <p className="text-sm text-muted-foreground">
-            Center: x: {params.center.x}, y: {params.center.y}, zoom: {params.zoom.toFixed(2)}, maxIter:{" "}
-            {params.maxIterations}, colorScheme: {colorScheme}
+          <p className="text-sm text-white">
+            Center: x: {center.x}, y: {center.y}, zoom: {zoom.toFixed(2)}, max. iterations: {realMaxIterations}
           </p>
+          <p className="text-sm text-white">Color scheme: {colorScheme}</p>
         </div>
         <Tooltip>
           <TooltipTrigger asChild>

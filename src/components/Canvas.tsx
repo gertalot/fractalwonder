@@ -1,6 +1,7 @@
 "use client";
 
 import mandelbrot from "@/fractals/mandelbrot/mandelbrot";
+import { renderFractal } from "@/fractals/render";
 import { useFractalInteraction } from "@/hooks/use-fractal-interaction";
 import { FractalParams, useFractalStore } from "@/hooks/use-store";
 import canvasSize from "@/lib/canvas-size";
@@ -14,33 +15,46 @@ export const Canvas = () => {
     width: number;
     height: number;
   }>({ width: 0, height: 0 });
+
   const initialRenderDoneRef = useRef(false); // Flag to ensure initial render runs only once
 
-  // Main render function (for fractal, etc.)
+  // New function to orchestrate rendering using the external module
   const render = useCallback(() => {
-    const currentParams = useFractalStore.getState().params;
-    console.log("rendering fractal... center, zoom: ", currentParams.center, currentParams.zoom);
-
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    if (canvas.width === 0 || canvas.height === 0) return;
+    if (!canvas) {
+      console.log("Skipping render: Canvas ref is not available.");
+      return;
+    }
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) {
+      console.log("Skipping render: Canvas context is not available.");
+      return;
+    }
 
-    mandelbrot(canvas, currentParams);
+    const currentParams = useFractalStore.getState().params;
 
-    // Store the image data and params for use in the preview function
+    renderFractal(canvas, currentParams, mandelbrot);
+
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    lastImageDataRef.current = imageData;
-    lastParamsRef.current = JSON.parse(JSON.stringify(currentParams));
 
-    console.log("rendering fractal done.");
+    // Store the results if rendering was successful
+    if (imageData) {
+      lastImageDataRef.current = imageData;
+      try {
+        lastParamsRef.current = structuredClone(currentParams);
+      } catch (_e) {
+        console.warn("structuredClone not available, using JSON fallback for params copy.");
+        lastParamsRef.current = JSON.parse(JSON.stringify(currentParams));
+      }
+    } else {
+      console.log("Render function returned null, skipping ref updates.");
+    }
   }, []);
 
-  /**************************************************************************
-   * handle the browser window resizing
-   * NOTE this should be in use-fractal-interaction
-   **************************************************************************/
+  // ------------------------------------------------------------------------
+  // handle the browser window resizing
+  // NOTE this should probably be in use-fractal-interaction
+  // ------------------------------------------------------------------------
 
   useEffect(() => {
     const updateCanvasDimensions = () => {
@@ -72,7 +86,7 @@ export const Canvas = () => {
     if (width > 0 && height > 0) {
       // Update the actual canvas element's dimensions if they differ.
       if (canvas.width !== width || canvas.height !== height) {
-        console.log(`Resizing canvas element to: ${width}x${height} and drawing checkerboard.`);
+        console.log(`Resizing canvas element to: ${width}x${height}.`);
         canvas.width = width;
         canvas.height = height;
       }
@@ -95,9 +109,7 @@ export const Canvas = () => {
     }
   }, [canvasDimensions, render]);
 
-  /**************************************************************************
-   * Fast preview handling
-   **************************************************************************/
+  // Fast preview handling
   useFractalInteraction({
     canvasRef,
     lastImageDataRef,

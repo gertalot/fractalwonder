@@ -1,4 +1,4 @@
-import { FractalParams } from "@/hooks/use-store";
+import { derivedRealIterations, FractalParams } from "@/hooks/use-store";
 import canvasSize from "@/lib/canvas-size";
 import { pixelToFractalCoordinate } from "@/lib/coordinates";
 
@@ -63,7 +63,7 @@ function mandelbrot(canvas: HTMLCanvasElement, params: FractalParams) {
         params.zoom
       );
 
-      const maxIter = params.maxIterations;
+      const maxIter = derivedRealIterations(params);
 
       const { iter } = compute(real, imag, maxIter);
       const [r, g, b] = firePalette(iter, maxIter);
