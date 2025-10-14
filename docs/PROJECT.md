@@ -112,4 +112,9 @@ pixel space are converted to fractal space and back.
 
 ## test precision
 
-Zooming with the center of the zoom on the mouse location is one of the calculations that concerns me. In another project I have been working for days on getting this right and it's still not working, so I want to be extremely thorough here and ensure we have absolutely bomb-proof test suites. In my experience, AI agents tend to write tests that superficially do something useful, but are realistically designed to easily pass in an effort to make me happy. That is the OPPOSITE approach that I need. I want the test cases to be constructed from the ground up to test the mathematics PROPERLY from first principles. I EXPECT the tests to fail until we nail the code.
+Zooming with the center of the zoom on the mouse location is one of the calculations that concerns me. In another
+project I have been working for days on getting this right and it's still not working, so I want to be extremely
+thorough here and ensure we have absolutely bomb-proof test suites. In my experience, AI agents tend to write tests that
+superficially do something useful, but are realistically designed to easily pass in an effort to make me happy. That is
+the OPPOSITE approach that I need. I want the test cases to be constructed from the ground up to test the mathematics
+PROPERLY from first principles. I EXPECT the tests to fail until we nail the code.
