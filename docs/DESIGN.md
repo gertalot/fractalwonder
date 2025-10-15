@@ -2,11 +2,15 @@
 
 ## Description
 
-A high-performance, browser-based Mandelbrot set explorer capable of rendering at extreme zoom levels (up to 10^100 and beyond) with interactive real-time exploration. The application is built entirely in Rust, compiled to WebAssembly, using Leptos for the frontend framework and advanced mathematical techniques including perturbation theory and arbitrary precision arithmetic.
+A high-performance, browser-based Mandelbrot set explorer capable of rendering at extreme zoom levels (up to 10^100 and
+beyond) with interactive real-time exploration. The application is built entirely in Rust, compiled to WebAssembly,
+using Leptos for the frontend framework and advanced mathematical techniques including perturbation theory and arbitrary
+precision arithmetic.
 
 ## Scope
 
 **Modules and Components:**
+
 - `fractal-core`: Mandelbrot computation engine (arbitrary precision math, perturbation theory)
 - `fractal-render`: Tile-based rendering orchestration and coloring algorithms
 - `fractal-ui`: Leptos-based user interface and interaction handling
@@ -14,6 +18,7 @@ A high-performance, browser-based Mandelbrot set explorer capable of rendering a
 - `fractal-export`: PNG image export with embedded metadata
 
 **Out of Scope for v1:**
+
 - GPU acceleration (WebGPU support deferred to v2)
 - Backend/distributed rendering
 - Custom color scheme editor
@@ -34,7 +39,8 @@ A high-performance, browser-based Mandelbrot set explorer capable of rendering a
 - **Web APIs**: web-sys, wasm-bindgen for DOM/Canvas/Storage access
 
 **Required HTTP Headers (for SharedArrayBuffer/rayon threading):**
-```
+
+```txt
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
@@ -99,7 +105,7 @@ graph TD
   4. **Orbit trap**: Distance measurement to geometric trap shapes
   5. **Potential-based**: Logarithmic potential from escape radius
   6. **Field lines**: Angle-based coloring from final z argument
-- **State**: 
+- **State**:
   - Active color scheme selection
   - Per-scheme settings (offset, scale, palette cycling speed)
 
@@ -272,14 +278,16 @@ erDiagram
 ```
 
 **Persistence Flow:**
+
 1. **On state change**: Update URL query parameters (Base64-encoded JSON)
 2. **On render completion**: Save to localStorage
-3. **On page load**: 
+3. **On page load**:
    - Parse URL params → use if valid
    - Else load from localStorage → use if valid
    - Else use default values
 
 **Default Values:**
+
 - Center: -0.5 + 0i (shows complete Mandelbrot set)
 - Zoom: 1.0
 - Viewport: real [-2, 1], imaginary [-1.5, 1.5]
@@ -519,14 +527,14 @@ fn fractal_to_pixel(
 
 ### State Persistence Errors
 
-- **Corrupt URL parameters**: 
+- **Corrupt URL parameters**:
   1. Attempt Base64 decode
   2. Attempt JSON parse
   3. On failure: ignore URL, try localStorage
   4. On localStorage failure: use defaults
   5. Show subtle notification: "Invalid URL, using defaults"
 
-- **localStorage quota exceeded**: 
+- **localStorage quota exceeded**:
   1. Clear old state
   2. Save minimal state (only viewport, no history)
   3. Continue without persistence
@@ -547,22 +555,26 @@ fn fractal_to_pixel(
 ### Unit Tests
 
 **Coordinate Transformations** (bomb-proof requirement):
+
 - Round-trip validation: `pixel → fractal → pixel = original` at zoom levels: 1, 10^15, 10^30, 10^50, 10^100
 - Edge cases: corner pixels (0,0), (width, height), center pixel
 - Extreme precision: Verify 250+ decimal place handling
 - Test invariants: "Fractal point under mouse stays under mouse during zoom"
 
 **Arbitrary Precision Math**:
+
 - rug::Float precision calculation: Verify decimal_places → precision_bits conversion
 - String serialization: Round-trip `rug::Float → String → rug::Float` preserves value
 - Arithmetic accuracy: Known Mandelbrot points (e.g., center at -0.5+0i is in set)
 
 **Perturbation Theory**:
+
 - Reference orbit correctness: Compare against direct high-precision calculation
 - Delta orbit accuracy: Validate delta correction produces same result as direct calculation
 - Escape detection: Known escape/non-escape points at various iterations
 
 **Color Algorithms**:
+
 - Each algorithm: Known PixelData → expected RGB output
 - Smoothing correctness: mu calculation for continuous coloring
 - Distance estimation: Derivative magnitude calculation validation
@@ -570,17 +582,20 @@ fn fractal_to_pixel(
 ### Integration Tests
 
 **Rendering Pipeline**:
+
 - Complete render flow: params → reference orbit → tiles → colored pixels → canvas
 - Tile ordering: Verify spiral pattern (center tiles have lowest priority number)
 - Progress tracking: Verify tile count and completion percentage
 - Render cancellation: Start render → cancel → verify clean state
 
 **State Management**:
+
 - URL encoding: ViewportParams → Base64 JSON → decode → identical params
 - localStorage: Save → reload page → verify state restored
 - State precedence: URL overrides localStorage, localStorage overrides defaults
 
 **User Interactions**:
+
 - Pan operation: Drag 100px → verify center coordinate change matches expected delta
 - Zoom operation: Scroll at (x,y) → verify point at (x,y) in fractal space unchanged
 - Resize: Change canvas size → verify fractal center stays centered
@@ -588,6 +603,7 @@ fn fractal_to_pixel(
 ### Property-Based Tests (proptest)
 
 **Coordinate Transform Invariants**:
+
 ```rust
 proptest! {
     #[test]
@@ -610,6 +626,7 @@ proptest! {
 ```
 
 **Zoom Invariant** (point under mouse fixed):
+
 ```rust
 proptest! {
     #[test]
@@ -637,7 +654,8 @@ proptest! {
 
 ### Mathematical Derivation Tests
 
-**Example: Drag Operation at Extreme Zoom**
+**Example: Drag Operation at Extreme Zoom:**
+
 ```rust
 #[test]
 fn drag_100px_at_zoom_1e100_correct_delta() {
@@ -676,6 +694,7 @@ fn drag_100px_at_zoom_1e100_correct_delta() {
 ### Reference Value Tests
 
 **Known Mandelbrot Set Coordinates** (from fractal community):
+
 ```rust
 #[test]
 fn known_mandelbrot_coordinates() {
@@ -702,6 +721,7 @@ fn known_mandelbrot_coordinates() {
 ### End-to-End Testing (wasm-bindgen-test)
 
 **Full User Flow**:
+
 ```rust
 #[wasm_bindgen_test]
 async fn complete_user_journey() {
@@ -739,19 +759,23 @@ async fn complete_user_journey() {
 ### Performance Testing
 
 **Render Time Targets**:
+
 - Zoom < 10^15: < 5 seconds on modern hardware (8-core CPU)
 - Zoom 10^15 - 10^50: < 30 seconds
 - Zoom > 10^50: No hard limit (may take minutes/hours)
 
 **Thread Utilization**:
+
 - Verify rayon uses all available CPU cores
 - Monitor with: `navigator.hardwareConcurrency` should match active threads
 
 **Memory Usage**:
+
 - Zoom 10^100 with 1920×1080 viewport: < 500MB total WASM memory
 - No memory leaks over 100+ renders (measure with performance.memory)
 
 **Interaction Responsiveness**:
+
 - ImageData transform (fast preview): 60fps (< 16ms per frame)
 - UI fade in/out: Smooth 60fps animation
 - Render cancellation: < 100ms from user interaction to cancel
@@ -772,6 +796,7 @@ async fn complete_user_journey() {
 ### Theme
 
 **Colors:**
+
 - Background: `#0a0a0a` (near-black)
 - UI panel: `#1a1a1a` (dark gray, semi-transparent)
 - Text primary: `#e0e0e0` (light gray)
@@ -780,11 +805,13 @@ async fn complete_user_journey() {
 - Progress indicator: `#4a9eff` with glow
 
 **Typography:**
+
 - Primary font: System UI (San Francisco, Segoe UI, Roboto)
 - Monospace (coordinates): SF Mono, Consolas, Monaco
 - Sizes: Body 14px, Labels 12px, Coordinates 11px monospace
 
 **Animations:**
+
 - UI fade in/out: 300ms ease-in-out
 - Progress spinner: 1s linear infinite rotation
 - Tile render: Immediate (no fade), but spiral pattern creates organic reveal
@@ -793,7 +820,7 @@ async fn complete_user_journey() {
 
 #### Main Canvas (Full Screen)
 
-```
+```txt
 ┌─────────────────────────────────────────┐
 │                                         │
 │                                         │
@@ -809,12 +836,13 @@ async fn complete_user_journey() {
 ```
 
 **Components:**
+
 - Canvas element (100vw × 100vh)
 - Circular progress indicator (bottom-left, 32px diameter, only visible during render when UI hidden)
 
 #### Bottom UI Panel (Visible on Mouse Movement)
 
-```
+```txt
 ┌─────────────────────────────────────────┐
 │                                         │
 │          MANDELBROT FRACTAL             │
@@ -831,6 +859,7 @@ async fn complete_user_journey() {
 ```
 
 **Layout:**
+
 - Full-width panel at bottom
 - Semi-transparent dark background (`#1a1a1a` with 95% opacity)
 - 16px padding
@@ -838,19 +867,23 @@ async fn complete_user_journey() {
 - Fade in/out animation (300ms)
 
 **Left section:**
+
 - Info icon (ⓘ): Opens about/info modal with GitHub link
 - Home icon (🏠): Resets to default viewport
 
 **Center section:**
+
 - Current coordinates (monospace font)
 - Zoom level (scientific notation)
 - Current iteration count
 
 **Color scheme section:**
+
 - Dropdown selector for 6 color schemes
 - Settings button opens color-specific controls (offset, scale, etc.)
 
 **Right section:**
+
 - Progress bar (linear, full-width, only during render)
 - Render stats: core count, elapsed/total time
 - Fullscreen toggle icon (⛶)
@@ -858,23 +891,22 @@ async fn complete_user_journey() {
 
 #### Progress Indicator (UI Hidden, Render Active)
 
-```
+```txt
 Bottom-left corner:
 
   ◐  (32×32px, rotating, blue glow)
 ```
 
 **Behavior:**
+
 - Only visible when: render in progress AND UI hidden
 - Disappears when: render completes OR UI becomes visible
 - Smooth rotation animation (1s per rotation)
 - Subtle glow effect (`box-shadow: 0 0 8px #4a9eff`)
 
-
-
 #### Color Settings Panel (Triggered by ⚙ Icon)
 
-```
+```txt
 ┌────────────────────────────────┐
 │  Smooth Iteration Settings     │
 │                                │
@@ -887,6 +919,7 @@ Bottom-left corner:
 ```
 
 **Per-scheme controls** (example for smooth iteration):
+
 - Offset slider: Shifts color palette
 - Scale slider: Stretches color mapping
 - Cycle slider: Speed of color cycling
@@ -894,6 +927,7 @@ Bottom-left corner:
 ### Interaction Patterns
 
 **Pan (Click and Drag):**
+
 1. User clicks and holds (mousedown)
 2. Starts drag → Cancel active render immediately
 3. While dragging → Transform imageData by pixel offset (fast preview)
@@ -901,6 +935,7 @@ Bottom-left corner:
 5. After 1.5s no interaction → Calculate new center → Start render
 
 **Zoom (Mouse Wheel):**
+
 1. User scrolls wheel at position (x, y)
 2. Cancel active render
 3. Calculate fractal point at (x, y)
@@ -910,12 +945,14 @@ Bottom-left corner:
 7. Start 1.5s debounce → Render
 
 **Resize Window:**
+
 1. Detect window resize event
 2. Check if canvas actually changed size
 3. If size unchanged → Ignore (don't cancel render)
 4. If size changed → Cancel render → Scale imageData to maintain center → Start 1.5s debounce → Render
 
 **UI Visibility:**
+
 1. Mouse movement → Fade in UI (300ms)
 2. Start 4-second timer
 3. On any mouse movement → Reset timer
@@ -923,6 +960,7 @@ Bottom-left corner:
 5. Note: Mouse movement alone (no drag/zoom) does NOT cancel renders
 
 **Color Scheme Change:**
+
 1. User selects new scheme
 2. If render complete → Re-color existing pixel data (instant, no recompute)
 3. If render in progress → Cancel → Restart with new scheme
@@ -936,6 +974,7 @@ Bottom-left corner:
 - Focus indicators: Browser defaults
 
 **Future (v2+):**
+
 - Full keyboard navigation
 - ARIA labels
 - Screen reader announcements
@@ -976,6 +1015,7 @@ trunk build --release
 ### Required HTTP Headers
 
 **Static server configuration** (example nginx):
+
 ```nginx
 location / {
     add_header Cross-Origin-Opener-Policy same-origin;
@@ -994,6 +1034,7 @@ These headers are **required** for SharedArrayBuffer support (used by wasm-bindg
 ### v2 - GPU Acceleration
 
 **WebGPU Integration:**
+
 - Implement `GpuEngine` trait for compute shader-based iteration
 - Delta orbit computation in WGSL (f32 or emulated f64)
 - Automatic fallback to CPU if WebGPU unavailable
@@ -1002,20 +1043,24 @@ These headers are **required** for SharedArrayBuffer support (used by wasm-bindg
 ### v3 - Advanced Optimizations
 
 **Bivariate Linear Approximation (BLA):**
+
 - Skip iterations in linear regions (10-100× speedup)
 - Automatic region detection
 
 **Series Approximation:**
+
 - Taylor series for interior points
 - Further reduce iteration count
 
 **Automatic Reference Point Adjustment:**
+
 - Detect glitches (delta orbit escaping when reference doesn't)
 - Dynamically choose better reference points per-tile
 
 ### v4 - Backend Rendering
 
 **Distributed Compute:**
+
 - Rust backend server (same math code as WASM)
 - WebSocket for job distribution
 - Browser receives pre-computed tiles
@@ -1038,7 +1083,8 @@ These headers are **required** for SharedArrayBuffer support (used by wasm-bindg
 ### A. Precision Calculation Reference
 
 **Decimal Places to Precision Bits:**
-```
+
+```txt
 precision_bits = ceil(decimal_places × log2(10))
                 ≈ ceil(decimal_places × 3.322)
 
@@ -1050,7 +1096,8 @@ Examples:
 ```
 
 **Zoom Level to Required Precision:**
-```
+
+```txt
 decimal_places = max(30, ceil(log10(zoom) × 2.5 + 20))
 
 Examples:
@@ -1063,36 +1110,42 @@ Examples:
 ### B. Color Algorithm Formulas
 
 **1. Smooth Iteration:**
-```
+
+```rust
 mu = n + 1 - log2(log2(|z_final|))
 color = palette[floor(mu × scale + offset) % palette.len()]
 ```
 
 **2. Escape Time:**
-```
+
+```rust
 color = palette[iterations % palette.len()]
 ```
 
 **3. Distance Estimation:**
-```
+
+```rust
 distance = (log(|z|) × |z|) / |z'|
 color = distance < threshold ? edge_color : interior_color
 ```
 
 **4. Orbit Trap:**
-```
+
+```rust
 min_dist = min(distance(z_i, trap_point) for all i)
 color = palette[floor(min_dist × scale) % palette.len()]
 ```
 
 **5. Potential-based:**
-```
+
+```rust
 potential = log(log(|z_final|)) / (2^iterations)
 color = palette[floor(potential × scale) % palette.len()]
 ```
 
 **6. Field Lines:**
-```
+
+```rust
 angle = atan2(z_final.imag, z_final.real)
 color = palette[floor((angle / PI + 1) × palette.len() / 2)]
 ```
@@ -1100,12 +1153,14 @@ color = palette[floor((angle / PI + 1) × palette.len() / 2)]
 ### C. Browser Compatibility
 
 **Minimum Requirements:**
+
 - Chrome 113+ (WebAssembly, SharedArrayBuffer, WebGPU in v2)
 - Firefox 141+ (Windows), upcoming for Mac/Linux
 - Safari 26+ (macOS Tahoe, iOS 26)
 - Edge 113+ (Chromium-based)
 
 **Required Features:**
+
 - WebAssembly (all modern browsers)
 - SharedArrayBuffer (COOP/COEP headers required)
 - Canvas 2D API
@@ -1113,17 +1168,22 @@ color = palette[floor((angle / PI + 1) × palette.len() / 2)]
 - Web Workers
 
 **Optional Features:**
+
 - WebGPU (v2): Chrome/Edge stable, Safari/Firefox partial
 
 ### D. Known Limitations
 
-1. **Zoom representation limit**: f64 can represent zoom up to ~10^308. Beyond that, zoom stored as string, but coordinate calculations still work.
+1. **Zoom representation limit**: f64 can represent zoom up to ~10^308. Beyond that, zoom stored as string, but
+   coordinate calculations still work.
 
-2. **Browser memory**: ~2GB practical limit for WASM memory. At 4K resolution (8.3M pixels × ~20 bytes per pixel) ≈ 166MB just for pixel data. Reference orbit at extreme zoom can be GBs.
+2. **Browser memory**: ~2GB practical limit for WASM memory. At 4K resolution (8.3M pixels × ~20 bytes per pixel) ≈
+   166MB just for pixel data. Reference orbit at extreme zoom can be GBs.
 
-3. **Perturbation theory breakdown**: At extreme zoom (>10^1000), delta orbits may need higher precision than f64. Future: Use arbitrary precision for deltas too.
+3. **Perturbation theory breakdown**: At extreme zoom (>10^1000), delta orbits may need higher precision than f64.
+   Future: Use arbitrary precision for deltas too.
 
-4. **Web Worker limit**: Browser may limit concurrent workers (typically 20-50). Rayon respects navigator.hardwareConcurrency.
+4. **Web Worker limit**: Browser may limit concurrent workers (typically 20-50). Rayon respects
+   navigator.hardwareConcurrency.
 
 5. **Canvas size limit**: Browsers limit canvas to ~8192×8192 pixels. For larger exports, need tiling approach (v4+).
 
@@ -1132,4 +1192,3 @@ color = palette[floor((angle / PI + 1) × palette.len() / 2)]
 **Document Version**: 1.0  
 **Last Updated**: 2025-10-14  
 **Status**: Approved for Implementation
-

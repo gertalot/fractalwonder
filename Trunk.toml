@@ -1,0 +1,19 @@
+[build]
+target = "index.html"
+release = false
+dist = "dist"
+public_url = "/"
+filehash = true
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 8080
+open = false
+no_autoreload = false
+
+[serve.headers]
+Cross-Origin-Opener-Policy = "same-origin"
+Cross-Origin-Embedder-Policy = "require-corp"
+
+[tools]
+tailwindcss = "4.1.10"

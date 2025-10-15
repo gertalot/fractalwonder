@@ -4,7 +4,7 @@
 
 A high-performance, browser-based Mandelbrot set explorer capable of rendering at extreme zoom levels (up to 10^100 and
 beyond) with interactive real-time exploration. The application uses Rust compiled to WebAssembly for computation,
-WebGPU for GPU acceleration, and a TypeScript/React frontend for the user interface.
+WebGPU for GPU acceleration, and a Rust Leptos frontend for the user interface.
 
 ### Value
 
@@ -382,19 +382,18 @@ backend expansion, so that the codebase doesn't require rewrites for distributed
 
 3. **The system SHALL** use the `rug` crate (or equivalent) for arbitrary precision arithmetic
 
-4. **The system SHALL** use TypeScript for frontend code
+4. **The system SHALL** use Rust for frontend code
 
-5. **The system SHALL** use React for UI framework
+5. **The system SHALL** use Leptos for UI framework
 
-6. **The system SHALL** use Yarn for package management
+6. **The system SHALL** use WebGPU for GPU acceleration when available
 
-7. **The system SHALL** use WebGPU for GPU acceleration when available
+7. **The system SHALL** use Web Workers for multi-threaded computation
 
-8. **The system SHALL** use Web Workers for multi-threaded computation
+8. **The system SHALL** structure code to support future native compilation of Rust math code for backend rendering
 
-9. **The system SHALL** structure code to support future native compilation of Rust math code for backend rendering
-
-10. **The system SHALL** isolate the computation engine as a reusable module with no browser-specific dependencies, so that it can be used directly in backend/distributed rendering systems without modification
+9. **The system SHALL** isolate the computation engine as a reusable module with no browser-specific dependencies, so
+   that it can be used directly in backend/distributed rendering systems without modification
 
 ---
 
@@ -457,4 +456,3 @@ trust the system produces accurate results at extreme zoom levels.
 8. Tutorial and onboarding experience
 9. Advanced glitch detection and automatic reference point adjustment
 10. Export at higher resolution than viewport (super-sampling)
-
