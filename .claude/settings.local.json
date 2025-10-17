@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/gert/Library/Logs/**)",
+      "mcp__chrome-devtools__list_pages",
+      "mcp__chrome-devtools__take_screenshot",
+      "mcp__chrome-devtools__list_console_messages",
+      "mcp__chrome-devtools__navigate_page",
+      "Skill(superpowers:brainstorming)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "context7",
+    "chrome-devtools"
+  ]
+}
