@@ -20,3 +20,4 @@ Thumbs.db
 # Worktrees
 .worktrees/
 
+.claude/settings.local.json
