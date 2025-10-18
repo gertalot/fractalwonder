@@ -4,9 +4,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
-#[allow(dead_code)]
 const INTERACTION_TIMEOUT_MS: i32 = 1500;
-#[allow(dead_code)]
 const ZOOM_SENSITIVITY: f64 = 0.0005;
 
 /// Transformation result returned when interaction ends
@@ -21,11 +19,14 @@ pub struct TransformResult {
 /// Handle returned by the hook
 pub struct InteractionHandle {
     pub is_interacting: Signal<bool>,
+    pub on_pointer_down: Box<dyn Fn(web_sys::PointerEvent)>,
+    pub on_pointer_move: Box<dyn Fn(web_sys::PointerEvent)>,
+    pub on_pointer_up: Box<dyn Fn(web_sys::PointerEvent)>,
+    pub on_wheel: Box<dyn Fn(web_sys::WheelEvent)>,
     pub reset: Box<dyn Fn()>,
 }
 
 /// Builds a 2D affine transformation matrix from offset, zoom, and optional zoom center
-#[allow(dead_code)]
 fn build_transform_matrix(
     offset: (f64, f64),
     zoom: f64,
@@ -54,7 +55,6 @@ fn build_transform_matrix(
     matrix
 }
 
-#[allow(dead_code)]
 fn capture_canvas_image_data(canvas: &HtmlCanvasElement) -> Result<ImageData, JsValue> {
     let context = canvas
         .get_context("2d")?
@@ -64,7 +64,6 @@ fn capture_canvas_image_data(canvas: &HtmlCanvasElement) -> Result<ImageData, Js
     context.get_image_data(0.0, 0.0, canvas.width() as f64, canvas.height() as f64)
 }
 
-#[allow(dead_code)]
 fn render_preview(
     canvas: &HtmlCanvasElement,
     image_data: &ImageData,
@@ -102,7 +101,7 @@ fn render_preview(
 
 pub fn use_canvas_interaction<F>(
     canvas_ref: NodeRef<leptos::html::Canvas>,
-    _on_interaction_end: F,
+    on_interaction_end: F,
 ) -> InteractionHandle
 where
     F: Fn(TransformResult) + 'static,
@@ -119,6 +118,7 @@ where
     let accumulated_zoom = store_value(1.0);
     let zoom_center = store_value::<Option<(f64, f64)>>(None);
     let animation_frame_id = store_value::<Option<i32>>(None);
+    let timeout_id = store_value::<Option<i32>>(None);
 
     // Reset function
     let reset = {
@@ -131,6 +131,7 @@ where
             accumulated_zoom.set_value(1.0);
             zoom_center.set_value(None);
             animation_frame_id.set_value(None);
+            timeout_id.set_value(None);
         })
     };
 
@@ -169,6 +170,64 @@ where
         }
     };
 
+    // Stop interaction handler - builds TransformResult and fires callback
+    let on_interaction_end = store_value(on_interaction_end);
+    let stop_interaction = move || {
+        // Don't stop if still dragging
+        if is_dragging.get() {
+            return;
+        }
+
+        is_zooming.set(false);
+
+        // Build final result
+        let offset = accumulated_offset.get_value();
+        let zoom = accumulated_zoom.get_value();
+        let center = zoom_center.get_value();
+        let matrix = build_transform_matrix(offset, zoom, center);
+
+        let result = TransformResult {
+            offset_x: offset.0,
+            offset_y: offset.1,
+            zoom_factor: zoom,
+            matrix,
+        };
+
+        // Clear state
+        initial_image_data.set_value(None);
+        accumulated_offset.set_value((0.0, 0.0));
+        accumulated_zoom.set_value(1.0);
+        zoom_center.set_value(None);
+
+        // Fire callback
+        on_interaction_end.with_value(|cb| cb(result));
+    };
+
+    // Restart timeout helper - uses manual web-sys timeout
+    let stop_interaction_stored = store_value(stop_interaction);
+    let restart_timeout = move || {
+        // Clear existing timeout
+        if let Some(id) = timeout_id.get_value() {
+            web_sys::window().unwrap().clear_timeout_with_handle(id);
+        }
+
+        // Set new timeout
+        let callback = Closure::once(move || {
+            stop_interaction_stored.with_value(|f| f());
+        });
+
+        let id = web_sys::window()
+            .unwrap()
+            .set_timeout_with_callback_and_timeout_and_arguments_0(
+                callback.as_ref().unchecked_ref(),
+                INTERACTION_TIMEOUT_MS,
+            )
+            .unwrap();
+
+        callback.forget();
+        timeout_id.set_value(Some(id));
+    };
+
     // Pointer down handler
     let on_pointer_down = move |ev: web_sys::PointerEvent| {
         ev.prevent_default();
@@ -193,12 +252,14 @@ where
     };
 
     // Pointer up handler
+    let restart_timeout_clone = store_value(restart_timeout);
     let on_pointer_up = move |_ev: web_sys::PointerEvent| {
         is_dragging.set(false);
-        // Timeout will be started in next task
+        restart_timeout_clone.with_value(|f| f());
     };
 
     // Wheel handler for zoom
+    let restart_timeout_clone2 = store_value(restart_timeout);
     let on_wheel = move |ev: web_sys::WheelEvent| {
         ev.prevent_default();
 
@@ -224,19 +285,16 @@ where
             zoom_center.set_value(Some((x, y)));
         }
 
-        // Timeout will be restarted (next task)
+        // Restart timeout on every wheel event
+        restart_timeout_clone2.with_value(|f| f());
     };
-
-    // Store event handlers for consumer to attach
-    let _pointer_handlers = store_value((
-        on_pointer_down,
-        on_pointer_move,
-        on_pointer_up,
-        on_wheel,
-    ));
 
     InteractionHandle {
         is_interacting: Signal::derive(move || is_interacting.get()),
+        on_pointer_down: Box::new(on_pointer_down),
+        on_pointer_move: Box::new(on_pointer_move),
+        on_pointer_up: Box::new(on_pointer_up),
+        on_wheel: Box::new(on_wheel),
         reset,
     }
 }
