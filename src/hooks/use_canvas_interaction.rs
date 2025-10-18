@@ -134,6 +134,9 @@ where
         })
     };
 
+    // Store canvas_ref for multiple closures
+    let canvas_ref_stored = store_value(canvas_ref);
+
     // Animation loop for preview rendering
     use_raf_fn(move |_| {
         // Only render if we're interacting and have image data
@@ -141,6 +144,7 @@ where
             return;
         }
 
+        let canvas_ref = canvas_ref_stored.get_value();
         if let Some(canvas) = canvas_ref.get() {
             if let Some(image_data) = initial_image_data.get_value() {
                 let offset = accumulated_offset.get_value();
@@ -151,6 +155,55 @@ where
             }
         }
     });
+
+    // Interaction start helper
+    let start_interaction = move || {
+        let canvas_ref = canvas_ref_stored.get_value();
+        if let Some(canvas) = canvas_ref.get() {
+            if let Ok(image_data) = capture_canvas_image_data(&canvas) {
+                initial_image_data.set_value(Some(image_data));
+                accumulated_offset.set_value((0.0, 0.0));
+                accumulated_zoom.set_value(1.0);
+                zoom_center.set_value(None);
+            }
+        }
+    };
+
+    // Pointer down handler
+    let on_pointer_down = move |ev: web_sys::PointerEvent| {
+        ev.prevent_default();
+
+        start_interaction();
+        is_dragging.set(true);
+        drag_start.set_value(Some((ev.client_x() as f64, ev.client_y() as f64)));
+    };
+
+    // Pointer move handler
+    let on_pointer_move = move |ev: web_sys::PointerEvent| {
+        if !is_dragging.get() {
+            return;
+        }
+
+        if let Some(start) = drag_start.get_value() {
+            let current_x = ev.client_x() as f64;
+            let current_y = ev.client_y() as f64;
+            let offset = (current_x - start.0, current_y - start.1);
+            accumulated_offset.set_value(offset);
+        }
+    };
+
+    // Pointer up handler
+    let on_pointer_up = move |_ev: web_sys::PointerEvent| {
+        is_dragging.set(false);
+        // Timeout will be started in next task
+    };
+
+    // Store event handlers for consumer to attach
+    let _pointer_handlers = store_value((
+        on_pointer_down,
+        on_pointer_move,
+        on_pointer_up,
+    ));
 
     InteractionHandle {
         is_interacting: Signal::derive(move || is_interacting.get()),
