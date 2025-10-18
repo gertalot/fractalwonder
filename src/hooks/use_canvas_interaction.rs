@@ -91,7 +91,28 @@ fn render_preview(
     // Clear canvas
     context.clear_rect(0.0, 0.0, canvas.width() as f64, canvas.height() as f64);
 
-    // Apply transformation matrix
+    // Create a temporary canvas to hold the ImageData
+    // (put_image_data ignores transformations, so we need to use drawImage instead)
+    let document = web_sys::window()
+        .ok_or_else(|| JsValue::from_str("No window"))?
+        .document()
+        .ok_or_else(|| JsValue::from_str("No document"))?;
+
+    let temp_canvas = document
+        .create_element("canvas")?
+        .dyn_into::<HtmlCanvasElement>()?;
+    temp_canvas.set_width(image_data.width());
+    temp_canvas.set_height(image_data.height());
+
+    let temp_context = temp_canvas
+        .get_context("2d")?
+        .ok_or_else(|| JsValue::from_str("Failed to get 2D context"))?
+        .dyn_into::<CanvasRenderingContext2d>()?;
+
+    // Put ImageData on temporary canvas
+    temp_context.put_image_data(image_data, 0.0, 0.0)?;
+
+    // Apply transformation matrix to main canvas
     let matrix = build_transform_matrix(offset, zoom, zoom_center);
     context.set_transform(
         matrix[0][0],
@@ -102,8 +123,8 @@ fn render_preview(
         matrix[1][2],
     )?;
 
-    // Draw the transformed image
-    context.put_image_data(image_data, 0.0, 0.0)?;
+    // Draw the transformed image from temporary canvas
+    context.draw_image_with_html_canvas_element(&temp_canvas, 0.0, 0.0)?;
 
     // Reset transform
     context.set_transform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)?;
