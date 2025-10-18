@@ -112,12 +112,12 @@ pub fn TestImageView() -> impl IntoView {
                 let options = AddEventListenerOptions::new();
                 options.set_passive(false);
 
-                let closure = wasm_bindgen::closure::Closure::wrap(Box::new({
-                    let on_wheel = handle.on_wheel.clone();
-                    move |ev: web_sys::WheelEvent| {
+                let on_wheel = handle.on_wheel.clone();
+                let closure =
+                    wasm_bindgen::closure::Closure::wrap(Box::new(move |ev: web_sys::WheelEvent| {
                         (on_wheel)(ev);
-                    }
-                }) as Box<dyn Fn(web_sys::WheelEvent)>);
+                    })
+                        as Box<dyn Fn(web_sys::WheelEvent) + 'static>);
 
                 canvas
                     .add_event_listener_with_callback_and_add_event_listener_options(

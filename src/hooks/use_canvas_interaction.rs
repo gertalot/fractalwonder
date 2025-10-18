@@ -88,11 +88,14 @@ fn render_preview(
         .ok_or_else(|| JsValue::from_str("Failed to get 2D context"))?
         .dyn_into::<CanvasRenderingContext2d>()?;
 
-    // Clear canvas
+    // Clear canvas to background
     context.clear_rect(0.0, 0.0, canvas.width() as f64, canvas.height() as f64);
 
     // Create a temporary canvas to hold the ImageData
-    // (put_image_data ignores transformations, so we need to use drawImage instead)
+    // We MUST use this approach (not put_image_data with offset) because:
+    // - put_image_data discards pixels that go outside canvas bounds
+    // - drawImage + transformation matrix preserves all pixels (browser clips naturally)
+    // - This ensures dragging left then right shows the FULL original image
     let document = web_sys::window()
         .ok_or_else(|| JsValue::from_str("No window"))?
         .document()
@@ -109,7 +112,7 @@ fn render_preview(
         .ok_or_else(|| JsValue::from_str("Failed to get 2D context"))?
         .dyn_into::<CanvasRenderingContext2d>()?;
 
-    // Put ImageData on temporary canvas
+    // Put the FULL ImageData on temporary canvas
     temp_context.put_image_data(image_data, 0.0, 0.0)?;
 
     // Apply transformation matrix to main canvas
@@ -124,6 +127,8 @@ fn render_preview(
     )?;
 
     // Draw the transformed image from temporary canvas
+    // The transformation ensures the FULL image is drawn with offset/zoom applied
+    // Browser naturally clips what's outside canvas bounds (but pixels are preserved in ImageData)
     context.draw_image_with_html_canvas_element(&temp_canvas, 0.0, 0.0)?;
 
     // Reset transform
@@ -191,7 +196,8 @@ where
     // Stored state (non-reactive)
     let initial_image_data = store_value::<Option<ImageData>>(None);
     let drag_start = store_value::<Option<(f64, f64)>>(None);
-    let accumulated_offset = store_value((0.0, 0.0));
+    let base_offset = store_value((0.0, 0.0)); // Committed offset from all previous drags
+    let current_drag_offset = store_value((0.0, 0.0)); // Offset from current drag only
     let accumulated_zoom = store_value(1.0);
     let zoom_center = store_value::<Option<(f64, f64)>>(None);
     let animation_frame_id = store_value::<Option<i32>>(None);
@@ -203,7 +209,8 @@ where
         is_zooming.set(false);
         initial_image_data.set_value(None);
         drag_start.set_value(None);
-        accumulated_offset.set_value((0.0, 0.0));
+        base_offset.set_value((0.0, 0.0));
+        current_drag_offset.set_value((0.0, 0.0));
         accumulated_zoom.set_value(1.0);
         zoom_center.set_value(None);
         animation_frame_id.set_value(None);
@@ -223,11 +230,15 @@ where
         let canvas_ref = canvas_ref_stored.get_value();
         if let Some(canvas) = canvas_ref.get() {
             if let Some(image_data) = initial_image_data.get_value() {
-                let offset = accumulated_offset.get_value();
-                let zoom = accumulated_zoom.get_value();
-                let center = zoom_center.get_value();
+                // Total offset = base (from previous drags + zoom adjustments) + current drag
+                let base = base_offset.get_value();
+                let current = current_drag_offset.get_value();
+                let total_offset = (base.0 + current.0, base.1 + current.1);
 
-                let _ = render_preview(&canvas, &image_data, offset, zoom, center);
+                let zoom = accumulated_zoom.get_value();
+
+                // Pass None for zoom_center since we're baking zoom adjustments into offset
+                let _ = render_preview(&canvas, &image_data, total_offset, zoom, None);
             }
         }
     });
@@ -238,7 +249,8 @@ where
         if let Some(canvas) = canvas_ref.get_untracked() {
             if let Ok(image_data) = capture_canvas_image_data(&canvas) {
                 initial_image_data.set_value(Some(image_data));
-                accumulated_offset.set_value((0.0, 0.0));
+                base_offset.set_value((0.0, 0.0));
+                current_drag_offset.set_value((0.0, 0.0));
                 accumulated_zoom.set_value(1.0);
                 zoom_center.set_value(None);
             }
@@ -255,22 +267,26 @@ where
 
         is_zooming.set(false);
 
-        // Build final result
-        let offset = accumulated_offset.get_value();
+        // Build final result from total accumulated offset
+        let base = base_offset.get_value();
+        let current = current_drag_offset.get_value();
+        let total_offset = (base.0 + current.0, base.1 + current.1);
+
         let zoom = accumulated_zoom.get_value();
-        let center = zoom_center.get_value();
-        let matrix = build_transform_matrix(offset, zoom, center);
+        // No zoom_center - adjustments are baked into offset
+        let matrix = build_transform_matrix(total_offset, zoom, None);
 
         let result = TransformResult {
-            offset_x: offset.0,
-            offset_y: offset.1,
+            offset_x: total_offset.0,
+            offset_y: total_offset.1,
             zoom_factor: zoom,
             matrix,
         };
 
         // Clear state
         initial_image_data.set_value(None);
-        accumulated_offset.set_value((0.0, 0.0));
+        base_offset.set_value((0.0, 0.0));
+        current_drag_offset.set_value((0.0, 0.0));
         accumulated_zoom.set_value(1.0);
         zoom_center.set_value(None);
 
@@ -307,9 +323,21 @@ where
     let on_pointer_down = move |ev: web_sys::PointerEvent| {
         ev.prevent_default();
 
-        start_interaction();
+        // Only capture new imagedata if no interaction session is active
+        // If we're within the timeout window, preserve accumulated state
+        if initial_image_data.get_value().is_none() {
+            start_interaction();
+        }
+
+        // Cancel timeout since user is actively dragging again
+        if let Some(id) = timeout_id.get_value() {
+            web_sys::window().unwrap().clear_timeout_with_handle(id);
+            timeout_id.set_value(None);
+        }
+
         is_dragging.set(true);
         drag_start.set_value(Some((ev.client_x() as f64, ev.client_y() as f64)));
+        current_drag_offset.set_value((0.0, 0.0)); // Reset current drag offset
     };
 
     // Pointer move handler
@@ -321,8 +349,9 @@ where
         if let Some(start) = drag_start.get_value() {
             let current_x = ev.client_x() as f64;
             let current_y = ev.client_y() as f64;
-            let offset = (current_x - start.0, current_y - start.1);
-            accumulated_offset.set_value(offset);
+            // Calculate offset from THIS drag's start point only
+            let drag_offset = (current_x - start.0, current_y - start.1);
+            current_drag_offset.set_value(drag_offset);
         }
     };
 
@@ -330,6 +359,13 @@ where
     let restart_timeout_clone = store_value(restart_timeout);
     let on_pointer_up = move |_ev: web_sys::PointerEvent| {
         is_dragging.set(false);
+
+        // Commit current drag offset into base offset for next drag
+        let base = base_offset.get_value();
+        let current = current_drag_offset.get_value();
+        base_offset.set_value((base.0 + current.0, base.1 + current.1));
+        current_drag_offset.set_value((0.0, 0.0));
+
         restart_timeout_clone.with_value(|f| f());
     };
 
@@ -345,19 +381,39 @@ where
 
         is_zooming.set(true);
 
+        // Get current zoom and offset state
+        let old_zoom = accumulated_zoom.get_value();
+        let old_base = base_offset.get_value();
+
         // Calculate zoom factor from wheel delta
         let delta = ev.delta_y();
         let zoom_multiplier = (-delta * ZOOM_SENSITIVITY).exp();
-        let current_zoom = accumulated_zoom.get_value();
-        accumulated_zoom.set_value(current_zoom * zoom_multiplier);
+        let new_zoom = old_zoom * zoom_multiplier;
 
-        // Store zoom center (pointer position relative to canvas)
+        // Get pointer position relative to canvas
         let canvas_ref = canvas_ref_stored.get_value();
         if let Some(canvas) = canvas_ref.get_untracked() {
             let rect = canvas.get_bounding_client_rect();
-            let x = ev.client_x() as f64 - rect.left();
-            let y = ev.client_y() as f64 - rect.top();
-            zoom_center.set_value(Some((x, y)));
+            let mouse_x = ev.client_x() as f64 - rect.left();
+            let mouse_y = ev.client_y() as f64 - rect.top();
+
+            // When zooming at point (mx, my) with current state (old_zoom, old_offset),
+            // we want the image content at (mx, my) to stay at (mx, my).
+            //
+            // Transformation: new_pixel = old_pixel * new_zoom + new_offset
+            // We want: mx = mx * new_zoom + new_offset_x
+            // So: new_offset_x = mx * (1 - new_zoom)
+            //
+            // But we're accumulating! Current transformation is: pixel = original * old_zoom + old_offset
+            // After new zoom: pixel = original * new_zoom + new_offset
+            //
+            // The old offset was already scaled, so when we apply new zoom:
+            // new_offset = old_offset * zoom_multiplier + mx * (1 - zoom_multiplier)
+            let new_offset_x = old_base.0 * zoom_multiplier + mouse_x * (1.0 - zoom_multiplier);
+            let new_offset_y = old_base.1 * zoom_multiplier + mouse_y * (1.0 - zoom_multiplier);
+
+            base_offset.set_value((new_offset_x, new_offset_y));
+            accumulated_zoom.set_value(new_zoom);
         }
 
         // Restart timeout on every wheel event
