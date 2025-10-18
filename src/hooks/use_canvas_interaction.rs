@@ -1,5 +1,6 @@
 use leptos::*;
 use leptos_use::use_raf_fn;
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
@@ -30,15 +31,15 @@ pub struct InteractionHandle {
     /// Reactive signal indicating whether user is currently interacting
     pub is_interacting: Signal<bool>,
     /// Event handler for pointerdown events
-    pub on_pointer_down: Box<dyn Fn(web_sys::PointerEvent)>,
+    pub on_pointer_down: Rc<dyn Fn(web_sys::PointerEvent)>,
     /// Event handler for pointermove events
-    pub on_pointer_move: Box<dyn Fn(web_sys::PointerEvent)>,
+    pub on_pointer_move: Rc<dyn Fn(web_sys::PointerEvent)>,
     /// Event handler for pointerup events
-    pub on_pointer_up: Box<dyn Fn(web_sys::PointerEvent)>,
+    pub on_pointer_up: Rc<dyn Fn(web_sys::PointerEvent)>,
     /// Event handler for wheel events (zoom)
-    pub on_wheel: Box<dyn Fn(web_sys::WheelEvent)>,
+    pub on_wheel: Rc<dyn Fn(web_sys::WheelEvent)>,
     /// Reset all interaction state
-    pub reset: Box<dyn Fn()>,
+    pub reset: Rc<dyn Fn()>,
 }
 
 /// Builds a 2D affine transformation matrix from offset, zoom, and optional zoom center
@@ -176,18 +177,16 @@ where
     let timeout_id = store_value::<Option<i32>>(None);
 
     // Reset function
-    let reset = {
-        Box::new(move || {
-            is_dragging.set(false);
-            is_zooming.set(false);
-            initial_image_data.set_value(None);
-            drag_start.set_value(None);
-            accumulated_offset.set_value((0.0, 0.0));
-            accumulated_zoom.set_value(1.0);
-            zoom_center.set_value(None);
-            animation_frame_id.set_value(None);
-            timeout_id.set_value(None);
-        })
+    let reset = move || {
+        is_dragging.set(false);
+        is_zooming.set(false);
+        initial_image_data.set_value(None);
+        drag_start.set_value(None);
+        accumulated_offset.set_value((0.0, 0.0));
+        accumulated_zoom.set_value(1.0);
+        zoom_center.set_value(None);
+        animation_frame_id.set_value(None);
+        timeout_id.set_value(None);
     };
 
     // Store canvas_ref for multiple closures
@@ -346,11 +345,11 @@ where
 
     InteractionHandle {
         is_interacting: Signal::derive(move || is_interacting.get()),
-        on_pointer_down: Box::new(on_pointer_down),
-        on_pointer_move: Box::new(on_pointer_move),
-        on_pointer_up: Box::new(on_pointer_up),
-        on_wheel: Box::new(on_wheel),
-        reset,
+        on_pointer_down: Rc::new(on_pointer_down),
+        on_pointer_move: Rc::new(on_pointer_move),
+        on_pointer_up: Rc::new(on_pointer_up),
+        on_wheel: Rc::new(on_wheel),
+        reset: Rc::new(reset),
     }
 }
 

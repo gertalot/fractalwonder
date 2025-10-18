@@ -30,6 +30,7 @@ features = [
   "WheelEvent",
   "Performance",
   "console",
+  "AddEventListenerOptions",
 ]
 
 [dev-dependencies]

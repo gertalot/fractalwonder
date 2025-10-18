@@ -101,6 +101,37 @@ pub fn TestImageView() -> impl IntoView {
         }
     });
 
+    // Manually attach wheel event listener with passive: false
+    // This is required to allow preventDefault() on wheel events
+    create_effect({
+        move |_| {
+            if let Some(canvas) = canvas_ref.get() {
+                use wasm_bindgen::JsCast;
+                use web_sys::AddEventListenerOptions;
+
+                let options = AddEventListenerOptions::new();
+                options.set_passive(false);
+
+                let closure = wasm_bindgen::closure::Closure::wrap(Box::new({
+                    let on_wheel = handle.on_wheel.clone();
+                    move |ev: web_sys::WheelEvent| {
+                        (on_wheel)(ev);
+                    }
+                }) as Box<dyn Fn(web_sys::WheelEvent)>);
+
+                canvas
+                    .add_event_listener_with_callback_and_add_event_listener_options(
+                        "wheel",
+                        closure.as_ref().unchecked_ref(),
+                        &options,
+                    )
+                    .expect("should add wheel listener");
+
+                closure.forget();
+            }
+        }
+    });
+
     view! {
         <div class="relative w-full h-full">
             <canvas
@@ -109,7 +140,6 @@ pub fn TestImageView() -> impl IntoView {
                 on:pointerdown=move |ev| (handle.on_pointer_down)(ev)
                 on:pointermove=move |ev| (handle.on_pointer_move)(ev)
                 on:pointerup=move |ev| (handle.on_pointer_up)(ev)
-                on:wheel=move |ev| (handle.on_wheel)(ev)
                 style="touch-action: none; cursor: grab;"
             />
             <Show when=move || handle.is_interacting.get()>
