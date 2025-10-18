@@ -3,6 +3,7 @@
 
 mod app;
 mod components;
+pub mod rendering;
 
 use leptos::*;
 use wasm_bindgen::prelude::*;
