@@ -47,11 +47,7 @@ fn build_transform_matrix(
     zoom: f64,
     zoom_center: Option<(f64, f64)>,
 ) -> [[f64; 3]; 3] {
-    let mut matrix = [
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0],
-    ];
+    let mut matrix = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
 
     // Apply scale (zoom)
     matrix[0][0] = zoom;
@@ -365,31 +361,22 @@ mod tests {
     #[test]
     fn test_identity_matrix() {
         let matrix = build_transform_matrix((0.0, 0.0), 1.0, None);
-        assert_eq!(matrix, [
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ]);
+        assert_eq!(matrix, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0],]);
     }
 
     #[test]
     fn test_translation_matrix() {
         let matrix = build_transform_matrix((100.0, 50.0), 1.0, None);
-        assert_eq!(matrix, [
-            [1.0, 0.0, 100.0],
-            [0.0, 1.0, 50.0],
-            [0.0, 0.0, 1.0],
-        ]);
+        assert_eq!(
+            matrix,
+            [[1.0, 0.0, 100.0], [0.0, 1.0, 50.0], [0.0, 0.0, 1.0],]
+        );
     }
 
     #[test]
     fn test_zoom_matrix_no_center() {
         let matrix = build_transform_matrix((0.0, 0.0), 2.0, None);
-        assert_eq!(matrix, [
-            [2.0, 0.0, 0.0],
-            [0.0, 2.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ]);
+        assert_eq!(matrix, [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 1.0],]);
     }
 
     #[test]
@@ -397,11 +384,10 @@ mod tests {
         let matrix = build_transform_matrix((0.0, 0.0), 2.0, Some((100.0, 100.0)));
         // Zoom 2x centered at (100, 100)
         // Translation should be 100*(1-2) = -100 for both x and y
-        assert_eq!(matrix, [
-            [2.0, 0.0, -100.0],
-            [0.0, 2.0, -100.0],
-            [0.0, 0.0, 1.0],
-        ]);
+        assert_eq!(
+            matrix,
+            [[2.0, 0.0, -100.0], [0.0, 2.0, -100.0], [0.0, 0.0, 1.0],]
+        );
     }
 
     #[test]
@@ -410,11 +396,10 @@ mod tests {
         // offset + center*(1-zoom)
         // x: 50 + 200*(1-1.5) = 50 + 200*(-0.5) = 50 - 100 = -50
         // y: 30 + 150*(1-1.5) = 30 + 150*(-0.5) = 30 - 75 = -45
-        assert_eq!(matrix, [
-            [1.5, 0.0, -50.0],
-            [0.0, 1.5, -45.0],
-            [0.0, 0.0, 1.0],
-        ]);
+        assert_eq!(
+            matrix,
+            [[1.5, 0.0, -50.0], [0.0, 1.5, -45.0], [0.0, 0.0, 1.0],]
+        );
     }
 }
 
@@ -430,12 +415,9 @@ mod browser_tests {
         let canvas_ref = create_node_ref::<leptos::html::Canvas>();
         let callback_fired = create_rw_signal(false);
 
-        let handle = use_canvas_interaction(
-            canvas_ref,
-            move |_result| {
-                callback_fired.set(true);
-            },
-        );
+        let handle = use_canvas_interaction(canvas_ref, move |_result| {
+            callback_fired.set(true);
+        });
 
         assert!(!handle.is_interacting.get());
     }
