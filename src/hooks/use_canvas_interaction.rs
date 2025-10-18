@@ -38,6 +38,8 @@ pub struct InteractionHandle {
     pub on_pointer_up: Rc<dyn Fn(web_sys::PointerEvent)>,
     /// Event handler for wheel events (zoom)
     pub on_wheel: Rc<dyn Fn(web_sys::WheelEvent)>,
+    /// Event handler for canvas resize events
+    pub on_canvas_resize: Rc<dyn Fn(u32, u32)>,
     /// Reset all interaction state
     pub reset: Rc<dyn Fn()>,
 }
@@ -191,10 +193,13 @@ where
     // Interaction state signals
     let is_dragging = create_rw_signal(false);
     let is_zooming = create_rw_signal(false);
-    let is_interacting = create_memo(move |_| is_dragging.get() || is_zooming.get());
+    let is_resizing = create_rw_signal(false);
+    let is_interacting =
+        create_memo(move |_| is_dragging.get() || is_zooming.get() || is_resizing.get());
 
     // Stored state (non-reactive)
     let initial_image_data = store_value::<Option<ImageData>>(None);
+    let initial_canvas_size = store_value::<Option<(u32, u32)>>(None); // Canvas size when interaction started
     let drag_start = store_value::<Option<(f64, f64)>>(None);
     let base_offset = store_value((0.0, 0.0)); // Committed offset from all previous drags
     let current_drag_offset = store_value((0.0, 0.0)); // Offset from current drag only
@@ -207,7 +212,9 @@ where
     let reset = move || {
         is_dragging.set(false);
         is_zooming.set(false);
+        is_resizing.set(false);
         initial_image_data.set_value(None);
+        initial_canvas_size.set_value(None);
         drag_start.set_value(None);
         base_offset.set_value((0.0, 0.0));
         current_drag_offset.set_value((0.0, 0.0));
@@ -230,10 +237,26 @@ where
         let canvas_ref = canvas_ref_stored.get_value();
         if let Some(canvas) = canvas_ref.get() {
             if let Some(image_data) = initial_image_data.get_value() {
-                // Total offset = base (from previous drags + zoom adjustments) + current drag
+                // Check if canvas size changed during interaction
+                let current_size = (canvas.width(), canvas.height());
+                let size_offset = if let Some(initial_size) = initial_canvas_size.get_value() {
+                    // Canvas resized - adjust offset to keep center of image centered
+                    // If canvas grew, we need to shift image to stay centered
+                    // If canvas shrunk, we need to shift image to stay centered
+                    let width_change = (current_size.0 as f64 - initial_size.0 as f64) / 2.0;
+                    let height_change = (current_size.1 as f64 - initial_size.1 as f64) / 2.0;
+                    (width_change, height_change)
+                } else {
+                    (0.0, 0.0)
+                };
+
+                // Total offset = base (from previous drags + zoom adjustments) + current drag + resize adjustment
                 let base = base_offset.get_value();
                 let current = current_drag_offset.get_value();
-                let total_offset = (base.0 + current.0, base.1 + current.1);
+                let total_offset = (
+                    base.0 + current.0 + size_offset.0,
+                    base.1 + current.1 + size_offset.1,
+                );
 
                 let zoom = accumulated_zoom.get_value();
 
@@ -249,6 +272,7 @@ where
         if let Some(canvas) = canvas_ref.get_untracked() {
             if let Ok(image_data) = capture_canvas_image_data(&canvas) {
                 initial_image_data.set_value(Some(image_data));
+                initial_canvas_size.set_value(Some((canvas.width(), canvas.height())));
                 base_offset.set_value((0.0, 0.0));
                 current_drag_offset.set_value((0.0, 0.0));
                 accumulated_zoom.set_value(1.0);
@@ -266,6 +290,7 @@ where
         }
 
         is_zooming.set(false);
+        is_resizing.set(false);
 
         // Build final result from total accumulated offset
         let base = base_offset.get_value();
@@ -420,12 +445,33 @@ where
         restart_timeout_clone2.with_value(|f| f());
     };
 
+    // Canvas resize handler
+    let restart_timeout_clone3 = store_value(restart_timeout);
+    let on_canvas_resize = move |_new_width: u32, _new_height: u32| {
+        // Start interaction if not already started (captures current ImageData and canvas size)
+        if !is_dragging.get_untracked()
+            && !is_zooming.get_untracked()
+            && !is_resizing.get_untracked()
+        {
+            start_interaction();
+        }
+
+        // Mark that we're resizing
+        // The RAF loop will automatically calculate offset adjustments based on
+        // the difference between initial_canvas_size and current canvas size
+        is_resizing.set(true);
+
+        // Restart timeout - if user keeps resizing, we keep delaying the final callback
+        restart_timeout_clone3.with_value(|f| f());
+    };
+
     InteractionHandle {
         is_interacting: Signal::derive(move || is_interacting.get()),
         on_pointer_down: Rc::new(on_pointer_down),
         on_pointer_move: Rc::new(on_pointer_move),
         on_pointer_up: Rc::new(on_pointer_up),
         on_wheel: Rc::new(on_wheel),
+        on_canvas_resize: Rc::new(on_canvas_resize),
         reset: Rc::new(reset),
     }
 }

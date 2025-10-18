@@ -101,6 +101,55 @@ pub fn TestImageView() -> impl IntoView {
         }
     });
 
+    // Handle window resize
+    create_effect({
+        let on_canvas_resize = handle.on_canvas_resize.clone();
+        move |_| {
+            if let Some(canvas) = canvas_ref.get() {
+                use wasm_bindgen::closure::Closure;
+                use wasm_bindgen::JsCast;
+
+                let canvas_clone = canvas.clone();
+                let on_canvas_resize = on_canvas_resize.clone();
+
+                let resize_handler = Closure::wrap(Box::new(move || {
+                    let window = web_sys::window().expect("should have window");
+                    let new_width = window.inner_width().unwrap().as_f64().unwrap() as u32;
+                    let new_height = window.inner_height().unwrap().as_f64().unwrap() as u32;
+
+                    // Get old dimensions before setting new ones
+                    let old_width = canvas_clone.width();
+                    let old_height = canvas_clone.height();
+
+                    // Only process if size actually changed
+                    if old_width != new_width || old_height != new_height {
+                        // Notify the interaction hook BEFORE changing canvas size
+                        // This captures current ImageData and marks us as "interacting"
+                        (on_canvas_resize)(new_width, new_height);
+
+                        // Update canvas dimensions
+                        // Note: This clears the canvas! But we're now "interacting", so RAF loop will re-draw
+                        canvas_clone.set_width(new_width);
+                        canvas_clone.set_height(new_height);
+
+                        // The RAF loop will automatically re-draw the captured ImageData preview
+                        // with proper centering adjustments for the new canvas size
+                    }
+                }) as Box<dyn Fn() + 'static>);
+
+                web_sys::window()
+                    .expect("should have window")
+                    .add_event_listener_with_callback(
+                        "resize",
+                        resize_handler.as_ref().unchecked_ref(),
+                    )
+                    .expect("should add resize listener");
+
+                resize_handler.forget();
+            }
+        }
+    });
+
     // Manually attach wheel event listener with passive: false
     // This is required to allow preventDefault() on wheel events
     create_effect({
