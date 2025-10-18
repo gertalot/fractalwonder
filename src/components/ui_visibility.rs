@@ -12,7 +12,7 @@ pub fn use_ui_visibility() -> (
     let (is_visible, set_is_visible) = create_signal(true);
     let (is_hovering, set_is_hovering) = create_signal(false);
 
-    // Create a timer that fires after 4 seconds
+    // Create a timer that fires after 3 seconds
     let timeout_fn = leptos_use::use_timeout_fn(
         move |_| {
             // Only hide if not hovering over UI
@@ -32,6 +32,8 @@ pub fn use_ui_visibility() -> (
         leptos::ev::mousemove,
         move |_| {
             set_is_visible.set(true);
+            // Cancel previous timer before starting new one to prevent flickering
+            (timeout_fn.stop)();
             (timeout_fn.start)(());
         },
     );
