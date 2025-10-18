@@ -173,8 +173,8 @@ where
     // Stop interaction handler - builds TransformResult and fires callback
     let on_interaction_end = store_value(on_interaction_end);
     let stop_interaction = move || {
-        // Don't stop if still dragging
-        if is_dragging.get() {
+        // Don't stop if still dragging (use get_untracked since we're in a timeout callback)
+        if is_dragging.get_untracked() {
             return;
         }
 
@@ -239,7 +239,7 @@ where
 
     // Pointer move handler
     let on_pointer_move = move |ev: web_sys::PointerEvent| {
-        if !is_dragging.get() {
+        if !is_dragging.get_untracked() {
             return;
         }
 
@@ -263,8 +263,8 @@ where
     let on_wheel = move |ev: web_sys::WheelEvent| {
         ev.prevent_default();
 
-        // Start interaction if not already started
-        if !is_dragging.get() && !is_zooming.get() {
+        // Start interaction if not already started (use get_untracked since we're in an event handler)
+        if !is_dragging.get_untracked() && !is_zooming.get_untracked() {
             start_interaction();
         }
 

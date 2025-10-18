@@ -1,11 +1,11 @@
-use crate::components::canvas::Canvas;
+use crate::hooks::use_canvas_interaction::{use_canvas_interaction, TransformResult};
 use crate::rendering::{
     coords::{ImageCoord, ImageRect, PixelCoord},
     renderer_trait::CanvasRenderer,
     transforms::pixel_to_image,
-    viewport::Viewport,
 };
 use leptos::*;
+use wasm_bindgen::JsValue;
 
 pub struct TestImageRenderer {
     checkerboard_size: f64,
@@ -77,16 +77,94 @@ impl CanvasRenderer for TestImageRenderer {
 
 #[component]
 pub fn TestImageView() -> impl IntoView {
-    let renderer = TestImageRenderer::new();
+    let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
-    // Initialize viewport - center at (0,0), zoom 1.0 shows full natural bounds
-    let (viewport, _set_viewport) = create_signal(Viewport {
-        center: ImageCoord::new(0.0, 0.0),
-        zoom: 1.0,
-        natural_bounds: renderer.natural_bounds(),
+    // Set up interaction hook with console logging
+    let handle = use_canvas_interaction(canvas_ref, move |result: TransformResult| {
+        let msg = format!(
+            "Interaction ended: offset=({:.2}, {:.2}), zoom={:.4}, matrix={:?}",
+            result.offset_x, result.offset_y, result.zoom_factor, result.matrix
+        );
+        web_sys::console::log_1(&JsValue::from_str(&msg));
+        // TODO: Trigger full re-render with transformation
     });
 
-    view! { <Canvas renderer=renderer viewport=viewport /> }
+    // Initialize canvas on mount
+    create_effect(move |_| {
+        if let Some(canvas) = canvas_ref.get() {
+            let window = web_sys::window().expect("should have window");
+            canvas.set_width(window.inner_width().unwrap().as_f64().unwrap() as u32);
+            canvas.set_height(window.inner_height().unwrap().as_f64().unwrap() as u32);
+
+            // Initial render - draw test pattern
+            render_test_pattern(&canvas);
+        }
+    });
+
+    view! {
+        <div class="relative w-full h-full">
+            <canvas
+                node_ref=canvas_ref
+                class="block w-full h-full"
+                on:pointerdown=move |ev| (handle.on_pointer_down)(ev)
+                on:pointermove=move |ev| (handle.on_pointer_move)(ev)
+                on:pointerup=move |ev| (handle.on_pointer_up)(ev)
+                on:wheel=move |ev| (handle.on_wheel)(ev)
+                style="touch-action: none; cursor: grab;"
+            />
+            <Show when=move || handle.is_interacting.get()>
+                <div class="absolute top-4 left-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg">
+                    "Interacting..."
+                </div>
+            </Show>
+        </div>
+    }
+}
+
+// Helper function to render the test pattern on canvas
+fn render_test_pattern(canvas: &web_sys::HtmlCanvasElement) {
+    use wasm_bindgen::JsCast;
+    use web_sys::CanvasRenderingContext2d;
+
+    let context = canvas
+        .get_context("2d")
+        .expect("should get 2d context")
+        .expect("context should not be null")
+        .dyn_into::<CanvasRenderingContext2d>()
+        .expect("should cast to CanvasRenderingContext2d");
+
+    let width = canvas.width();
+    let height = canvas.height();
+
+    // Create a simple test pattern
+    let renderer = TestImageRenderer::new();
+    let bounds = renderer.natural_bounds();
+
+    // Calculate visible bounds (centered at origin, zoom 1.0)
+    use crate::rendering::{transforms::calculate_visible_bounds, viewport::Viewport};
+
+    let viewport = Viewport {
+        center: ImageCoord::new(0.0, 0.0),
+        zoom: 1.0,
+        natural_bounds: bounds,
+    };
+
+    let visible_bounds = calculate_visible_bounds(&viewport, width, height);
+
+    // Render the pattern
+    let pixel_data = renderer.render(&visible_bounds, width, height);
+
+    // Put pixels on canvas
+    let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
+        wasm_bindgen::Clamped(&pixel_data),
+        width,
+        height,
+    )
+    .expect("should create ImageData");
+
+    context
+        .put_image_data(&image_data, 0.0, 0.0)
+        .expect("should put image data");
 }
 
 #[cfg(test)]
