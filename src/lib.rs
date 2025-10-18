@@ -1,5 +1,6 @@
 mod app;
 mod components;
+pub mod hooks;
 pub mod rendering;
 
 use leptos::*;
