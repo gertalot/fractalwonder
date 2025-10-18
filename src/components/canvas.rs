@@ -1,5 +1,3 @@
-// ABOUTME: Full-screen canvas component with checkerboard placeholder pattern
-// ABOUTME: Handles canvas sizing and rendering, responds to window resize events
 
 use leptos::html::Canvas;
 use leptos::*;

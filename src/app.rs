@@ -1,5 +1,3 @@
-// ABOUTME: Main application component that combines Canvas and UI
-// ABOUTME: Manages UI visibility state and wires together the full application structure
 
 use leptos::*;
 

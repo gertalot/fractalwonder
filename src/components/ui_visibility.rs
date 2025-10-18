@@ -1,6 +1,3 @@
-// ABOUTME: UI visibility logic - auto-hide/show behavior for the bottom UI bar
-// ABOUTME: Shows UI on mouse movement, hides after 4 seconds unless hovering over UI
-
 use leptos::*;
 
 const UI_HIDE_DELAY_MS: u64 = 3000;

@@ -1,6 +1,3 @@
-// ABOUTME: Bottom UI bar component with auto-hide functionality
-// ABOUTME: Displays fractal parameters and controls (currently placeholder text)
-
 use leptos::*;
 
 #[component]

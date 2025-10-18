@@ -1,5 +1,3 @@
-// ABOUTME: Library entry point for the Fractal Wonder WASM application
-// ABOUTME: Re-exports the main App component and provides the hydrate function for browser mounting
 
 mod app;
 mod components;
