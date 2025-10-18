@@ -2,7 +2,10 @@
 use crate::rendering::{
     coords::{ImageCoord, ImageRect},
     renderer_trait::CanvasRenderer,
+    viewport::Viewport,
 };
+use crate::components::canvas::Canvas;
+use leptos::*;
 
 pub struct TestImageRenderer {
     checkerboard_size: f64,
@@ -72,6 +75,20 @@ impl CanvasRenderer for TestImageRenderer {
 
         pixels
     }
+}
+
+#[component]
+pub fn TestImageView() -> impl IntoView {
+    let renderer = TestImageRenderer::new();
+
+    // Initialize viewport - center at (0,0), zoom 1.0 shows full natural bounds
+    let (viewport, _set_viewport) = create_signal(Viewport {
+        center: ImageCoord::new(0.0, 0.0),
+        zoom: 1.0,
+        natural_bounds: renderer.natural_bounds(),
+    });
+
+    view! { <Canvas renderer=renderer viewport=viewport /> }
 }
 
 #[cfg(test)]

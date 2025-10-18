@@ -20,34 +20,40 @@ where
 {
     let canvas_ref = NodeRef::<Canvas>::new();
 
-    // Main render function
-    let render = move || {
-        let canvas = canvas_ref.get().expect("canvas element should be mounted");
-        let canvas_element: HtmlCanvasElement = (*canvas).clone().unchecked_into();
+    // Create a signal to trigger renders
+    let (render_trigger, set_render_trigger) = create_signal(());
 
-        let context = canvas_element
-            .get_context("2d")
-            .expect("should get 2d context")
-            .expect("context should not be null")
-            .dyn_into::<CanvasRenderingContext2d>()
-            .expect("should cast to CanvasRenderingContext2d");
+    // Main render effect
+    create_effect(move |_| {
+        render_trigger.track(); // Track render trigger
 
-        let width = canvas_element.width();
-        let height = canvas_element.height();
+        if let Some(canvas) = canvas_ref.get() {
+            let canvas_element: HtmlCanvasElement = (*canvas).clone().unchecked_into();
 
-        // Calculate what image-space rectangle is visible
-        let visible_bounds = calculate_visible_bounds(&viewport.get(), width, height);
+            let context = canvas_element
+                .get_context("2d")
+                .expect("should get 2d context")
+                .expect("context should not be null")
+                .dyn_into::<CanvasRenderingContext2d>()
+                .expect("should cast to CanvasRenderingContext2d");
 
-        // Ask renderer for pixel data
-        let pixel_data = renderer.render(&visible_bounds, width, height);
+            let width = canvas_element.width();
+            let height = canvas_element.height();
 
-        // Put pixels on canvas
-        let image_data =
-            ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&pixel_data), width, height)
-                .expect("should create ImageData");
+            // Calculate what image-space rectangle is visible
+            let visible_bounds = calculate_visible_bounds(&viewport.get(), width, height);
 
-        context.put_image_data(&image_data, 0.0, 0.0).expect("should put image data");
-    };
+            // Ask renderer for pixel data
+            let pixel_data = renderer.render(&visible_bounds, width, height);
+
+            // Put pixels on canvas
+            let image_data =
+                ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&pixel_data), width, height)
+                    .expect("should create ImageData");
+
+            context.put_image_data(&image_data, 0.0, 0.0).expect("should put image data");
+        }
+    });
 
     // Initialize canvas on mount
     create_effect(move |_| {
@@ -59,7 +65,7 @@ where
             canvas_element.set_width(window.inner_width().unwrap().as_f64().unwrap() as u32);
             canvas_element.set_height(window.inner_height().unwrap().as_f64().unwrap() as u32);
 
-            render();
+            set_render_trigger.set(());
         }
     });
 
@@ -67,7 +73,7 @@ where
     create_effect(move |_| {
         viewport.track(); // Track viewport signal
         if canvas_ref.get().is_some() {
-            render();
+            set_render_trigger.set(());
         }
     });
 
@@ -80,7 +86,7 @@ where
             canvas_element.set_width(window.inner_width().unwrap().as_f64().unwrap() as u32);
             canvas_element.set_height(window.inner_height().unwrap().as_f64().unwrap() as u32);
 
-            render();
+            set_render_trigger.set(());
         }
     };
 
