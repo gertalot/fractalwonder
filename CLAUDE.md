@@ -59,7 +59,7 @@ The dev server runs at `http://localhost:8080` with automatic hot-reload. Trunk 
 cargo fmt --all -- --check
 
 # Run Clippy, the Rust linting tool
-cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings -W clippy::all
 
 # Check for compile/build errors
 cargo check --workspace --all-targets --all-features
@@ -76,6 +76,10 @@ cargo test components::
 # WASM browser tests (when available)
 wasm-pack test --headless --chrome
 ```
+
+### browser and interaction testing
+
+Use the chrome-devtools MCP and navigate to http://localhost:8080/
 
 ### Building
 
