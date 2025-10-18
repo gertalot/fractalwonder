@@ -1,8 +1,5 @@
-// ABOUTME: Comprehensive integration tests for PerturbationMandelbrotAlgorithm
-// ABOUTME: Tests full algorithm pipeline at extreme zoom levels to catch precision bugs
-
-import { beforeEach, describe, expect, it } from "vitest";
 import { Decimal } from "decimal.js";
+import { beforeEach, describe, expect, it } from "vitest";
 import { mandelbrotAlgorithm } from "./mandelbrot";
 import { PerturbationMandelbrotAlgorithm } from "./perturbation-mandelbrot";
 
@@ -33,7 +30,7 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
         // Generate random pixel coordinates around center
         const offsetX = (Math.random() - 0.5) * 100; // ±50 pixels
         const offsetY = (Math.random() - 0.5) * 100;
-        
+
         // Convert to fractal coordinates using the same method as compute-chunk.ts
         const scale = 4 / 1080 / zoom.toNumber(); // INITIAL_FRACTAL_VIEW_HEIGHT / canvasHeight / zoom
         const real = center.x + offsetX * scale;
@@ -51,18 +48,19 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
 
       // Check for blockiness: adjacent pixels should have smoothly varying iteration counts
       // Blockiness would show up as many pixels having identical iteration counts
-      const iterationCounts = testPixels.map(p => p.iter);
+      const iterationCounts = testPixels.map((p) => p.iter);
       const uniqueCounts = new Set(iterationCounts);
       const uniqueRatio = uniqueCounts.size / iterationCounts.length;
 
       // At least 80% of pixels should have different iteration counts (proves it's not blocky)
       expect(uniqueRatio).toBeGreaterThan(0.8);
-      
+
       // Standard deviation should be reasonable (not too low = blocky, not too high = chaotic)
       const mean = iterationCounts.reduce((a, b) => a + b, 0) / iterationCounts.length;
-      const variance = iterationCounts.reduce((sum, iter) => sum + Math.pow(iter - mean, 2), 0) / iterationCounts.length;
+      const variance =
+        iterationCounts.reduce((sum, iter) => sum + Math.pow(iter - mean, 2), 0) / iterationCounts.length;
       const stddev = Math.sqrt(variance);
-      
+
       // Should have reasonable variation (not all identical, not completely random)
       expect(stddev).toBeGreaterThan(10);
       expect(stddev).toBeLessThan(500);
@@ -87,7 +85,7 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
       for (let i = 0; i < 50; i++) {
         const offsetX = (Math.random() - 0.5) * 20; // ±10 pixels
         const offsetY = (Math.random() - 0.5) * 20;
-        
+
         const scale = 4 / 1080 / zoom;
         const real = center.x + offsetX * scale;
         const imag = center.y + offsetY * scale;
@@ -100,7 +98,7 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
         });
       }
 
-      const iterationCounts = testPixels.map(p => p.iter);
+      const iterationCounts = testPixels.map((p) => p.iter);
       const uniqueCounts = new Set(iterationCounts);
       const uniqueRatio = uniqueCounts.size / iterationCounts.length;
 
@@ -127,7 +125,7 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
       for (let i = 0; i < 1000; i++) {
         const offsetX = (Math.random() - 0.5) * 1920; // Full canvas width
         const offsetY = (Math.random() - 0.5) * 1080; // Full canvas height
-        
+
         const scale = 4 / 1080 / zoom;
         const real = center.x + offsetX * scale;
         const imag = center.y + offsetY * scale;
@@ -148,7 +146,7 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
 
       // Should have zero mismatches at zoom 1
       expect(mismatches.length).toBe(0);
-      
+
       if (mismatches.length > 0) {
         console.log(`Found ${mismatches.length} mismatches at zoom 1:`, mismatches.slice(0, 5));
       }
@@ -156,7 +154,7 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
 
     it("should handle zoom levels 1, 10^3, 10^6, 10^9, 10^12, 10^15 without crashing", () => {
       const center = { x: -0.75, y: 0.1 };
-      const zoomLevels = [1, 1e3, 1e6, 1e9, 1e12, 1e15].map(z => new Decimal(z));
+      const zoomLevels = [1, 1e3, 1e6, 1e9, 1e12, 1e15].map((z) => new Decimal(z));
       const maxIterations = 100;
 
       for (const zoom of zoomLevels) {
@@ -170,7 +168,7 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
         for (let i = 0; i < 10; i++) {
           const offsetX = (Math.random() - 0.5) * 100;
           const offsetY = (Math.random() - 0.5) * 100;
-          
+
           const scale = 4 / 1080 / zoom;
           const real = center.x + offsetX * scale;
           const imag = center.y + offsetY * scale;
@@ -206,7 +204,7 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
       // Calculate deltaC the same way the algorithm does
       const real = center.x + scale; // 1 pixel offset in x
       const imag = center.y + scale; // 1 pixel offset in y
-      
+
       const deltaC = {
         real: real - center.x,
         imag: imag - center.y,
@@ -216,10 +214,10 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
 
       // The magnitude should be preserved (not lost to rounding)
       expect(actualDeltaCMagnitude).toBeCloseTo(expectedDeltaCMagnitude, 10);
-      
+
       console.log(`Expected deltaC magnitude: ${expectedDeltaCMagnitude.toExponential(3)}`);
       console.log(`Actual deltaC magnitude: ${actualDeltaCMagnitude.toExponential(3)}`);
-      
+
       // At this zoom level, if precision is lost, deltaC would be ~0
       expect(actualDeltaCMagnitude).toBeGreaterThan(1e-15);
     });
@@ -240,11 +238,11 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
       // Test multiple pixel offsets
       const scale = 4 / 1080 / zoom;
       const offsets = [1, 2, 5, 10, 20]; // pixel offsets
-      
+
       for (const offset of offsets) {
         const real = center.x + offset * scale;
         const imag = center.y + offset * scale;
-        
+
         const deltaC = {
           real: real - center.x,
           imag: imag - center.y,
@@ -255,11 +253,11 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
 
         // If catastrophic cancellation occurs, deltaC magnitude will be much smaller than expected
         const ratio = deltaCMagnitude / expectedMagnitude;
-        
+
         // Ratio should be close to 1.0 (no precision loss)
         // Current broken implementation will have ratio << 1.0
         expect(ratio).toBeGreaterThan(0.9);
-        
+
         console.log(`Offset ${offset}px: ratio=${ratio.toFixed(3)}, deltaC=${deltaCMagnitude.toExponential(3)}`);
       }
     });
@@ -284,7 +282,7 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
       for (let i = 0; i < sampleSize; i++) {
         const x = (i % 1920) - 960; // -960 to 959
         const y = Math.floor(i / 1920) - 540; // -540 to 539
-        
+
         const scale = 4 / 1080 / zoom;
         const real = center.x + x * scale;
         const imag = center.y + y * scale;
@@ -294,16 +292,18 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
 
       const duration = performance.now() - start;
       const pixelsPerSecond = (sampleSize / duration) * 1000;
-      
+
       // Should be able to process at least 30,000 pixels/second
       expect(pixelsPerSecond).toBeGreaterThan(30000);
-      
-      console.log(`Performance: ${pixelsPerSecond.toFixed(0)} pixels/sec (${duration.toFixed(1)}ms for ${sampleSize} pixels)`);
-      
+
+      console.log(
+        `Performance: ${pixelsPerSecond.toFixed(0)} pixels/sec (${duration.toFixed(1)}ms for ${sampleSize} pixels)`
+      );
+
       // Extrapolate to full frame
       const fullFrameTime = (1920 * 1080) / pixelsPerSecond;
       console.log(`Extrapolated full frame time: ${fullFrameTime.toFixed(1)}s`);
-      
+
       // Should complete full frame in under 60 seconds
       expect(fullFrameTime).toBeLessThan(60);
     });
@@ -334,7 +334,11 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
       const expectedDeltaC = scale;
       expect(expectedDeltaC).toBeGreaterThan(1e-15); // Should be preserved
 
-      console.log(`1 pixel offset at zoom ${zoom.toExponential(1)}: deltaC=${expectedDeltaC.toExponential(3)}, escape=${result.iter}`);
+      console.log(
+        `1 pixel offset at zoom ${zoom.toExponential(1)}: deltaC=${expectedDeltaC.toExponential(3)}, escape=${
+          result.iter
+        }`
+      );
     });
 
     it("should produce different results for different pixel offsets", () => {
@@ -361,7 +365,7 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
       }
 
       // Should have some variation (not all identical)
-      const iterationCounts = results.map(r => r.iter);
+      const iterationCounts = results.map((r) => r.iter);
       const uniqueCounts = new Set(iterationCounts);
       const uniqueRatio = uniqueCounts.size / iterationCounts.length;
 
@@ -427,7 +431,7 @@ describe("PerturbationMandelbrotAlgorithm - Integration Tests", () => {
       });
 
       const scale = 4 / 1080 / zoom;
-      
+
       // Center pixel (offset 0, 0)
       const result = algorithm.computePointFromOffset(0, 0, scale, maxIterations);
 

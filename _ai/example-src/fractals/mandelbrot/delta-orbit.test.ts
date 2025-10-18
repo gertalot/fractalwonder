@@ -1,6 +1,3 @@
-// ABOUTME: Unit tests for fast standard-precision delta orbit calculation
-// ABOUTME: Verifies correctness against direct calculation and performance benchmarks
-
 import { Decimal } from "decimal.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import { calculateDeltaOrbit, calculateDeltaOrbitWithData } from "./delta-orbit";
@@ -157,7 +154,7 @@ describe("delta-orbit: Fast Standard-Precision Delta Orbit Calculation", () => {
 
       // Should escape (nearby point also escapes)
       expect(result.escapeIteration).toBeGreaterThanOrEqual(0);
-      
+
       // Should be close to reference escape iteration (within a few iterations)
       const diff = Math.abs(result.escapeIteration - referenceOrbit.escapeIteration);
       expect(diff).toBeLessThanOrEqual(5);
@@ -228,7 +225,11 @@ describe("delta-orbit: Fast Standard-Precision Delta Orbit Calculation", () => {
       // Delta should be at least 50x faster
       const speedup = hpTime / deltaTime;
       expect(speedup).toBeGreaterThanOrEqual(50);
-      console.log(`Performance: Delta orbits ${speedup.toFixed(0)}x faster than high-precision (${deltaTime.toFixed(1)}ms vs ${hpTime.toFixed(1)}ms)`);
+      console.log(
+        `Performance: Delta orbits ${speedup.toFixed(0)}x faster than high-precision (${deltaTime.toFixed(
+          1
+        )}ms vs ${hpTime.toFixed(1)}ms)`
+      );
     });
 
     it("should handle 1 million delta orbit calculations in < 1 second", () => {
@@ -248,7 +249,9 @@ describe("delta-orbit: Fast Standard-Precision Delta Orbit Calculation", () => {
 
       expect(duration).toBeLessThan(1000);
       const pixelsPerSecond = (1000000 / duration) * 1000;
-      console.log(`1 million delta orbits in ${duration.toFixed(0)}ms (${(pixelsPerSecond / 1e6).toFixed(1)}M pixels/sec)`);
+      console.log(
+        `1 million delta orbits in ${duration.toFixed(0)}ms (${(pixelsPerSecond / 1e6).toFixed(1)}M pixels/sec)`
+      );
     });
   });
 
@@ -294,19 +297,19 @@ describe("delta-orbit: Fast Standard-Precision Delta Orbit Calculation", () => {
     it("should validate smooth iteration gradients at zoom 10^15", () => {
       // Test that delta orbit produces smooth gradients for neighboring pixels
       // This catches the precision bug that causes blockiness
-      
+
       const center = createComplexHP(-1.4845895199757433, -6.96e-8);
       const maxIterations = 1000;
       const referenceOrbit = calculateReferenceOrbit(center, maxIterations);
 
       // Test a grid of neighboring pixels
       const testOffsets = [
-        { real: 0, imag: 0 },           // center
-        { real: 1e-15, imag: 0 },      // +1e-15 in real
-        { real: 0, imag: 1e-15 },      // +1e-15 in imag
-        { real: 1e-15, imag: 1e-15 },  // +1e-15 in both
-        { real: 2e-15, imag: 0 },      // +2e-15 in real
-        { real: 0, imag: 2e-15 },      // +2e-15 in imag
+        { real: 0, imag: 0 }, // center
+        { real: 1e-15, imag: 0 }, // +1e-15 in real
+        { real: 0, imag: 1e-15 }, // +1e-15 in imag
+        { real: 1e-15, imag: 1e-15 }, // +1e-15 in both
+        { real: 2e-15, imag: 0 }, // +2e-15 in real
+        { real: 0, imag: 2e-15 }, // +2e-15 in imag
       ];
 
       const results = [];
@@ -319,18 +322,19 @@ describe("delta-orbit: Fast Standard-Precision Delta Orbit Calculation", () => {
       }
 
       // Check for smooth gradients: adjacent pixels should have similar iteration counts
-      const iterationCounts = results.map(r => r.escapeIter);
+      const iterationCounts = results.map((r) => r.escapeIter);
       const uniqueCounts = new Set(iterationCounts);
       const uniqueRatio = uniqueCounts.size / iterationCounts.length;
 
       // Should have some variation (not all identical)
       expect(uniqueRatio).toBeGreaterThan(0.3);
-      
+
       // But not too much variation (should be smooth, not chaotic)
       const mean = iterationCounts.reduce((a, b) => a + b, 0) / iterationCounts.length;
-      const variance = iterationCounts.reduce((sum, iter) => sum + Math.pow(iter - mean, 2), 0) / iterationCounts.length;
+      const variance =
+        iterationCounts.reduce((sum, iter) => sum + Math.pow(iter - mean, 2), 0) / iterationCounts.length;
       const stddev = Math.sqrt(variance);
-      
+
       // Standard deviation should be reasonable
       expect(stddev).toBeGreaterThan(0);
       expect(stddev).toBeLessThan(100);
@@ -354,16 +358,16 @@ describe("delta-orbit: Fast Standard-Precision Delta Orbit Calculation", () => {
 
       for (const deltaC of extremeDeltaCValues) {
         const escapeIter = calculateDeltaOrbit(referenceOrbit, deltaC, maxIterations);
-        
+
         // Should not crash or return NaN
         expect(escapeIter).toBeGreaterThanOrEqual(-1);
         expect(escapeIter).toBeLessThanOrEqual(maxIterations);
         expect(escapeIter).not.toBeNaN();
-        
+
         // Should be close to reference escape iteration
         const diff = Math.abs(escapeIter - referenceOrbit.escapeIteration);
         expect(diff).toBeLessThanOrEqual(5);
-        
+
         console.log(`DeltaC ${deltaC.real.toExponential(2)}, ${deltaC.imag.toExponential(2)}: escape=${escapeIter}`);
       }
     });
@@ -371,28 +375,32 @@ describe("delta-orbit: Fast Standard-Precision Delta Orbit Calculation", () => {
     it("should validate precision preservation at multiple zoom levels", () => {
       const center = createComplexHP(-1.4845895199757433, -6.96e-8);
       const maxIterations = 100;
-      
+
       const zoomLevels = [1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15];
-      
+
       for (const zoom of zoomLevels) {
         // Set precision based on zoom level
         const precision = Math.max(30, Math.ceil(Math.log10(zoom) * 2.5 + 20));
         Decimal.set({ precision });
-        
+
         const referenceOrbit = calculateReferenceOrbit(center, maxIterations);
-        
+
         // Test deltaC that corresponds to 1 pixel offset at this zoom
         const scale = 4 / 1080 / zoom; // Same as pixelToFractalCoordinate
         const deltaC: ComplexStd = { real: scale, imag: scale };
-        
+
         const escapeIter = calculateDeltaOrbit(referenceOrbit, deltaC, maxIterations);
-        
+
         // Should produce reasonable results
         expect(escapeIter).toBeGreaterThanOrEqual(-1);
         expect(escapeIter).toBeLessThanOrEqual(maxIterations);
         expect(escapeIter).not.toBeNaN();
-        
-        console.log(`Zoom ${zoom.toExponential(1)}: precision=${precision}, deltaC=${deltaC.real.toExponential(3)}, escape=${escapeIter}`);
+
+        console.log(
+          `Zoom ${zoom.toExponential(1)}: precision=${precision}, deltaC=${deltaC.real.toExponential(
+            3
+          )}, escape=${escapeIter}`
+        );
       }
     });
 
@@ -405,12 +413,12 @@ describe("delta-orbit: Fast Standard-Precision Delta Orbit Calculation", () => {
       // Test a larger grid to detect blockiness patterns
       const gridSize = 10;
       const results = [];
-      
+
       for (let i = 0; i < gridSize; i++) {
         for (let j = 0; j < gridSize; j++) {
-          const deltaC: ComplexStd = { 
-            real: i * 1e-15, 
-            imag: j * 1e-15 
+          const deltaC: ComplexStd = {
+            real: i * 1e-15,
+            imag: j * 1e-15,
           };
           const escapeIter = calculateDeltaOrbit(referenceOrbit, deltaC, maxIterations);
           results.push(escapeIter);
@@ -420,11 +428,11 @@ describe("delta-orbit: Fast Standard-Precision Delta Orbit Calculation", () => {
       // Analyze the pattern for blockiness
       const uniqueCounts = new Set(results);
       const uniqueRatio = uniqueCounts.size / results.length;
-      
+
       // Count consecutive identical values (indicates blockiness)
       let consecutiveIdentical = 0;
       let maxConsecutive = 0;
-      
+
       for (let i = 1; i < results.length; i++) {
         if (results[i] === results[i - 1]) {
           consecutiveIdentical++;
@@ -436,12 +444,11 @@ describe("delta-orbit: Fast Standard-Precision Delta Orbit Calculation", () => {
 
       // Should not have too many consecutive identical values (indicates blockiness)
       expect(maxConsecutive).toBeLessThan(gridSize); // Not entire rows identical
-      
+
       // Should have reasonable variation
       expect(uniqueRatio).toBeGreaterThan(0.1);
-      
+
       console.log(`Blockiness test: ${uniqueRatio.toFixed(2)} unique ratios, max consecutive=${maxConsecutive}`);
     });
   });
 });
-

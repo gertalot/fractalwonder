@@ -1,6 +1,3 @@
-// ABOUTME: Performance benchmark tests for perturbation vs standard algorithms
-// ABOUTME: Verifies perturbation is ≥50x faster than full high-precision at extreme zoom
-
 import { Decimal } from "decimal.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createComplexHP } from "../../mandelbrot/hp-math";
@@ -35,7 +32,7 @@ describe("Performance Benchmark Tests", () => {
       for (let i = 0; i < testPixels; i++) {
         const offsetX = (Math.random() - 0.5) * 100;
         const offsetY = (Math.random() - 0.5) * 100;
-        
+
         const scale = 4 / 1080 / zoom.toNumber();
         const real = center.x + offsetX * scale;
         const imag = center.y + offsetY * scale;
@@ -48,18 +45,18 @@ describe("Performance Benchmark Tests", () => {
       const standardStart = performance.now();
       let standardTime = 0;
       let standardPixels = 0;
-      
+
       for (let i = 0; i < testPixels; i++) {
         const offsetX = (Math.random() - 0.5) * 100;
         const offsetY = (Math.random() - 0.5) * 100;
-        
+
         const scale = 4 / 1080 / zoom.toNumber();
         const real = center.x + offsetX * scale;
         const imag = center.y + offsetY * scale;
 
         mandelbrotAlgorithm.computePoint(real, imag, maxIterations);
         standardPixels++;
-        
+
         // Stop if taking too long (more than 30 seconds)
         if (performance.now() - standardStart > 30000) {
           break;
@@ -73,8 +70,16 @@ describe("Performance Benchmark Tests", () => {
       const speedup = standardPixelsPerSecond > 0 ? perturbationPixelsPerSecond / standardPixelsPerSecond : 0;
 
       console.log(`Performance at zoom ${zoom.toExponential(1)}:`);
-      console.log(`  Perturbation: ${perturbationPixelsPerSecond.toFixed(0)} pixels/sec (${perturbationTime.toFixed(1)}ms for ${testPixels} pixels)`);
-      console.log(`  Standard: ${standardPixelsPerSecond.toFixed(0)} pixels/sec (${standardTime.toFixed(1)}ms for ${standardPixels} pixels)`);
+      console.log(
+        `  Perturbation: ${perturbationPixelsPerSecond.toFixed(0)} pixels/sec (${perturbationTime.toFixed(
+          1
+        )}ms for ${testPixels} pixels)`
+      );
+      console.log(
+        `  Standard: ${standardPixelsPerSecond.toFixed(0)} pixels/sec (${standardTime.toFixed(
+          1
+        )}ms for ${standardPixels} pixels)`
+      );
       console.log(`  Speedup: ${speedup.toFixed(1)}x`);
 
       // Perturbation should be at least 50x faster
@@ -103,7 +108,7 @@ describe("Performance Benchmark Tests", () => {
       for (let i = 0; i < samplePixels; i++) {
         const x = (i % 1920) - 960; // -960 to 959
         const y = Math.floor(i / 1920) - 540; // -540 to 539
-        
+
         const scale = 4 / 1080 / zoom.toNumber();
         const real = center.x + x * scale;
         const imag = center.y + y * scale;
@@ -120,7 +125,7 @@ describe("Performance Benchmark Tests", () => {
 
       // Should complete full frame in under 60 seconds
       expect(extrapolatedFullFrameTime).toBeLessThan(60);
-      
+
       // Should process at least 30,000 pixels/sec
       expect(pixelsPerSecond).toBeGreaterThan(30000);
     });
@@ -143,7 +148,7 @@ describe("Performance Benchmark Tests", () => {
       for (let i = 0; i < testPixels; i++) {
         const offsetX = (Math.random() - 0.5) * 100;
         const offsetY = (Math.random() - 0.5) * 100;
-        
+
         const scale = 4 / 1080 / zoom.toNumber();
         const real = center.x + offsetX * scale;
         const imag = center.y + offsetY * scale;
@@ -157,7 +162,7 @@ describe("Performance Benchmark Tests", () => {
       for (let i = 0; i < testPixels; i++) {
         const offsetX = (Math.random() - 0.5) * 100;
         const offsetY = (Math.random() - 0.5) * 100;
-        
+
         const scale = 4 / 1080 / zoom.toNumber();
         const real = center.x + offsetX * scale;
         const imag = center.y + offsetY * scale;
@@ -173,7 +178,9 @@ describe("Performance Benchmark Tests", () => {
       const hpPixelsPerSecond = (testPixels / hpTime) * 1000;
 
       console.log(`High-precision comparison:`);
-      console.log(`  Perturbation: ${perturbationPixelsPerSecond.toFixed(0)} pixels/sec (${perturbationTime.toFixed(1)}ms)`);
+      console.log(
+        `  Perturbation: ${perturbationPixelsPerSecond.toFixed(0)} pixels/sec (${perturbationTime.toFixed(1)}ms)`
+      );
       console.log(`  High-precision: ${hpPixelsPerSecond.toFixed(0)} pixels/sec (${hpTime.toFixed(1)}ms)`);
       console.log(`  Speedup: ${speedup.toFixed(1)}x`);
 
@@ -185,7 +192,7 @@ describe("Performance Benchmark Tests", () => {
   describe("performance scaling with zoom", () => {
     it("should maintain performance across zoom levels", () => {
       const center = { x: -0.75, y: 0.1 };
-      const zoomLevels = [1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15].map(z => new Decimal(z));
+      const zoomLevels = [1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15].map((z) => new Decimal(z));
       const maxIterations = 100;
       const testPixels = 1000;
 
@@ -206,7 +213,7 @@ describe("Performance Benchmark Tests", () => {
         for (let i = 0; i < testPixels; i++) {
           const offsetX = (Math.random() - 0.5) * 100;
           const offsetY = (Math.random() - 0.5) * 100;
-          
+
           const scale = 4 / 1080 / zoom.toNumber();
           const real = center.x + offsetX * scale;
           const imag = center.y + offsetY * scale;
@@ -227,13 +234,13 @@ describe("Performance Benchmark Tests", () => {
       }
 
       // Performance should not degrade too much at higher zoom levels
-      const minPerformance = Math.min(...performanceResults.map(r => r.pixelsPerSecond));
-      const maxPerformance = Math.max(...performanceResults.map(r => r.pixelsPerSecond));
+      const minPerformance = Math.min(...performanceResults.map((r) => r.pixelsPerSecond));
+      const maxPerformance = Math.max(...performanceResults.map((r) => r.pixelsPerSecond));
       const performanceRatio = minPerformance / maxPerformance;
 
       // Should maintain at least 50% of performance across zoom levels
       expect(performanceRatio).toBeGreaterThan(0.5);
-      
+
       // All zoom levels should achieve at least 20,000 pixels/sec
       for (const result of performanceResults) {
         expect(result.pixelsPerSecond).toBeGreaterThan(20000);
@@ -250,7 +257,7 @@ describe("Performance Benchmark Tests", () => {
       const renderCount = 20;
 
       // Force garbage collection if available
-      if (typeof global !== 'undefined' && global.gc) {
+      if (typeof global !== "undefined" && global.gc) {
         global.gc();
       }
 
@@ -266,7 +273,7 @@ describe("Performance Benchmark Tests", () => {
         for (let i = 0; i < testPixels; i++) {
           const offsetX = (Math.random() - 0.5) * 100;
           const offsetY = (Math.random() - 0.5) * 100;
-          
+
           const scale = 4 / 1080 / zoom.toNumber();
           const real = center.x + offsetX * scale;
           const imag = center.y + offsetY * scale;
@@ -275,7 +282,7 @@ describe("Performance Benchmark Tests", () => {
         }
 
         // Force garbage collection if available
-        if (typeof global !== 'undefined' && global.gc) {
+        if (typeof global !== "undefined" && global.gc) {
           global.gc();
         }
       }
@@ -283,7 +290,13 @@ describe("Performance Benchmark Tests", () => {
       const finalMemory = process.memoryUsage?.() || { heapUsed: 0 };
       const memoryIncrease = finalMemory.heapUsed - initialMemory.heapUsed;
 
-      console.log(`Memory usage: ${(initialMemory.heapUsed / 1024 / 1024).toFixed(1)}MB → ${(finalMemory.heapUsed / 1024 / 1024).toFixed(1)}MB`);
+      console.log(
+        `Memory usage: ${(initialMemory.heapUsed / 1024 / 1024).toFixed(1)}MB → ${(
+          finalMemory.heapUsed /
+          1024 /
+          1024
+        ).toFixed(1)}MB`
+      );
       console.log(`Memory increase: ${(memoryIncrease / 1024 / 1024).toFixed(1)}MB`);
 
       // Memory increase should be reasonable (< 100MB for 20 renders)

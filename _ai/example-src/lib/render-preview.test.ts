@@ -1,4 +1,3 @@
-// ABOUTME: Test cases for precision in preview pixel computation at extreme zoom levels
 import { FractalParams } from "@/hooks/use-store";
 import { describe, expect, it } from "vitest";
 import { fractalToPixelCoordinateHP, pixelToFractalCoordinateHP } from "./coordinates";
@@ -24,12 +23,7 @@ describe("computePreviewPixelPosition", () => {
     const canvasWidth = 800;
     const canvasHeight = 600;
 
-    const result = computePreviewPixelPosition(
-      lastParams,
-      newParams,
-      canvasWidth,
-      canvasHeight
-    );
+    const result = computePreviewPixelPosition(lastParams, newParams, canvasWidth, canvasHeight);
 
     // The result should be finite and within reasonable bounds
     // At zoom 10^15, a tiny fractal center change should result in some pixel movement
@@ -57,18 +51,13 @@ describe("computePreviewPixelPosition", () => {
     for (let i = 0; i < 10; i++) {
       const newParams: FractalParams = {
         ...baseParams,
-        center: { 
+        center: {
           x: -1 + i * 1e-20, // Very small incremental changes
-          y: 0 
+          y: 0,
         },
       };
 
-      const result = computePreviewPixelPosition(
-        baseParams,
-        newParams,
-        canvasWidth,
-        canvasHeight
-      );
+      const result = computePreviewPixelPosition(baseParams, newParams, canvasWidth, canvasHeight);
       results.push(result.x);
     }
 
@@ -98,12 +87,7 @@ describe("computePreviewPixelPosition", () => {
     const canvasWidth = 800;
     const canvasHeight = 600;
 
-    const result = computePreviewPixelPosition(
-      lastParams,
-      newParams,
-      canvasWidth,
-      canvasHeight
-    );
+    const result = computePreviewPixelPosition(lastParams, newParams, canvasWidth, canvasHeight);
 
     // Should not throw errors and should return reasonable values
     expect(Number.isFinite(result.x)).toBe(true);
@@ -123,31 +107,19 @@ describe("Pixel ↔ Fractal Coordinate Round-trip Precision", () => {
 
     // Test multiple pixel positions
     const testPixels = [
-      { x: 0, y: 0 },           // Top-left
-      { x: 400, y: 300 },       // Center
-      { x: 800, y: 600 },       // Bottom-right
-      { x: 100, y: 200 },       // Random position
-      { x: 700, y: 500 },       // Another random position
+      { x: 0, y: 0 }, // Top-left
+      { x: 400, y: 300 }, // Center
+      { x: 800, y: 600 }, // Bottom-right
+      { x: 100, y: 200 }, // Random position
+      { x: 700, y: 500 }, // Another random position
     ];
 
     for (const originalPixel of testPixels) {
       // Convert pixel → fractal using high-precision functions
-      const fractalCoord = pixelToFractalCoordinateHP(
-        originalPixel,
-        width,
-        height,
-        center,
-        zoom
-      );
+      const fractalCoord = pixelToFractalCoordinateHP(originalPixel, width, height, center, zoom);
 
       // Convert fractal → pixel using high-precision functions
-      const roundTripPixel = fractalToPixelCoordinateHP(
-        fractalCoord,
-        width,
-        height,
-        center,
-        zoom
-      );
+      const roundTripPixel = fractalToPixelCoordinateHP(fractalCoord, width, height, center, zoom);
 
       // The round-trip should be very close to the original pixel
       // At zoom 10^15, we expect some precision loss, but it should be minimal
@@ -169,22 +141,10 @@ describe("Pixel ↔ Fractal Coordinate Round-trip Precision", () => {
 
     // Test center pixel (most critical for dragging)
     const originalPixel = { x: 400, y: 300 };
-    
-    const fractalCoord = pixelToFractalCoordinateHP(
-      originalPixel,
-      width,
-      height,
-      center,
-      zoom
-    );
 
-    const roundTripPixel = fractalToPixelCoordinateHP(
-      fractalCoord,
-      width,
-      height,
-      center,
-      zoom
-    );
+    const fractalCoord = pixelToFractalCoordinateHP(originalPixel, width, height, center, zoom);
+
+    const roundTripPixel = fractalToPixelCoordinateHP(fractalCoord, width, height, center, zoom);
 
     const xError = Math.abs(roundTripPixel.x - originalPixel.x);
     const yError = Math.abs(roundTripPixel.y - originalPixel.y);
@@ -202,22 +162,10 @@ describe("Pixel ↔ Fractal Coordinate Round-trip Precision", () => {
 
     // Test center pixel
     const originalPixel = { x: 400, y: 300 };
-    
-    const fractalCoord = pixelToFractalCoordinateHP(
-      originalPixel,
-      width,
-      height,
-      center,
-      zoom
-    );
 
-    const roundTripPixel = fractalToPixelCoordinateHP(
-      fractalCoord,
-      width,
-      height,
-      center,
-      zoom
-    );
+    const fractalCoord = pixelToFractalCoordinateHP(originalPixel, width, height, center, zoom);
+
+    const roundTripPixel = fractalToPixelCoordinateHP(fractalCoord, width, height, center, zoom);
 
     const xError = Math.abs(roundTripPixel.x - originalPixel.x);
     const yError = Math.abs(roundTripPixel.y - originalPixel.y);
@@ -235,30 +183,18 @@ describe("Pixel ↔ Fractal Coordinate Round-trip Precision", () => {
     const height = 600;
 
     const results = [];
-    
+
     // Simulate small incremental fractal center changes (like during dragging)
     for (let i = 0; i < 20; i++) {
       const center = {
         x: baseCenter.x + i * 1e-25, // Very small incremental changes
-        y: baseCenter.y
+        y: baseCenter.y,
       };
 
       // Convert center pixel to fractal and back
       const centerPixel = { x: 400, y: 300 };
-      const fractalCoord = pixelToFractalCoordinateHP(
-        centerPixel,
-        width,
-        height,
-        center,
-        zoom
-      );
-      const roundTripPixel = fractalToPixelCoordinateHP(
-        fractalCoord,
-        width,
-        height,
-        center,
-        zoom
-      );
+      const fractalCoord = pixelToFractalCoordinateHP(centerPixel, width, height, center, zoom);
+      const roundTripPixel = fractalToPixelCoordinateHP(fractalCoord, width, height, center, zoom);
 
       results.push(roundTripPixel.x);
     }
@@ -283,31 +219,19 @@ describe("Pixel ↔ Fractal Coordinate Round-trip Precision", () => {
     const endPixel = { x: 401, y: 300 }; // 1 pixel to the right
 
     // Convert both pixels to fractal coordinates
-    const startFractal = pixelToFractalCoordinateHP(
-      startPixel,
-      width,
-      height,
-      center,
-      zoom
-    );
-    const endFractal = pixelToFractalCoordinateHP(
-      endPixel,
-      width,
-      height,
-      center,
-      zoom
-    );
+    const startFractal = pixelToFractalCoordinateHP(startPixel, width, height, center, zoom);
+    const endFractal = pixelToFractalCoordinateHP(endPixel, width, height, center, zoom);
 
     // Calculate the fractal center change needed for this 1-pixel drag
     const fractalCenterChange = {
       x: endFractal.x - startFractal.x,
-      y: endFractal.y - startFractal.y
+      y: endFractal.y - startFractal.y,
     };
 
     // Apply this center change and verify the pixel position
     const newCenter = {
       x: center.x + fractalCenterChange.x,
-      y: center.y + fractalCenterChange.y
+      y: center.y + fractalCenterChange.y,
     };
 
     const newPixel = fractalToPixelCoordinateHP(

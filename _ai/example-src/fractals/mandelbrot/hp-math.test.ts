@@ -1,6 +1,3 @@
-// ABOUTME: Unit tests for high-precision complex number arithmetic
-// ABOUTME: Verifies correctness of decimal.js operations and conversion functions
-
 import { Decimal } from "decimal.js";
 import { describe, expect, it } from "vitest";
 import { addHP, createComplexHP, hpToStd, magnitudeSquaredHP, multiplyHP, stdToHP } from "./hp-math";
@@ -171,7 +168,10 @@ describe("hp-math: High-Precision Complex Arithmetic", () => {
     });
 
     it("should create from strings for precision preservation", () => {
-      const z = createComplexHP("1.234567890123456789012345678901234567890", "9.876543210987654321098765432109876543210");
+      const z = createComplexHP(
+        "1.234567890123456789012345678901234567890",
+        "9.876543210987654321098765432109876543210"
+      );
 
       // Verify we maintain more than 15 digits (standard double precision)
       // Note: Decimal.js normalizes numbers, so trailing zeros may be removed
@@ -235,4 +235,3 @@ describe("hp-math: High-Precision Complex Arithmetic", () => {
     });
   });
 });
-

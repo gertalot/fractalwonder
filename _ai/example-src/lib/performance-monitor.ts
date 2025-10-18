@@ -1,6 +1,3 @@
-// ABOUTME: Performance monitoring for tracking render metrics and statistics
-// ABOUTME: Tracks render times, chunk throughput, cache hit rates, and worker utilization
-
 /**
  * Metrics for a single chunk computation.
  */
@@ -43,22 +40,22 @@ interface RenderSession {
 
 /**
  * Performance monitor for tracking fractal rendering metrics.
- * 
+ *
  * Features:
  * - Track multiple concurrent render sessions
  * - Per-chunk timing
  * - Cache hit rate tracking
  * - Throughput calculations (pixels/second)
  * - Session statistics and history
- * 
+ *
  * Usage:
  * ```typescript
  * const monitor = new PerformanceMonitor();
  * const sessionId = monitor.startRender(totalChunks, totalPixels);
- * 
+ *
  * // For each chunk completion:
  * monitor.recordChunk(sessionId, chunkIndex, computeTime, fromCache);
- * 
+ *
  * const metrics = monitor.endRender(sessionId);
  * console.log(`Render took ${metrics.duration}ms at ${metrics.pixelsPerSecond} px/s`);
  * ```
@@ -70,14 +67,14 @@ export class PerformanceMonitor {
 
   /**
    * Starts a new render session.
-   * 
+   *
    * @param totalChunks - Total number of chunks to render
    * @param totalPixels - Total number of pixels (width * height)
    * @returns Session ID for tracking
    */
   startRender(totalChunks: number, totalPixels: number): string {
     const sessionId = `render-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
+
     this.activeSessions.set(sessionId, {
       sessionId,
       startTime: performance.now(),
@@ -93,7 +90,7 @@ export class PerformanceMonitor {
 
   /**
    * Records completion of a chunk.
-   * 
+   *
    * @param sessionId - Session ID from startRender
    * @param chunkIndex - Index of the completed chunk
    * @param computeTime - Time taken to compute (0 if from cache)
@@ -120,7 +117,7 @@ export class PerformanceMonitor {
 
   /**
    * Ends a render session and calculates final metrics.
-   * 
+   *
    * @param sessionId - Session ID from startRender
    * @returns Final render metrics
    */
@@ -133,22 +130,15 @@ export class PerformanceMonitor {
     const endTime = performance.now();
     const duration = endTime - session.startTime;
     const computedChunks = session.completedChunks - session.cachedChunks;
-    
+
     // Calculate average chunk time (excluding cached chunks)
-    const computedChunkTimes = session.chunkMetrics
-      .filter(m => !m.fromCache)
-      .map(m => m.computeTime);
-    const averageChunkTime = computedChunkTimes.length > 0
-      ? computedChunkTimes.reduce((a, b) => a + b, 0) / computedChunkTimes.length
-      : 0;
+    const computedChunkTimes = session.chunkMetrics.filter((m) => !m.fromCache).map((m) => m.computeTime);
+    const averageChunkTime =
+      computedChunkTimes.length > 0 ? computedChunkTimes.reduce((a, b) => a + b, 0) / computedChunkTimes.length : 0;
 
-    const cacheHitRate = session.completedChunks > 0
-      ? session.cachedChunks / session.completedChunks
-      : 0;
+    const cacheHitRate = session.completedChunks > 0 ? session.cachedChunks / session.completedChunks : 0;
 
-    const pixelsPerSecond = duration > 0
-      ? (session.totalPixels / duration) * 1000
-      : 0;
+    const pixelsPerSecond = duration > 0 ? (session.totalPixels / duration) * 1000 : 0;
 
     const metrics: RenderSessionMetrics = {
       sessionId,
@@ -178,7 +168,7 @@ export class PerformanceMonitor {
 
   /**
    * Gets current progress of an active session.
-   * 
+   *
    * @param sessionId - Session ID from startRender
    * @returns Progress percentage (0-100) or null if session not found
    */
@@ -188,14 +178,12 @@ export class PerformanceMonitor {
       return null;
     }
 
-    return session.totalChunks > 0
-      ? (session.completedChunks / session.totalChunks) * 100
-      : 0;
+    return session.totalChunks > 0 ? (session.completedChunks / session.totalChunks) * 100 : 0;
   }
 
   /**
    * Gets metrics for the last completed render.
-   * 
+   *
    * @returns Last render metrics or null if no renders completed
    */
   getLastRenderMetrics(): RenderSessionMetrics | null {
@@ -259,4 +247,3 @@ export class PerformanceMonitor {
     }
   }
 }
-

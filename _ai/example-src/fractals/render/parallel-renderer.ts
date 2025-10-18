@@ -1,6 +1,3 @@
-// ABOUTME: Orchestrates parallel fractal rendering using Web Workers
-// ABOUTME: Manages worker pool and distributes chunks for progressive rendering
-
 import * as Comlink from "comlink";
 import { Decimal } from "decimal.js";
 
@@ -24,13 +21,13 @@ export interface RenderOptions {
 
 /**
  * ParallelRenderer orchestrates parallel fractal computation across multiple Web Workers.
- * 
+ *
  * Features:
  * - Progressive rendering with center-out spiral pattern
  * - Automatic worker pool management
  * - Cancellable render operations
  * - Progress tracking
- * 
+ *
  * Usage:
  * ```typescript
  * const renderer = new ParallelRenderer(4); // 4 workers
@@ -57,7 +54,7 @@ export class ParallelRenderer {
 
   /**
    * Creates a new ParallelRenderer.
-   * 
+   *
    * @param workerCount - Number of workers to create (defaults to 75% of CPU cores)
    * @param cacheSize - Maximum number of chunks to cache (default: 200)
    */
@@ -86,9 +83,7 @@ export class ParallelRenderer {
     }
 
     // Dynamically import the worker
-    const FractalWorker = await import("../workers/fractal.worker?worker").then(
-      (module) => module.default
-    );
+    const FractalWorker = await import("../workers/fractal.worker?worker").then((module) => module.default);
 
     // Create and wrap workers
     for (let i = 0; i < this.workerCount; i++) {
@@ -110,10 +105,10 @@ export class ParallelRenderer {
 
   /**
    * Renders a fractal onto the canvas using parallel computation.
-   * 
+   *
    * The canvas is divided into chunks that are distributed to workers.
    * Chunks render progressively in a center-out spiral pattern for better UX.
-   * 
+   *
    * @param canvas - Target canvas element
    * @param params - Fractal parameters (center, zoom, iterations)
    * @param algorithmName - Name of the fractal algorithm to use
@@ -169,10 +164,7 @@ export class ParallelRenderer {
     );
 
     // Start performance monitoring
-    this.currentSessionId = this.performanceMonitor.startRender(
-      totalChunks,
-      canvas.width * canvas.height
-    );
+    this.currentSessionId = this.performanceMonitor.startRender(totalChunks, canvas.width * canvas.height);
 
     // Process chunks as they complete (progressive rendering)
     try {
@@ -236,7 +228,7 @@ export class ParallelRenderer {
 
   /**
    * Invalidates cache if render parameters changed significantly.
-   * 
+   *
    * Cache invalidation rules:
    * - Zoom change: Clear entire cache (different scale)
    * - Algorithm change: Clear entire cache (different computation)
@@ -256,9 +248,10 @@ export class ParallelRenderer {
     }
 
     // Check for parameter changes that require cache invalidation
-    const zoomChanged = this.lastRenderParams.zoom instanceof Decimal && params.zoom instanceof Decimal 
-      ? !this.lastRenderParams.zoom.equals(params.zoom)
-      : this.lastRenderParams.zoom !== params.zoom;
+    const zoomChanged =
+      this.lastRenderParams.zoom instanceof Decimal && params.zoom instanceof Decimal
+        ? !this.lastRenderParams.zoom.equals(params.zoom)
+        : this.lastRenderParams.zoom !== params.zoom;
     const algorithmChanged = this.lastRenderParams.algorithmName !== algorithmName;
     const iterationsChanged = this.lastRenderParams.maxIterations !== params.maxIterations;
 
@@ -302,7 +295,7 @@ export class ParallelRenderer {
     // Check cache first
     const cacheKey = createCacheKey(chunk, params, canvasWidth, canvasHeight, algorithmName);
     const cachedImageData = this.chunkCache.get(cacheKey);
-    
+
     if (cachedImageData) {
       // Cache hit! Return immediately
       if (this.currentSessionId) {
@@ -351,7 +344,7 @@ export class ParallelRenderer {
       if (this.currentSessionId) {
         this.performanceMonitor.recordChunk(this.currentSessionId, chunkIndex, chunkTime, false);
       }
-      
+
       return result;
     } catch (error) {
       console.error(`Worker ${workerIndex} failed to compute chunk ${chunkIndex}:`, error);
@@ -408,4 +401,3 @@ export class ParallelRenderer {
     return this.performanceMonitor;
   }
 }
-

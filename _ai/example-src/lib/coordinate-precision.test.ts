@@ -1,7 +1,11 @@
-// ABOUTME: Comprehensive test suite for ALL coordinate transformation functions at extreme zoom levels
 import { FractalParams } from "@/hooks/use-store";
 import { describe, expect, it } from "vitest";
-import { fractalToPixelCoordinate, fractalToPixelCoordinateHP, pixelToFractalCoordinate, pixelToFractalCoordinateHP } from "./coordinates";
+import {
+  fractalToPixelCoordinate,
+  fractalToPixelCoordinateHP,
+  pixelToFractalCoordinate,
+  pixelToFractalCoordinateHP,
+} from "./coordinates";
 import { computePreviewPixelPosition } from "./render-preview";
 
 describe("High-Precision Coordinate Functions", () => {
@@ -28,22 +32,16 @@ describe("High-Precision Coordinate Functions", () => {
         testCenters.forEach(({ name: centerName, x: centerX, y: centerY }) => {
           it(`should maintain precision for ${name} on ${canvasName} at ${centerName}`, () => {
             const center = { x: centerX, y: centerY };
-            
+
             // Test center pixel
             const pixel = { x: width / 2, y: height / 2 };
-            
-            const fractalCoord = pixelToFractalCoordinateHP(
-              pixel,
-              width,
-              height,
-              center,
-              zoom
-            );
+
+            const fractalCoord = pixelToFractalCoordinateHP(pixel, width, height, center, zoom);
 
             // Verify fractal coordinates are finite and reasonable
             expect(Number.isFinite(fractalCoord.x)).toBe(true);
             expect(Number.isFinite(fractalCoord.y)).toBe(true);
-            
+
             // Verify fractal coordinates are within reasonable bounds
             const expectedRange = 10; // Fractal coordinates should be within ±10 of center
             expect(Math.abs(fractalCoord.x - centerX)).toBeLessThan(expectedRange);
@@ -60,17 +58,11 @@ describe("High-Precision Coordinate Functions", () => {
         testCenters.forEach(({ name: centerName, x: centerX, y: centerY }) => {
           it(`should maintain precision for ${name} on ${canvasName} at ${centerName}`, () => {
             const center = { x: centerX, y: centerY };
-            
+
             // Test fractal coordinates near the center
             const fractalCoord = { x: centerX, y: centerY };
 
-            const pixelCoord = fractalToPixelCoordinateHP(
-              fractalCoord,
-              width,
-              height,
-              center,
-              zoom
-            );
+            const pixelCoord = fractalToPixelCoordinateHP(fractalCoord, width, height, center, zoom);
 
             // Verify pixel coordinates are finite and within canvas bounds
             expect(Number.isFinite(pixelCoord.x)).toBe(true);
@@ -91,27 +83,15 @@ describe("High-Precision Coordinate Functions", () => {
         testCenters.forEach(({ name: centerName, x: centerX, y: centerY }) => {
           it(`should maintain ${tolerance}px precision for ${name} on ${canvasName} at ${centerName}`, () => {
             const center = { x: centerX, y: centerY };
-            
+
             // Test center pixel
             const originalPixel = { x: width / 2, y: height / 2 };
 
             // Convert pixel → fractal using HP
-            const fractalCoord = pixelToFractalCoordinateHP(
-              originalPixel,
-              width,
-              height,
-              center,
-              zoom
-            );
+            const fractalCoord = pixelToFractalCoordinateHP(originalPixel, width, height, center, zoom);
 
             // Convert fractal → pixel using HP
-            const roundTripPixel = fractalToPixelCoordinateHP(
-              fractalCoord,
-              width,
-              height,
-              center,
-              zoom
-            );
+            const roundTripPixel = fractalToPixelCoordinateHP(fractalCoord, width, height, center, zoom);
 
             // Calculate error
             const xError = Math.abs(roundTripPixel.x - originalPixel.x);
@@ -168,25 +148,19 @@ describe("Comprehensive Coordinate Transformation Precision Tests", () => {
         testCenters.forEach(({ name: centerName, x: centerX, y: centerY }) => {
           it(`should maintain precision for ${name} on ${canvasName} at ${centerName}`, () => {
             const center = { x: centerX, y: centerY };
-            
+
             // Test multiple pixel positions
-            const testPositions = testPixels.filter(p => 
-              p.x <= width && p.y <= height
-            ).map(p => ({ x: p.x, y: p.y }));
+            const testPositions = testPixels
+              .filter((p) => p.x <= width && p.y <= height)
+              .map((p) => ({ x: p.x, y: p.y }));
 
             for (const pixel of testPositions) {
-              const fractalCoord = pixelToFractalCoordinate(
-                pixel,
-                width,
-                height,
-                center,
-                zoom
-              );
+              const fractalCoord = pixelToFractalCoordinate(pixel, width, height, center, zoom);
 
               // Verify fractal coordinates are finite and reasonable
               expect(Number.isFinite(fractalCoord.x)).toBe(true);
               expect(Number.isFinite(fractalCoord.y)).toBe(true);
-              
+
               // Verify fractal coordinates are within reasonable bounds
               // (should be close to center, not astronomical values)
               const expectedRange = 10; // Fractal coordinates should be within ±10 of center
@@ -205,7 +179,7 @@ describe("Comprehensive Coordinate Transformation Precision Tests", () => {
         testCenters.forEach(({ name: centerName, x: centerX, y: centerY }) => {
           it(`should maintain precision for ${name} on ${canvasName} at ${centerName}`, () => {
             const center = { x: centerX, y: centerY };
-            
+
             // Test fractal coordinates near the center
             const testFractalCoords = [
               { x: centerX, y: centerY }, // Exact center
@@ -215,13 +189,7 @@ describe("Comprehensive Coordinate Transformation Precision Tests", () => {
             ];
 
             for (const fractalCoord of testFractalCoords) {
-              const pixelCoord = fractalToPixelCoordinate(
-                fractalCoord,
-                width,
-                height,
-                center,
-                zoom
-              );
+              const pixelCoord = fractalToPixelCoordinate(fractalCoord, width, height, center, zoom);
 
               // Verify pixel coordinates are finite and within canvas bounds
               expect(Number.isFinite(pixelCoord.x)).toBe(true);
@@ -243,30 +211,18 @@ describe("Comprehensive Coordinate Transformation Precision Tests", () => {
         testCenters.forEach(({ name: centerName, x: centerX, y: centerY }) => {
           it(`should maintain ${tolerance}px precision for ${name} on ${canvasName} at ${centerName}`, () => {
             const center = { x: centerX, y: centerY };
-            
+
             // Test multiple pixel positions
-            const testPositions = testPixels.filter(p => 
-              p.x <= width && p.y <= height
-            ).map(p => ({ x: p.x, y: p.y }));
+            const testPositions = testPixels
+              .filter((p) => p.x <= width && p.y <= height)
+              .map((p) => ({ x: p.x, y: p.y }));
 
             for (const originalPixel of testPositions) {
               // Convert pixel → fractal
-              const fractalCoord = pixelToFractalCoordinate(
-                originalPixel,
-                width,
-                height,
-                center,
-                zoom
-              );
+              const fractalCoord = pixelToFractalCoordinate(originalPixel, width, height, center, zoom);
 
               // Convert fractal → pixel
-              const roundTripPixel = fractalToPixelCoordinate(
-                fractalCoord,
-                width,
-                height,
-                center,
-                zoom
-              );
+              const roundTripPixel = fractalToPixelCoordinate(fractalCoord, width, height, center, zoom);
 
               // Calculate error
               const xError = Math.abs(roundTripPixel.x - originalPixel.x);
@@ -312,17 +268,12 @@ describe("Comprehensive Coordinate Transformation Precision Tests", () => {
                 },
               };
 
-              const result = computePreviewPixelPosition(
-                baseParams,
-                newParams,
-                width,
-                height
-              );
+              const result = computePreviewPixelPosition(baseParams, newParams, width, height);
 
               // Verify result is finite and reasonable
               expect(Number.isFinite(result.x)).toBe(true);
               expect(Number.isFinite(result.y)).toBe(true);
-              
+
               // Result should be within canvas bounds (allowing for scaling)
               expect(result.x).toBeGreaterThan(-width); // Allow for negative positioning
               expect(result.y).toBeGreaterThan(-height);
@@ -343,30 +294,18 @@ describe("Comprehensive Coordinate Transformation Precision Tests", () => {
       const height = 600;
 
       const results = [];
-      
+
       // Simulate smooth dragging with tiny incremental changes
       for (let i = 0; i < 50; i++) {
         const center = {
           x: baseCenter.x + i * 1e-25, // Very small incremental changes
-          y: baseCenter.y
+          y: baseCenter.y,
         };
 
         // Convert center pixel to fractal and back
         const centerPixel = { x: 400, y: 300 };
-        const fractalCoord = pixelToFractalCoordinate(
-          centerPixel,
-          width,
-          height,
-          center,
-          zoom
-        );
-        const roundTripPixel = fractalToPixelCoordinate(
-          fractalCoord,
-          width,
-          height,
-          center,
-          zoom
-        );
+        const fractalCoord = pixelToFractalCoordinate(centerPixel, width, height, center, zoom);
+        const roundTripPixel = fractalToPixelCoordinate(fractalCoord, width, height, center, zoom);
 
         results.push(roundTripPixel.x);
       }
@@ -397,16 +336,11 @@ describe("Comprehensive Coordinate Transformation Precision Tests", () => {
           ...baseParams,
           center: {
             x: -1 + i * 1e-25, // Very small incremental changes
-            y: 0
+            y: 0,
           },
         };
 
-        const result = computePreviewPixelPosition(
-          baseParams,
-          newParams,
-          width,
-          height
-        );
+        const result = computePreviewPixelPosition(baseParams, newParams, width, height);
 
         results.push(result.x);
       }
@@ -429,21 +363,9 @@ describe("Comprehensive Coordinate Transformation Precision Tests", () => {
       const pixel = { x: 400, y: 300 };
 
       // This should not throw errors
-      const fractalCoord = pixelToFractalCoordinate(
-        pixel,
-        width,
-        height,
-        center,
-        zoom
-      );
+      const fractalCoord = pixelToFractalCoordinate(pixel, width, height, center, zoom);
 
-      const roundTripPixel = fractalToPixelCoordinate(
-        fractalCoord,
-        width,
-        height,
-        center,
-        zoom
-      );
+      const roundTripPixel = fractalToPixelCoordinate(fractalCoord, width, height, center, zoom);
 
       // Should return finite values
       expect(Number.isFinite(fractalCoord.x)).toBe(true);
@@ -465,12 +387,7 @@ describe("Comprehensive Coordinate Transformation Precision Tests", () => {
         center: { x: -1 + 1e-50, y: 0 }, // Extremely tiny change
       };
 
-      const result = computePreviewPixelPosition(
-        baseParams,
-        newParams,
-        800,
-        600
-      );
+      const result = computePreviewPixelPosition(baseParams, newParams, 800, 600);
 
       // Should not throw errors and should return finite values
       expect(Number.isFinite(result.x)).toBe(true);

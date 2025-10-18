@@ -1,6 +1,3 @@
-// ABOUTME: Fast standard-precision delta orbit calculation for perturbation theory
-// ABOUTME: Computes perturbation from reference orbit using native JavaScript doubles
-
 import type { ReferenceOrbit } from "./types";
 import { ComplexStd } from "./types";
 
@@ -14,7 +11,7 @@ const convertedOrbitCache = new WeakMap<ReferenceOrbit, ComplexStd[]>();
  */
 function getStandardPrecisionOrbit(referenceOrbit: ReferenceOrbit, maxLength: number): ComplexStd[] {
   let cached = convertedOrbitCache.get(referenceOrbit);
-  
+
   if (!cached || cached.length < maxLength) {
     // Convert to standard precision
     const length = Math.min(referenceOrbit.points.length, maxLength);
@@ -25,33 +22,29 @@ function getStandardPrecisionOrbit(referenceOrbit: ReferenceOrbit, maxLength: nu
     }
     convertedOrbitCache.set(referenceOrbit, cached);
   }
-  
+
   return cached;
 }
 
 /**
  * Calculate delta orbit using standard precision arithmetic.
- * 
+ *
  * This is the performance-critical component of perturbation theory.
  * Uses native JavaScript doubles (not decimal.js) for speed.
- * 
+ *
  * Algorithm:
  * - Δ₀ = ΔC (the offset from reference point)
  * - Δₙ₊₁ = 2·Xₙ·Δₙ + Δₙ² + ΔC
  * - Check escape: |Xₙ + Δₙ|² > 4
- * 
+ *
  * Where Xₙ is the reference orbit point (from high-precision calculation).
- * 
+ *
  * @param referenceOrbit - Pre-computed high-precision reference orbit
  * @param deltaC - Offset from reference point (in standard precision)
  * @param maxIterations - Maximum iterations to compute
  * @returns Escape iteration (0-based), or -1 if didn't escape
  */
-export function calculateDeltaOrbit(
-  referenceOrbit: ReferenceOrbit,
-  deltaC: ComplexStd,
-  maxIterations: number
-): number {
+export function calculateDeltaOrbit(referenceOrbit: ReferenceOrbit, deltaC: ComplexStd, maxIterations: number): number {
   // Get cached standard-precision reference orbit (or convert if not cached)
   const maxRefIteration = referenceOrbit.points.length - 1;
   const xRefArray = getStandardPrecisionOrbit(referenceOrbit, referenceOrbit.points.length);
@@ -59,7 +52,7 @@ export function calculateDeltaOrbit(
   // Δ₀ = 0 (starts at zero)
   let deltaReal = 0;
   let deltaImag = 0;
-  
+
   let iteration = 0;
   let refIteration = 0;
 
@@ -67,7 +60,7 @@ export function calculateDeltaOrbit(
   while (iteration < maxIterations) {
     // Compute next delta: Δₙ₊₁ = 2·Xₙ·Δₙ + Δₙ² + ΔC
     const xRef = xRefArray[refIteration];
-    
+
     // 2·Xₙ·Δₙ
     const term1Real = 2 * (xRef.real * deltaReal - xRef.imag * deltaImag);
     const term1Imag = 2 * (xRef.real * deltaImag + xRef.imag * deltaReal);
@@ -79,7 +72,7 @@ export function calculateDeltaOrbit(
     // Combine: 2·Xₙ·Δₙ + Δₙ² + ΔC
     deltaReal = term1Real + term2Real + deltaC.real;
     deltaImag = term1Imag + term2Imag + deltaC.imag;
-    
+
     refIteration++;
     iteration++;
 
@@ -97,7 +90,7 @@ export function calculateDeltaOrbit(
     // Check for rebasing condition: |z| < |dz| OR we've run out of reference orbit
     const zMag = Math.sqrt(magnitudeSq);
     const deltaMag = Math.sqrt(deltaReal * deltaReal + deltaImag * deltaImag);
-    
+
     if (zMag < deltaMag || refIteration >= maxRefIteration) {
       // REBASE: Set delta to current z value and restart from beginning of reference orbit
       deltaReal = zReal;
@@ -127,13 +120,13 @@ export function calculateDeltaOrbitWithData(
   let deltaReal = 0;
   let deltaImag = 0;
   let escapeIteration = -1;
-  
+
   let iteration = 0;
   let refIteration = 0;
 
   while (iteration < maxIterations) {
     const xRef = xRefArray[refIteration];
-    
+
     const term1Real = 2 * (xRef.real * deltaReal - xRef.imag * deltaImag);
     const term1Imag = 2 * (xRef.real * deltaImag + xRef.imag * deltaReal);
     const term2Real = deltaReal * deltaReal - deltaImag * deltaImag;
@@ -141,7 +134,7 @@ export function calculateDeltaOrbitWithData(
 
     deltaReal = term1Real + term2Real + deltaC.real;
     deltaImag = term1Imag + term2Imag + deltaC.imag;
-    
+
     refIteration++;
     iteration++;
 
@@ -157,7 +150,7 @@ export function calculateDeltaOrbitWithData(
 
     const zMag = Math.sqrt(magnitudeSq);
     const deltaMag = Math.sqrt(deltaReal * deltaReal + deltaImag * deltaImag);
-    
+
     if (zMag < deltaMag || refIteration >= maxRefIteration) {
       deltaReal = zReal;
       deltaImag = zImag;
@@ -167,4 +160,3 @@ export function calculateDeltaOrbitWithData(
 
   return { escapeIteration, finalDelta: { real: deltaReal, imag: deltaImag } };
 }
-

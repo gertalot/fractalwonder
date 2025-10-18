@@ -1,6 +1,3 @@
-// ABOUTME: Type definitions for Web Worker communication
-// ABOUTME: Defines request/response interfaces for chunk-based fractal computation
-
 import { FractalParams } from "@/hooks/use-store";
 
 /**
@@ -95,7 +92,7 @@ export function deserializeFractalParams(serialized: SerializableFractalParams):
   if (!Decimal) {
     throw new Error("Decimal.js not available in worker environment");
   }
-  
+
   return {
     center: {
       x: new Decimal(serialized.center.x),
@@ -106,4 +103,3 @@ export function deserializeFractalParams(serialized: SerializableFractalParams):
     iterationScalingFactor: serialized.iterationScalingFactor,
   };
 }
-

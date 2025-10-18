@@ -1,6 +1,3 @@
-// ABOUTME: Mandelbrot set algorithm implementation
-// ABOUTME: Computes escape-time iterations for points in the complex plane
-
 import { FractalAlgorithm, IterationResult } from "./base";
 
 /**
@@ -18,8 +15,7 @@ import { FractalAlgorithm, IterationResult } from "./base";
  */
 export class MandelbrotAlgorithm implements FractalAlgorithm {
   readonly name = "Mandelbrot Set";
-  readonly description =
-    "The classic Mandelbrot set: z → z² + c, starting from z = 0";
+  readonly description = "The classic Mandelbrot set: z → z² + c, starting from z = 0";
 
   /**
    * Computes the escape-time iteration count for a point in the Mandelbrot set.
@@ -53,4 +49,3 @@ export class MandelbrotAlgorithm implements FractalAlgorithm {
  * Default instance of the Mandelbrot algorithm for convenient importing.
  */
 export const mandelbrotAlgorithm = new MandelbrotAlgorithm();
-

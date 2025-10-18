@@ -1,6 +1,3 @@
-// ABOUTME: Web Worker for parallel fractal computation using Comlink RPC
-// ABOUTME: Exposes computeChunk function for main thread to call via Comlink
-
 import * as Comlink from "comlink";
 import { Decimal } from "decimal.js";
 
@@ -36,4 +33,3 @@ Comlink.expose(workerAPI);
 
 // Export the type for use on the main thread
 export type FractalWorkerAPI = typeof workerAPI;
-

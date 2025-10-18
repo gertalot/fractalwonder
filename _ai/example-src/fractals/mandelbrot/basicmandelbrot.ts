@@ -1,6 +1,3 @@
-// ABOUTME: Single-threaded Mandelbrot rendering (legacy, being replaced by parallel renderer)
-// ABOUTME: Uses the new modular algorithm system but renders synchronously on main thread
-
 import { fireColorScheme } from "@/fractals/algorithms/coloring";
 import { mandelbrotAlgorithm } from "@/fractals/algorithms/mandelbrot";
 import { derivedRealIterations, FractalParams } from "@/hooks/use-store";

@@ -1,14 +1,7 @@
-// ABOUTME: Unit tests for high-precision reference orbit calculation
-// ABOUTME: Verifies correctness, caching, and performance of orbit computation
-
 import { Decimal } from "decimal.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createComplexHP } from "./hp-math";
-import {
-    calculateReferenceOrbit,
-    clearOrbitCache,
-    getOrbitCacheStats,
-} from "./reference-orbit";
+import { calculateReferenceOrbit, clearOrbitCache, getOrbitCacheStats } from "./reference-orbit";
 
 describe("reference-orbit: High-Precision Reference Orbit Calculation", () => {
   beforeEach(() => {
@@ -250,4 +243,3 @@ describe("reference-orbit: High-Precision Reference Orbit Calculation", () => {
     });
   });
 });
-

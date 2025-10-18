@@ -1,6 +1,3 @@
-// ABOUTME: Base interfaces and types for fractal computation algorithms
-// ABOUTME: Defines the contract that all fractal algorithms must implement
-
 import { Decimal } from "decimal.js";
 
 /**
@@ -70,11 +67,5 @@ export interface FractalAlgorithm {
    * @param maxIterations - Maximum number of iterations to compute
    * @returns IterationResult containing iteration count and final z values
    */
-  computePointFromOffset?(
-    offsetX: number,
-    offsetY: number,
-    scale: number,
-    maxIterations: number
-  ): IterationResult;
+  computePointFromOffset?(offsetX: number, offsetY: number, scale: number, maxIterations: number): IterationResult;
 }
-

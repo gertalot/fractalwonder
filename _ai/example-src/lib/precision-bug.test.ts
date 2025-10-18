@@ -1,4 +1,3 @@
-// ABOUTME: Test that catches the ACTUAL precision loss bug at extreme zoom levels
 import { describe, expect, it } from "vitest";
 import { fractalToPixelCoordinateUltraHP, pixelToFractalCoordinateUltraHP } from "./coordinates";
 
@@ -11,30 +10,16 @@ describe("Precision Loss Bug at Extreme Zoom", () => {
 
     // Test 1: Center pixel
     const centerPixel = { x: 400, y: 300 };
-    const centerFractal = pixelToFractalCoordinateUltraHP(
-      centerPixel,
-      canvasWidth,
-      canvasHeight,
-      center,
-      zoom
-    );
+    const centerFractal = pixelToFractalCoordinateUltraHP(centerPixel, canvasWidth, canvasHeight, center, zoom);
 
     // Test 2: 1 pixel right - THIS IS WHERE THE BUG OCCURS
     const rightPixel = { x: 401, y: 300 };
-    const rightFractal = pixelToFractalCoordinateUltraHP(
-      rightPixel,
-      canvasWidth,
-      canvasHeight,
-      center,
-      zoom
-    );
+    const rightFractal = pixelToFractalCoordinateUltraHP(rightPixel, canvasWidth, canvasHeight, center, zoom);
 
     // THE BUG: These should be DIFFERENT but they're the same!
-    console.log('Center fractal:', centerFractal);
-    console.log('Right fractal:', rightFractal);
-    console.log('Are they the same?', 
-      centerFractal.x === rightFractal.x && centerFractal.y === rightFractal.y
-    );
+    console.log("Center fractal:", centerFractal);
+    console.log("Right fractal:", rightFractal);
+    console.log("Are they the same?", centerFractal.x === rightFractal.x && centerFractal.y === rightFractal.y);
 
     // This test SHOULD FAIL with the current implementation
     expect(centerFractal.x).not.toBe(rightFractal.x);
@@ -48,21 +33,9 @@ describe("Precision Loss Bug at Extreme Zoom", () => {
     const canvasHeight = 600;
 
     const rightPixel = { x: 401, y: 300 };
-    const fractal = pixelToFractalCoordinateUltraHP(
-      rightPixel,
-      canvasWidth,
-      canvasHeight,
-      center,
-      zoom
-    );
+    const fractal = pixelToFractalCoordinateUltraHP(rightPixel, canvasWidth, canvasHeight, center, zoom);
 
-    const backToPixel = fractalToPixelCoordinateUltraHP(
-      fractal,
-      canvasWidth,
-      canvasHeight,
-      center,
-      zoom
-    );
+    const backToPixel = fractalToPixelCoordinateUltraHP(fractal, canvasWidth, canvasHeight, center, zoom);
 
     // Round-trip should be exact
     expect(Math.abs(backToPixel.x - rightPixel.x)).toBeLessThan(0.1);
@@ -83,7 +56,7 @@ describe("Precision Loss Bug at Extreme Zoom", () => {
       { x: 399, y: 300 }, // 1 left
     ];
 
-    const fractals = testPixels.map(pixel => 
+    const fractals = testPixels.map((pixel) =>
       pixelToFractalCoordinateUltraHP(pixel, canvasWidth, canvasHeight, center, zoom)
     );
 

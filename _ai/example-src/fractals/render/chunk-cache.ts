@@ -1,6 +1,3 @@
-// ABOUTME: LRU cache for computed fractal chunks to optimize repeated renders
-// ABOUTME: Caches ImageData results to avoid recomputation during zoom-out and pan operations
-
 import { FractalParams } from "@/hooks/use-store";
 import { Decimal } from "decimal.js";
 import { RenderChunk } from "./chunks";
@@ -15,17 +12,17 @@ export interface ChunkCacheKey {
   startY: number;
   width: number;
   height: number;
-  
+
   // Fractal parameters
   centerX: Decimal;
   centerY: Decimal;
   zoom: Decimal;
   maxIterations: number;
-  
+
   // Canvas size (affects coordinate transformation)
   canvasWidth: number;
   canvasHeight: number;
-  
+
   // Algorithm
   algorithmName: string;
 }
@@ -35,10 +32,12 @@ export interface ChunkCacheKey {
  * Uses fixed-precision for floating-point values to avoid cache misses from rounding errors.
  */
 function serializeKey(key: ChunkCacheKey): string {
-  return `${key.startX},${key.startY},${key.width},${key.height}|` +
+  return (
+    `${key.startX},${key.startY},${key.width},${key.height}|` +
     `${key.centerX.toFixed(10)},${key.centerY.toFixed(10)}|` +
     `${key.zoom.toFixed(6)}|${key.maxIterations}|` +
-    `${key.canvasWidth},${key.canvasHeight}|${key.algorithmName}`;
+    `${key.canvasWidth},${key.canvasHeight}|${key.algorithmName}`
+  );
 }
 
 /**
@@ -76,17 +75,17 @@ interface CacheEntry {
 
 /**
  * LRU cache for fractal chunk ImageData.
- * 
+ *
  * Features:
  * - Least-Recently-Used eviction when max size exceeded
  * - Hit/miss statistics tracking
  * - Region-based invalidation for partial cache clears
- * 
+ *
  * Usage:
  * ```typescript
  * const cache = new ChunkCache(100); // cache up to 100 chunks
  * const key = createCacheKey(chunk, params, width, height, algorithm);
- * 
+ *
  * if (cache.has(key)) {
  *   const imageData = cache.get(key)!;
  *   // use cached data
@@ -118,14 +117,14 @@ export class ChunkCache {
   get(key: ChunkCacheKey): ImageData | undefined {
     const serialized = serializeKey(key);
     const entry = this.cache.get(serialized);
-    
+
     if (entry) {
       // Update access time
       entry.accessTime = Date.now();
       this.hits++;
       return entry.imageData;
     }
-    
+
     this.misses++;
     return undefined;
   }
@@ -136,12 +135,12 @@ export class ChunkCache {
    */
   set(key: ChunkCacheKey, imageData: ImageData): void {
     const serialized = serializeKey(key);
-    
+
     // Evict LRU entry if cache is full
     if (this.cache.size >= this.maxSize && !this.cache.has(serialized)) {
       this.evictLRU();
     }
-    
+
     this.cache.set(serialized, {
       imageData,
       accessTime: Date.now(),
@@ -171,29 +170,28 @@ export class ChunkCache {
   invalidateRegion(startX: number, startY: number, width: number, height: number): void {
     const endX = startX + width;
     const endY = startY + height;
-    
+
     // Find keys to remove (we need to parse the serialized keys)
     const keysToRemove: string[] = [];
-    
+
     for (const [serialized] of this.cache) {
       // Parse the serialized key to check overlap
-      const parts = serialized.split('|')[0].split(',');
+      const parts = serialized.split("|")[0].split(",");
       const chunkStartX = parseInt(parts[0], 10);
       const chunkStartY = parseInt(parts[1], 10);
       const chunkWidth = parseInt(parts[2], 10);
       const chunkHeight = parseInt(parts[3], 10);
       const chunkEndX = chunkStartX + chunkWidth;
       const chunkEndY = chunkStartY + chunkHeight;
-      
+
       // Check for overlap
-      const overlaps = !(chunkEndX <= startX || chunkStartX >= endX ||
-                        chunkEndY <= startY || chunkStartY >= endY);
-      
+      const overlaps = !(chunkEndX <= startX || chunkStartX >= endX || chunkEndY <= startY || chunkStartY >= endY);
+
       if (overlaps) {
         keysToRemove.push(serialized);
       }
     }
-    
+
     for (const key of keysToRemove) {
       this.cache.delete(key);
     }
@@ -205,14 +203,14 @@ export class ChunkCache {
   private evictLRU(): void {
     let oldestKey: string | null = null;
     let oldestTime = Infinity;
-    
+
     for (const [key, entry] of this.cache) {
       if (entry.accessTime < oldestTime) {
         oldestTime = entry.accessTime;
         oldestKey = key;
       }
     }
-    
+
     if (oldestKey) {
       this.cache.delete(oldestKey);
     }
@@ -256,4 +254,3 @@ export class ChunkCache {
     }
   }
 }
-

@@ -1,6 +1,3 @@
-// ABOUTME: High-precision complex number arithmetic using decimal.js
-// ABOUTME: Provides operations for reference orbit calculations in perturbation theory
-
 import { Decimal } from "decimal.js";
 import { ComplexHP, ComplexStd } from "./types";
 
@@ -73,4 +70,3 @@ export function createComplexHP(real: number | string, imag: number | string): C
     imag: new Decimal(imag),
   };
 }
-

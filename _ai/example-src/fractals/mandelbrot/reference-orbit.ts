@@ -1,6 +1,3 @@
-// ABOUTME: High-precision reference orbit calculation for perturbation theory
-// ABOUTME: Computes X_n sequence using arbitrary precision arithmetic
-
 import { Decimal } from "decimal.js";
 import { addHP, createComplexHP, magnitudeSquaredHP, multiplyHP } from "./hp-math";
 import { ComplexHP, ReferenceOrbit } from "./types";
@@ -20,20 +17,20 @@ function getCacheKey(center: ComplexHP, maxIterations: number): string {
 
 /**
  * Calculate high-precision reference orbit for perturbation theory.
- * 
+ *
  * Iterates: Z₀ = 0, Zₙ₊₁ = Zₙ² + center
  * until |Z|² > 4 (escaped) or n = maxIterations (in set)
- * 
+ *
  * This is the computationally expensive part of perturbation theory,
  * but it only needs to be calculated once per render for the reference point.
- * 
+ *
  * @param center - High-precision complex number (typically viewport center)
  * @param maxIterations - Maximum number of iterations to compute
  * @returns Reference orbit containing all Z_n values and escape information
  */
 export function calculateReferenceOrbit(center: ComplexHP, maxIterations: number): ReferenceOrbit {
   const cacheKey = getCacheKey(center, maxIterations);
-  
+
   // Check cache first
   const cached = orbitCache.get(cacheKey);
   if (cached) {
@@ -42,13 +39,13 @@ export function calculateReferenceOrbit(center: ComplexHP, maxIterations: number
 
   const points: ComplexHP[] = [];
   const escapeThreshold = new Decimal(4);
-  
+
   // Z₀ = 0
   let z: ComplexHP = createComplexHP(0, 0);
   points.push(z);
-  
+
   let escapeIteration = -1;
-  
+
   // Iterate: Zₙ₊₁ = Zₙ² + center
   for (let n = 0; n < maxIterations; n++) {
     // Check escape condition: |Z|² > 4
@@ -57,21 +54,21 @@ export function calculateReferenceOrbit(center: ComplexHP, maxIterations: number
       escapeIteration = n;
       break;
     }
-    
+
     // Zₙ₊₁ = Zₙ² + center
     z = addHP(multiplyHP(z, z), center);
     points.push(z);
   }
-  
+
   const orbit: ReferenceOrbit = {
     points,
     escapeIteration,
     inSet: escapeIteration === -1,
   };
-  
+
   // Cache the result
   orbitCache.set(cacheKey, orbit);
-  
+
   return orbit;
 }
 
@@ -93,4 +90,3 @@ export function getOrbitCacheStats(): { size: number; keys: string[] } {
     keys: Array.from(orbitCache.keys()),
   };
 }
-

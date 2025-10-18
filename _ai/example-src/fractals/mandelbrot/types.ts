@@ -1,6 +1,3 @@
-// ABOUTME: High-precision type definitions for perturbation theory implementation
-// ABOUTME: Defines complex numbers and reference orbit structures using decimal.js
-
 import { Decimal } from "decimal.js";
 
 /**
@@ -34,4 +31,3 @@ export type ReferenceOrbit = {
   /** Whether the orbit reached maxIterations without escaping (in the set) */
   inSet: boolean;
 };
-

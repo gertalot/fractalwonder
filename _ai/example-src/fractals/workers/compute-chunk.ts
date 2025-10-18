@@ -1,6 +1,3 @@
-// ABOUTME: Core chunk computation logic for Web Workers
-// ABOUTME: Converts a canvas chunk into computed fractal pixel data
-
 import type { FractalAlgorithm } from "@/fractals/algorithms/base";
 import { smoothLoopingColorScheme } from "@/fractals/algorithms/coloring";
 import { mandelbrotAlgorithm } from "@/fractals/algorithms/mandelbrot";
@@ -29,7 +26,7 @@ import { ChunkComputeRequest, ChunkComputeResult, deserializeFractalParams } fro
 export function computeChunk(request: ChunkComputeRequest): ChunkComputeResult {
   const { chunk, params: serializedParams, canvasWidth, canvasHeight, algorithmName } = request;
   const { startX, startY, width, height } = chunk;
-  
+
   // Deserialize params to restore Decimal objects for high-precision computation
   const params = deserializeFractalParams(serializedParams);
 
@@ -66,10 +63,10 @@ export function computeChunk(request: ChunkComputeRequest): ChunkComputeResult {
         const pixelY = startY + y;
         const offsetX = pixelX - canvasWidth / 2;
         const offsetY = pixelY - canvasHeight / 2;
-        
+
         // Calculate scale factor (fractal units per pixel) using Decimal arithmetic
         const scale = new Decimal(4).div(canvasHeight).div(params.zoom).toNumber(); // Same as pixelToFractalCoordinate
-        
+
         // Use precision-preserving method
         const result = algorithm.computePointFromOffset(offsetX, offsetY, scale, maxIter);
         iter = result.iter;
@@ -107,4 +104,3 @@ export function computeChunk(request: ChunkComputeRequest): ChunkComputeResult {
     imageData,
   };
 }
-
