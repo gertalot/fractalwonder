@@ -1,4 +1,3 @@
-
 use crate::rendering::coords::ImageRect;
 
 pub trait CanvasRenderer {

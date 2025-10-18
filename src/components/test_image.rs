@@ -1,10 +1,9 @@
-
+use crate::components::canvas::Canvas;
 use crate::rendering::{
     coords::{ImageCoord, ImageRect},
     renderer_trait::CanvasRenderer,
     viewport::Viewport,
 };
-use crate::components::canvas::Canvas;
 use leptos::*;
 
 pub struct TestImageRenderer {

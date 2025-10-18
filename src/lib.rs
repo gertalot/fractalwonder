@@ -1,4 +1,3 @@
-
 mod app;
 mod components;
 pub mod rendering;

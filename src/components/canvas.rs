@@ -1,4 +1,3 @@
-
 use leptos::html::Canvas;
 use leptos::*;
 use wasm_bindgen::JsCast;
@@ -47,11 +46,16 @@ where
             let pixel_data = renderer.render(&visible_bounds, width, height);
 
             // Put pixels on canvas
-            let image_data =
-                ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&pixel_data), width, height)
-                    .expect("should create ImageData");
+            let image_data = ImageData::new_with_u8_clamped_array_and_sh(
+                wasm_bindgen::Clamped(&pixel_data),
+                width,
+                height,
+            )
+            .expect("should create ImageData");
 
-            context.put_image_data(&image_data, 0.0, 0.0).expect("should put image data");
+            context
+                .put_image_data(&image_data, 0.0, 0.0)
+                .expect("should put image data");
         }
     });
 
@@ -90,9 +94,10 @@ where
         }
     };
 
-    let _ = leptos_use::use_event_listener(leptos_use::use_window(), leptos::ev::resize, move |_| {
-        handle_resize();
-    });
+    let _ =
+        leptos_use::use_event_listener(leptos_use::use_window(), leptos::ev::resize, move |_| {
+            handle_resize();
+        });
 
     view! {
       <canvas
