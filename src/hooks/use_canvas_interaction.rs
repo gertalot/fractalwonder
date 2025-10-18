@@ -1,5 +1,8 @@
 use leptos::*;
-use web_sys::ImageData;
+use leptos_use::use_raf_fn;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
 #[allow(dead_code)]
 const INTERACTION_TIMEOUT_MS: i32 = 1500;
@@ -51,8 +54,54 @@ fn build_transform_matrix(
     matrix
 }
 
+#[allow(dead_code)]
+fn capture_canvas_image_data(canvas: &HtmlCanvasElement) -> Result<ImageData, JsValue> {
+    let context = canvas
+        .get_context("2d")?
+        .ok_or_else(|| JsValue::from_str("Failed to get 2D context"))?
+        .dyn_into::<CanvasRenderingContext2d>()?;
+
+    context.get_image_data(0.0, 0.0, canvas.width() as f64, canvas.height() as f64)
+}
+
+#[allow(dead_code)]
+fn render_preview(
+    canvas: &HtmlCanvasElement,
+    image_data: &ImageData,
+    offset: (f64, f64),
+    zoom: f64,
+    zoom_center: Option<(f64, f64)>,
+) -> Result<(), JsValue> {
+    let context = canvas
+        .get_context("2d")?
+        .ok_or_else(|| JsValue::from_str("Failed to get 2D context"))?
+        .dyn_into::<CanvasRenderingContext2d>()?;
+
+    // Clear canvas
+    context.clear_rect(0.0, 0.0, canvas.width() as f64, canvas.height() as f64);
+
+    // Apply transformation matrix
+    let matrix = build_transform_matrix(offset, zoom, zoom_center);
+    context.set_transform(
+        matrix[0][0],
+        matrix[1][0],
+        matrix[0][1],
+        matrix[1][1],
+        matrix[0][2],
+        matrix[1][2],
+    )?;
+
+    // Draw the transformed image
+    context.put_image_data(image_data, 0.0, 0.0)?;
+
+    // Reset transform
+    context.set_transform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)?;
+
+    Ok(())
+}
+
 pub fn use_canvas_interaction<F>(
-    _canvas_ref: NodeRef<leptos::html::Canvas>,
+    canvas_ref: NodeRef<leptos::html::Canvas>,
     _on_interaction_end: F,
 ) -> InteractionHandle
 where
@@ -84,6 +133,24 @@ where
             animation_frame_id.set_value(None);
         })
     };
+
+    // Animation loop for preview rendering
+    use_raf_fn(move |_| {
+        // Only render if we're interacting and have image data
+        if !is_interacting.get() {
+            return;
+        }
+
+        if let Some(canvas) = canvas_ref.get() {
+            if let Some(image_data) = initial_image_data.get_value() {
+                let offset = accumulated_offset.get_value();
+                let zoom = accumulated_zoom.get_value();
+                let center = zoom_center.get_value();
+
+                let _ = render_preview(&canvas, &image_data, offset, zoom, center);
+            }
+        }
+    });
 
     InteractionHandle {
         is_interacting: Signal::derive(move || is_interacting.get()),
