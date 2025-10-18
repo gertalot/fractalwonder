@@ -7,22 +7,37 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 const INTERACTION_TIMEOUT_MS: i32 = 1500;
 const ZOOM_SENSITIVITY: f64 = 0.0005;
 
-/// Transformation result returned when interaction ends
+/// Transformation result returned when user interaction ends (after 1.5s of inactivity)
+///
+/// Contains both discrete values and a pre-computed affine transformation matrix.
+/// All coordinates are in screen pixel space.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TransformResult {
+    /// Horizontal offset in pixels
     pub offset_x: f64,
+    /// Vertical offset in pixels
     pub offset_y: f64,
+    /// Cumulative zoom factor (1.0 = no zoom, 2.0 = 2x zoom, 0.5 = 0.5x zoom)
     pub zoom_factor: f64,
+    /// 2D affine transformation matrix \[3x3\] encoding offset + zoom
     pub matrix: [[f64; 3]; 3],
 }
 
-/// Handle returned by the hook
+/// Handle returned by the canvas interaction hook
+///
+/// Provides event handlers to attach to canvas element and reactive interaction state.
 pub struct InteractionHandle {
+    /// Reactive signal indicating whether user is currently interacting
     pub is_interacting: Signal<bool>,
+    /// Event handler for pointerdown events
     pub on_pointer_down: Box<dyn Fn(web_sys::PointerEvent)>,
+    /// Event handler for pointermove events
     pub on_pointer_move: Box<dyn Fn(web_sys::PointerEvent)>,
+    /// Event handler for pointerup events
     pub on_pointer_up: Box<dyn Fn(web_sys::PointerEvent)>,
+    /// Event handler for wheel events (zoom)
     pub on_wheel: Box<dyn Fn(web_sys::WheelEvent)>,
+    /// Reset all interaction state
     pub reset: Box<dyn Fn()>,
 }
 
@@ -99,6 +114,50 @@ fn render_preview(
     Ok(())
 }
 
+/// Generic canvas interaction hook providing real-time pan/zoom preview
+///
+/// Designed for canvases where full re-renders are expensive (seconds to hours).
+/// Captures canvas ImageData on interaction start, provides real-time preview
+/// using pixel transformations, and fires callback after 1.5s of inactivity.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use leptos::*;
+/// use fractalwonder::hooks::use_canvas_interaction::{use_canvas_interaction, TransformResult};
+///
+/// #[component]
+/// pub fn MyCanvas() -> impl IntoView {
+///     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
+///
+///     let handle = use_canvas_interaction(
+///         canvas_ref,
+///         move |result: TransformResult| {
+///             // Convert pixel transform to domain coordinates
+///             // Trigger expensive full re-render
+///         },
+///     );
+///
+///     view! {
+///         <canvas
+///             node_ref=canvas_ref
+///             on:pointerdown=move |ev| (handle.on_pointer_down)(ev)
+///             on:pointermove=move |ev| (handle.on_pointer_move)(ev)
+///             on:pointerup=move |ev| (handle.on_pointer_up)(ev)
+///             on:wheel=move |ev| (handle.on_wheel)(ev)
+///         />
+///     }
+/// }
+/// ```
+///
+/// # Arguments
+///
+/// * `canvas_ref` - Leptos NodeRef to canvas element
+/// * `on_interaction_end` - Callback fired when interaction ends (1.5s inactivity)
+///
+/// # Returns
+///
+/// `InteractionHandle` with event handlers and interaction state signal
 pub fn use_canvas_interaction<F>(
     canvas_ref: NodeRef<leptos::html::Canvas>,
     on_interaction_end: F,
