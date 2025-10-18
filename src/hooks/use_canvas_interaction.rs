@@ -1,4 +1,10 @@
 use leptos::*;
+use web_sys::ImageData;
+
+#[allow(dead_code)]
+const INTERACTION_TIMEOUT_MS: i32 = 1500;
+#[allow(dead_code)]
+const ZOOM_SENSITIVITY: f64 = 0.0005;
 
 /// Transformation result returned when interaction ends
 #[derive(Debug, Clone, PartialEq)]
@@ -11,7 +17,7 @@ pub struct TransformResult {
 
 /// Handle returned by the hook
 pub struct InteractionHandle {
-    pub is_interacting: ReadSignal<bool>,
+    pub is_interacting: Signal<bool>,
     pub reset: Box<dyn Fn()>,
 }
 
@@ -43,6 +49,46 @@ fn build_transform_matrix(
     }
 
     matrix
+}
+
+pub fn use_canvas_interaction<F>(
+    _canvas_ref: NodeRef<leptos::html::Canvas>,
+    _on_interaction_end: F,
+) -> InteractionHandle
+where
+    F: Fn(TransformResult) + 'static,
+{
+    // Interaction state signals
+    let is_dragging = create_rw_signal(false);
+    let is_zooming = create_rw_signal(false);
+    let is_interacting = create_memo(move |_| is_dragging.get() || is_zooming.get());
+
+    // Stored state (non-reactive)
+    let initial_image_data = store_value::<Option<ImageData>>(None);
+    let drag_start = store_value::<Option<(f64, f64)>>(None);
+    let accumulated_offset = store_value((0.0, 0.0));
+    let accumulated_zoom = store_value(1.0);
+    let zoom_center = store_value::<Option<(f64, f64)>>(None);
+    let animation_frame_id = store_value::<Option<i32>>(None);
+
+    // Reset function
+    let reset = {
+        Box::new(move || {
+            is_dragging.set(false);
+            is_zooming.set(false);
+            initial_image_data.set_value(None);
+            drag_start.set_value(None);
+            accumulated_offset.set_value((0.0, 0.0));
+            accumulated_zoom.set_value(1.0);
+            zoom_center.set_value(None);
+            animation_frame_id.set_value(None);
+        })
+    };
+
+    InteractionHandle {
+        is_interacting: Signal::derive(move || is_interacting.get()),
+        reset,
+    }
 }
 
 #[cfg(test)]
@@ -102,5 +148,28 @@ mod tests {
             [0.0, 1.5, -45.0],
             [0.0, 0.0, 1.0],
         ]);
+    }
+}
+
+#[cfg(test)]
+mod browser_tests {
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    fn test_hook_creates_handle() {
+        let canvas_ref = create_node_ref::<leptos::html::Canvas>();
+        let callback_fired = create_rw_signal(false);
+
+        let handle = use_canvas_interaction(
+            canvas_ref,
+            move |_result| {
+                callback_fired.set(true);
+            },
+        );
+
+        assert!(!handle.is_interacting.get());
     }
 }

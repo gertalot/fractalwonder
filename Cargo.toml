@@ -26,6 +26,9 @@ features = [
   "CssStyleDeclaration",
   "Element",
   "HtmlElement",
+  "PointerEvent",
+  "WheelEvent",
+  "Performance",
 ]
 
 [dev-dependencies]
