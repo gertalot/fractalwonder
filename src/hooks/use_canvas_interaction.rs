@@ -214,7 +214,7 @@ where
     // Interaction start helper
     let start_interaction = move || {
         let canvas_ref = canvas_ref_stored.get_value();
-        if let Some(canvas) = canvas_ref.get() {
+        if let Some(canvas) = canvas_ref.get_untracked() {
             if let Ok(image_data) = capture_canvas_image_data(&canvas) {
                 initial_image_data.set_value(Some(image_data));
                 accumulated_offset.set_value((0.0, 0.0));
@@ -332,7 +332,7 @@ where
 
         // Store zoom center (pointer position relative to canvas)
         let canvas_ref = canvas_ref_stored.get_value();
-        if let Some(canvas) = canvas_ref.get() {
+        if let Some(canvas) = canvas_ref.get_untracked() {
             let rect = canvas.get_bounding_client_rect();
             let x = ev.client_x() as f64 - rect.left();
             let y = ev.client_y() as f64 - rect.top();
