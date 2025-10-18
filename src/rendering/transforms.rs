@@ -51,7 +51,7 @@ where
 
 pub fn pixel_to_image<T>(
     pixel: PixelCoord,
-    visible_bounds: &ImageRect<T>,
+    target_rect: &ImageRect<T>,
     canvas_width: u32,
     canvas_height: u32,
 ) -> ImageCoord<T>
@@ -61,18 +61,18 @@ where
         + std::ops::Mul<f64, Output = T>
         + std::ops::Add<Output = T>,
 {
-    let bounds_width = visible_bounds.max.x().clone() - visible_bounds.min.x().clone();
-    let bounds_height = visible_bounds.max.y().clone() - visible_bounds.min.y().clone();
+    let bounds_width = target_rect.max.x().clone() - target_rect.min.x().clone();
+    let bounds_height = target_rect.max.y().clone() - target_rect.min.y().clone();
 
     ImageCoord::new(
-        visible_bounds.min.x().clone() + bounds_width * (pixel.x() / canvas_width as f64),
-        visible_bounds.min.y().clone() + bounds_height * (pixel.y() / canvas_height as f64),
+        target_rect.min.x().clone() + bounds_width * (pixel.x() / canvas_width as f64),
+        target_rect.min.y().clone() + bounds_height * (pixel.y() / canvas_height as f64),
     )
 }
 
 pub fn image_to_pixel<T>(
     image: &ImageCoord<T>,
-    visible_bounds: &ImageRect<T>,
+    target_rect: &ImageRect<T>,
     canvas_width: u32,
     canvas_height: u32,
 ) -> PixelCoord
@@ -80,11 +80,11 @@ where
     T: Clone + std::ops::Sub<Output = T> + std::ops::Div<Output = T>,
     f64: std::ops::Mul<T, Output = f64>,
 {
-    let bounds_width = visible_bounds.max.x().clone() - visible_bounds.min.x().clone();
-    let bounds_height = visible_bounds.max.y().clone() - visible_bounds.min.y().clone();
+    let bounds_width = target_rect.max.x().clone() - target_rect.min.x().clone();
+    let bounds_height = target_rect.max.y().clone() - target_rect.min.y().clone();
 
-    let normalized_x = (image.x().clone() - visible_bounds.min.x().clone()) / bounds_width;
-    let normalized_y = (image.y().clone() - visible_bounds.min.y().clone()) / bounds_height;
+    let normalized_x = (image.x().clone() - target_rect.min.x().clone()) / bounds_width;
+    let normalized_y = (image.y().clone() - target_rect.min.y().clone()) / bounds_height;
 
     PixelCoord::new(
         canvas_width as f64 * normalized_x,

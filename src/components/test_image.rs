@@ -1,7 +1,8 @@
 use crate::components::canvas::Canvas;
 use crate::rendering::{
-    coords::{ImageCoord, ImageRect},
+    coords::{ImageCoord, ImageRect, PixelCoord},
     renderer_trait::CanvasRenderer,
+    transforms::pixel_to_image,
     viewport::Viewport,
 };
 use leptos::*;
@@ -56,13 +57,11 @@ impl CanvasRenderer for TestImageRenderer {
 
         for py in 0..height {
             for px in 0..width {
-                // Map pixel to image coordinates
-                let img_x = target_rect.min.x()
-                    + (px as f64 / width as f64) * (target_rect.max.x() - target_rect.min.x());
-                let img_y = target_rect.min.y()
-                    + (py as f64 / height as f64) * (target_rect.max.y() - target_rect.min.y());
+                // Map pixel to image coordinates using centralized transform
+                let pixel = PixelCoord::new(px as f64, py as f64);
+                let image_coord = pixel_to_image(pixel, target_rect, width, height);
 
-                let color = self.compute_pixel_color(img_x, img_y);
+                let color = self.compute_pixel_color(*image_coord.x(), *image_coord.y());
 
                 let idx = ((py * width + px) * 4) as usize;
                 pixels[idx] = color.0; // R
