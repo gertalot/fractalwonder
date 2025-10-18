@@ -198,11 +198,41 @@ where
         // Timeout will be started in next task
     };
 
+    // Wheel handler for zoom
+    let on_wheel = move |ev: web_sys::WheelEvent| {
+        ev.prevent_default();
+
+        // Start interaction if not already started
+        if !is_dragging.get() && !is_zooming.get() {
+            start_interaction();
+        }
+
+        is_zooming.set(true);
+
+        // Calculate zoom factor from wheel delta
+        let delta = ev.delta_y();
+        let zoom_multiplier = (-delta * ZOOM_SENSITIVITY).exp();
+        let current_zoom = accumulated_zoom.get_value();
+        accumulated_zoom.set_value(current_zoom * zoom_multiplier);
+
+        // Store zoom center (pointer position relative to canvas)
+        let canvas_ref = canvas_ref_stored.get_value();
+        if let Some(canvas) = canvas_ref.get() {
+            let rect = canvas.get_bounding_client_rect();
+            let x = ev.client_x() as f64 - rect.left();
+            let y = ev.client_y() as f64 - rect.top();
+            zoom_center.set_value(Some((x, y)));
+        }
+
+        // Timeout will be restarted (next task)
+    };
+
     // Store event handlers for consumer to attach
     let _pointer_handlers = store_value((
         on_pointer_down,
         on_pointer_move,
         on_pointer_up,
+        on_wheel,
     ));
 
     InteractionHandle {
