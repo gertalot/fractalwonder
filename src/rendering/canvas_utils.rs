@@ -1,64 +1,29 @@
-use crate::rendering::{calculate_visible_bounds, renderer_trait::CanvasRenderer, Viewport};
-use wasm_bindgen::JsCast;
-use web_sys::CanvasRenderingContext2d;
+use crate::rendering::{renderer_trait::Renderer, viewport::Viewport, PixelRect};
+use wasm_bindgen::{Clamped, JsCast};
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
-/// Renders a scene to a canvas using a renderer and viewport
-///
-/// This is a generic utility that works with any `CanvasRenderer` implementation.
-/// It handles the full rendering pipeline:
-/// 1. Gets the 2D context from the canvas
-/// 2. Calculates visible bounds from the viewport
-/// 3. Calls the renderer to generate pixel data
-/// 4. Puts the pixel data onto the canvas
-///
-/// # Type Parameters
-///
-/// * `R` - Any type implementing the `CanvasRenderer` trait
-///
-/// # Arguments
-///
-/// * `canvas` - The HTML canvas element to render to
-/// * `renderer` - The renderer that generates pixel data
-/// * `viewport` - The viewport defining what portion of the scene to render
-pub fn render_with_viewport<R>(
-    canvas: &web_sys::HtmlCanvasElement,
-    renderer: &R,
-    viewport: &Viewport<R::Coord>,
-) where
-    R: CanvasRenderer,
-    R::Coord: Clone
-        + std::ops::Sub<Output = R::Coord>
-        + std::ops::Add<Output = R::Coord>
-        + std::ops::Div<f64, Output = R::Coord>
-        + std::ops::Mul<f64, Output = R::Coord>,
+pub fn render_with_viewport<R>(canvas: &HtmlCanvasElement, renderer: &R, viewport: &Viewport<R::Coord>)
+where
+    R: Renderer,
+    R::Coord: Clone,
 {
-    let context = canvas
-        .get_context("2d")
-        .expect("should get 2d context")
-        .expect("context should not be null")
-        .dyn_into::<CanvasRenderingContext2d>()
-        .expect("should cast to CanvasRenderingContext2d");
-
     let width = canvas.width();
     let height = canvas.height();
-
-    // Calculate visible bounds from viewport
-    let visible_bounds = calculate_visible_bounds(viewport, width, height);
-
-    // Render the pattern
-    let pixel_data = renderer.render(&visible_bounds, width, height);
+    let pixel_rect = PixelRect::full_canvas(width, height);
+    let pixels = renderer.render(viewport, pixel_rect, (width, height));
 
     // Put pixels on canvas
-    let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
-        wasm_bindgen::Clamped(&pixel_data),
-        width,
-        height,
-    )
-    .expect("should create ImageData");
+    let context = canvas
+        .get_context("2d")
+        .expect("Failed to get context")
+        .expect("Context is None")
+        .dyn_into::<CanvasRenderingContext2d>()
+        .expect("Failed to cast to 2D context");
 
-    context
-        .put_image_data(&image_data, 0.0, 0.0)
-        .expect("should put image data");
+    let image_data = ImageData::new_with_u8_clamped_array_and_sh(Clamped(&pixels), width, height)
+        .expect("Failed to create ImageData");
+
+    context.put_image_data(&image_data, 0.0, 0.0).expect("Failed to put image data");
 }
 
 #[cfg(test)]
@@ -71,16 +36,16 @@ mod tests {
         color: (u8, u8, u8, u8),
     }
 
-    impl CanvasRenderer for MockRenderer {
+    impl Renderer for MockRenderer {
         type Coord = f64;
 
         fn natural_bounds(&self) -> Rect<f64> {
             Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0))
         }
 
-        fn render(&self, _target_rect: &Rect<f64>, width: u32, height: u32) -> Vec<u8> {
-            let mut pixels = vec![0u8; (width * height * 4) as usize];
-            for i in 0..(width * height) as usize {
+        fn render(&self, _viewport: &Viewport<f64>, pixel_rect: PixelRect, _canvas_size: (u32, u32)) -> Vec<u8> {
+            let mut pixels = vec![0u8; (pixel_rect.width * pixel_rect.height * 4) as usize];
+            for i in 0..(pixel_rect.width * pixel_rect.height) as usize {
                 pixels[i * 4] = self.color.0;
                 pixels[i * 4 + 1] = self.color.1;
                 pixels[i * 4 + 2] = self.color.2;
@@ -95,8 +60,9 @@ mod tests {
         let renderer = MockRenderer {
             color: (255, 0, 0, 255),
         };
-        let bounds = Rect::new(Coord::new(-10.0, -10.0), Coord::new(10.0, 10.0));
-        let pixels = renderer.render(&bounds, 100, 100);
+        let viewport = Viewport::new(Coord::new(0.0, 0.0), 1.0, renderer.natural_bounds());
+        let pixel_rect = PixelRect::full_canvas(100, 100);
+        let pixels = renderer.render(&viewport, pixel_rect, (100, 100));
         assert_eq!(pixels.len(), 100 * 100 * 4);
     }
 
@@ -105,8 +71,9 @@ mod tests {
         let renderer = MockRenderer {
             color: (128, 64, 32, 255),
         };
-        let bounds = Rect::new(Coord::new(-10.0, -10.0), Coord::new(10.0, 10.0));
-        let pixels = renderer.render(&bounds, 10, 10);
+        let viewport = Viewport::new(Coord::new(0.0, 0.0), 1.0, renderer.natural_bounds());
+        let pixel_rect = PixelRect::full_canvas(10, 10);
+        let pixels = renderer.render(&viewport, pixel_rect, (10, 10));
 
         // Check first pixel
         assert_eq!(pixels[0], 128);

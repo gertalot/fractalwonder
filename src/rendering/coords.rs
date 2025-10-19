@@ -97,6 +97,19 @@ impl<T> Rect<T> {
     }
 }
 
+impl<T> Rect<T>
+where
+    T: Clone + std::ops::Add<Output = T> + std::ops::Div<Output = T> + From<f64>,
+{
+    /// Calculate center point of rectangle
+    pub fn center(&self) -> Coord<T> {
+        let two = T::from(2.0);
+        let center_x = (self.min.x().clone() + self.max.x().clone()) / two.clone();
+        let center_y = (self.min.y().clone() + self.max.y().clone()) / two;
+        Coord::new(center_x, center_y)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

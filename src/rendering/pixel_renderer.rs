@@ -1,10 +1,6 @@
 use crate::rendering::{
-    coords::{Coord, Rect},
-    pixel_compute::PixelCompute,
-    renderer_trait::Renderer,
-    transforms::pixel_to_image,
-    viewport::Viewport,
-    PixelRect,
+    calculate_visible_bounds, coords::Rect, pixel_compute::PixelCompute, renderer_trait::Renderer,
+    transforms::pixel_to_image, viewport::Viewport, PixelRect,
 };
 
 /// Renderer that wraps a PixelCompute, adding pixel iteration logic
@@ -25,7 +21,7 @@ impl<C: PixelCompute> PixelRenderer<C> {
 impl<C> Renderer for PixelRenderer<C>
 where
     C: PixelCompute,
-    C::Coord: Clone,
+    C::Coord: Clone + std::ops::Sub<Output = C::Coord> + std::ops::Add<Output = C::Coord> + std::ops::Mul<f64, Output = C::Coord>,
 {
     type Coord = C::Coord;
 
@@ -41,6 +37,9 @@ where
     ) -> Vec<u8> {
         let mut pixels = vec![0u8; (pixel_rect.width * pixel_rect.height * 4) as usize];
 
+        // Calculate visible bounds from viewport once
+        let visible_bounds = calculate_visible_bounds(viewport, canvas_size.0, canvas_size.1);
+
         for local_y in 0..pixel_rect.height {
             for local_x in 0..pixel_rect.width {
                 // Convert local pixel coords to absolute canvas coords
@@ -51,7 +50,7 @@ where
                 let image_coord = pixel_to_image(
                     abs_x as f64,
                     abs_y as f64,
-                    viewport,
+                    &visible_bounds,
                     canvas_size.0,
                     canvas_size.1,
                 );
