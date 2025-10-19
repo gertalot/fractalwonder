@@ -1,4 +1,4 @@
-use crate::rendering::{coords::Rect, renderer_trait::Renderer, viewport::Viewport, PixelRect};
+use crate::rendering::{points::Rect, renderer_trait::Renderer, viewport::Viewport, PixelRect};
 
 /// Renderer that splits rendering into tiles, delegating to inner renderer
 ///
@@ -80,7 +80,7 @@ where
 mod tests {
     use super::*;
     use crate::rendering::{
-        coords::Coord, pixel_renderer::PixelRenderer, point_compute::ImagePointComputer,
+        pixel_renderer::PixelRenderer, point_compute::ImagePointComputer, points::Point,
     };
 
     #[derive(Clone)]
@@ -92,10 +92,10 @@ mod tests {
         type Coord = f64;
 
         fn natural_bounds(&self) -> Rect<f64> {
-            Rect::new(Coord::new(0.0, 0.0), Coord::new(100.0, 100.0))
+            Rect::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0))
         }
 
-        fn compute(&self, _coord: Coord<f64>) -> (u8, u8, u8, u8) {
+        fn compute(&self, _coord: Point<f64>) -> (u8, u8, u8, u8) {
             self.color
         }
     }
@@ -109,9 +109,9 @@ mod tests {
         let tiled_renderer = TiledRenderer::new(PixelRenderer::new(computer), 16);
 
         let viewport = Viewport::new(
-            Coord::new(50.0, 50.0),
+            Point::new(50.0, 50.0),
             1.0,
-            Rect::new(Coord::new(0.0, 0.0), Coord::new(100.0, 100.0)),
+            Rect::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0)),
         );
         let pixel_rect = PixelRect::full_canvas(32, 32);
 
@@ -130,9 +130,9 @@ mod tests {
         let tiled_renderer = TiledRenderer::new(PixelRenderer::new(computer), 10);
 
         let viewport = Viewport::new(
-            Coord::new(50.0, 50.0),
+            Point::new(50.0, 50.0),
             1.0,
-            Rect::new(Coord::new(0.0, 0.0), Coord::new(100.0, 100.0)),
+            Rect::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0)),
         );
         let pixel_rect = PixelRect::full_canvas(27, 27); // Not divisible by 10
 

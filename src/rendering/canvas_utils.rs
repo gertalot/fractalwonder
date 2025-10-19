@@ -34,7 +34,7 @@ pub fn render_with_viewport<R>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rendering::{coords::Coord, coords::Rect};
+    use crate::rendering::{points::Point, points::Rect};
 
     // Mock renderer for testing
     struct MockRenderer {
@@ -45,7 +45,7 @@ mod tests {
         type Coord = f64;
 
         fn natural_bounds(&self) -> Rect<f64> {
-            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0))
+            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0))
         }
 
         fn render(
@@ -70,7 +70,7 @@ mod tests {
         let renderer = MockRenderer {
             color: (255, 0, 0, 255),
         };
-        let viewport = Viewport::new(Coord::new(0.0, 0.0), 1.0, renderer.natural_bounds());
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0, renderer.natural_bounds());
         let pixel_rect = PixelRect::full_canvas(100, 100);
         let pixels = renderer.render(&viewport, pixel_rect, (100, 100));
         assert_eq!(pixels.len(), 100 * 100 * 4);
@@ -81,7 +81,7 @@ mod tests {
         let renderer = MockRenderer {
             color: (128, 64, 32, 255),
         };
-        let viewport = Viewport::new(Coord::new(0.0, 0.0), 1.0, renderer.natural_bounds());
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0, renderer.natural_bounds());
         let pixel_rect = PixelRect::full_canvas(10, 10);
         let pixels = renderer.render(&viewport, pixel_rect, (10, 10));
 

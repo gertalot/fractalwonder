@@ -1,6 +1,6 @@
 use crate::hooks::use_canvas_interaction::TransformResult;
 use crate::rendering::{
-    coords::{Coord, Rect},
+    points::{Point, Rect},
     viewport::Viewport,
 };
 
@@ -120,7 +120,7 @@ pub fn pan_viewport<T>(viewport: &Viewport<T>, offset_x: T, offset_y: T) -> View
 where
     T: Clone + std::ops::Add<Output = T>,
 {
-    let new_center = Coord::new(
+    let new_center = Point::new(
         viewport.center.x().clone() + offset_x,
         viewport.center.y().clone() + offset_y,
     );
@@ -171,7 +171,7 @@ pub fn zoom_viewport_at_point(
     let new_center_y =
         zoom_point_image_y - (pixel_y / canvas_height as f64 - 0.5) * new_view_height;
 
-    let new_center = Coord::new(new_center_x, new_center_y);
+    let new_center = Point::new(new_center_x, new_center_y);
 
     Viewport::new(new_center, new_zoom, viewport.natural_bounds.clone())
 }
@@ -221,7 +221,7 @@ where
         let image_offset_y = current_bounds.height() * (absolute_offset_y / canvas_height as f64);
 
         // Viewport moves opposite to pixel offset (dragging right = looking left)
-        let new_center = Coord::new(
+        let new_center = Point::new(
             viewport.center.x().clone() - image_offset_x,
             viewport.center.y().clone() - image_offset_y,
         );
@@ -288,7 +288,7 @@ where
     // Solving for new_viewport_center:
     // new_viewport_center = image_at_original_center + new_view_width/2 - (new_center_px / canvas_width) * new_view_width
 
-    let new_viewport_center = Coord::new(
+    let new_viewport_center = Point::new(
         image_at_original_center.x().clone() + new_view_width.clone() / 2.0
             - new_view_width * (new_center_px / canvas_width as f64),
         image_at_original_center.y().clone() + new_view_height.clone() / 2.0
@@ -337,11 +337,11 @@ where
     let half_height = final_height.clone() / 2.0;
 
     Rect::new(
-        Coord::new(
+        Point::new(
             viewport.center.x().clone() - half_width.clone(),
             viewport.center.y().clone() - half_height.clone(),
         ),
-        Coord::new(
+        Point::new(
             viewport.center.x().clone() + half_width,
             viewport.center.y().clone() + half_height,
         ),
@@ -354,7 +354,7 @@ pub fn pixel_to_image<T>(
     target_rect: &Rect<T>,
     canvas_width: u32,
     canvas_height: u32,
-) -> Coord<T>
+) -> Point<T>
 where
     T: Clone
         + std::ops::Sub<Output = T>
@@ -364,14 +364,14 @@ where
     let bounds_width = target_rect.width();
     let bounds_height = target_rect.height();
 
-    Coord::new(
+    Point::new(
         target_rect.min.x().clone() + bounds_width * (pixel_x / canvas_width as f64),
         target_rect.min.y().clone() + bounds_height * (pixel_y / canvas_height as f64),
     )
 }
 
 pub fn image_to_pixel<T>(
-    image: &Coord<T>,
+    image: &Point<T>,
     target_rect: &Rect<T>,
     canvas_width: u32,
     canvas_height: u32,
@@ -399,9 +399,9 @@ mod tests {
     #[test]
     fn test_calculate_visible_bounds_landscape() {
         let viewport = Viewport::new(
-            Coord::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
             1.0,
-            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
         );
 
         // Landscape canvas: 1600x900 (aspect ratio ~1.78)
@@ -418,9 +418,9 @@ mod tests {
     #[test]
     fn test_calculate_visible_bounds_portrait() {
         let viewport = Viewport::new(
-            Coord::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
             1.0,
-            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
         );
 
         // Portrait canvas: 900x1600
@@ -437,9 +437,9 @@ mod tests {
     #[test]
     fn test_calculate_visible_bounds_zoom() {
         let viewport = Viewport::new(
-            Coord::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
             2.0, // 2x zoom
-            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
         );
 
         // Square canvas
@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_pixel_to_image_center() {
-        let bounds = Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0));
+        let bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
         let image = pixel_to_image(500.0, 500.0, &bounds, 1000, 1000);
 
         assert_eq!(*image.x(), 0.0);
@@ -461,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_pixel_to_image_corners() {
-        let bounds = Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0));
+        let bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
 
         // Top-left corner
         let image = pixel_to_image(0.0, 0.0, &bounds, 1000, 1000);
@@ -476,8 +476,8 @@ mod tests {
 
     #[test]
     fn test_image_to_pixel_center() {
-        let bounds = Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0));
-        let image = Coord::new(0.0, 0.0);
+        let bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+        let image = Point::new(0.0, 0.0);
         let (px, py) = image_to_pixel(&image, &bounds, 1000, 1000);
 
         assert_eq!(px, 500.0);
@@ -486,7 +486,7 @@ mod tests {
 
     #[test]
     fn test_round_trip_pixel_image_pixel() {
-        let bounds = Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0));
+        let bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
         let (orig_x, orig_y) = (123.0, 456.0);
 
         let image = pixel_to_image(orig_x, orig_y, &bounds, 1000, 1000);
@@ -517,9 +517,9 @@ mod tests {
     #[test]
     fn test_pan_viewport_right() {
         let viewport = Viewport::new(
-            Coord::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
             1.0,
-            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
         );
 
         // Pan right 10 image units
@@ -533,9 +533,9 @@ mod tests {
     #[test]
     fn test_pan_viewport_from_offset_position() {
         let viewport = Viewport::new(
-            Coord::new(20.0, -10.0),
+            Point::new(20.0, -10.0),
             1.0,
-            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
         );
 
         // Pan left 5 units, down 3 units
@@ -549,9 +549,9 @@ mod tests {
     #[test]
     fn test_zoom_viewport_at_center_point() {
         let viewport = Viewport::new(
-            Coord::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
             1.0,
-            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
         );
 
         let canvas_width = 800;
@@ -579,9 +579,9 @@ mod tests {
     #[test]
     fn test_zoom_viewport_at_corner() {
         let viewport = Viewport::new(
-            Coord::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
             1.0,
-            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
         );
 
         let canvas_width = 800;
@@ -600,9 +600,9 @@ mod tests {
     #[test]
     fn test_zoom_viewport_out() {
         let viewport = Viewport::new(
-            Coord::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
             2.0,
-            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
         );
 
         let canvas_width = 800;
@@ -633,9 +633,9 @@ mod tests {
 
         // Start at origin
         let viewport = Viewport::new(
-            Coord::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
             1.0,
-            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
         );
 
         let canvas_width = 800;
@@ -699,8 +699,8 @@ mod tests {
         let original_dragged_center_x = -(drag_offset / canvas_width as f64)
             * calculate_visible_bounds(&viewport, canvas_width, canvas_height).width();
         let original_bounds_at_drag = Rect::new(
-            Coord::new(original_dragged_center_x - 66.67, -50.0),
-            Coord::new(original_dragged_center_x + 66.67, 50.0),
+            Point::new(original_dragged_center_x - 66.67, -50.0),
+            Point::new(original_dragged_center_x + 66.67, 50.0),
         );
         let zoom_point_in_original_x = *original_bounds_at_drag.min.x()
             + (zoom_point_x / canvas_width as f64) * original_bounds_at_drag.width();
@@ -729,9 +729,9 @@ mod tests {
 
         // Start at origin
         let viewport = Viewport::new(
-            Coord::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
             1.0,
-            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
         );
 
         let canvas_width = 800;
@@ -1082,9 +1082,9 @@ mod tests {
         // original content that was there before the drag.
 
         let viewport = Viewport::new(
-            Coord::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
             1.0,
-            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
         );
 
         let canvas_width = 800;
@@ -1125,7 +1125,7 @@ mod tests {
         // After dragging right, we're looking left, so subtract
         let intermediate_center_x = *viewport.center.x() - drag_in_image_units;
         let intermediate_viewport = Viewport::new(
-            Coord::new(intermediate_center_x, *viewport.center.y()),
+            Point::new(intermediate_center_x, *viewport.center.y()),
             viewport.zoom,
             viewport.natural_bounds.clone(),
         );

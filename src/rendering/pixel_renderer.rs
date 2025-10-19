@@ -1,5 +1,5 @@
 use crate::rendering::{
-    calculate_visible_bounds, coords::Rect, point_compute::ImagePointComputer,
+    calculate_visible_bounds, point_compute::ImagePointComputer, points::Rect,
     renderer_trait::Renderer, transforms::pixel_to_image, viewport::Viewport, PixelRect,
 };
 
@@ -78,7 +78,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rendering::coords::Coord;
+    use crate::rendering::points::Point;
 
     struct TestCompute;
 
@@ -86,10 +86,10 @@ mod tests {
         type Coord = f64;
 
         fn natural_bounds(&self) -> Rect<f64> {
-            Rect::new(Coord::new(-10.0, -10.0), Coord::new(10.0, 10.0))
+            Rect::new(Point::new(-10.0, -10.0), Point::new(10.0, 10.0))
         }
 
-        fn compute(&self, coord: Coord<f64>) -> (u8, u8, u8, u8) {
+        fn compute(&self, coord: Point<f64>) -> (u8, u8, u8, u8) {
             // Red if x > 0, blue otherwise
             if *coord.x() > 0.0 {
                 (255, 0, 0, 255)
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn test_pixel_renderer_full_canvas() {
         let renderer = PixelRenderer::new(TestCompute);
-        let viewport = Viewport::new(Coord::new(0.0, 0.0), 1.0, renderer.natural_bounds());
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0, renderer.natural_bounds());
         let pixel_rect = PixelRect::full_canvas(10, 10);
         let pixels = renderer.render(&viewport, pixel_rect, (10, 10));
 
@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn test_pixel_renderer_partial_rect() {
         let renderer = PixelRenderer::new(TestCompute);
-        let viewport = Viewport::new(Coord::new(0.0, 0.0), 1.0, renderer.natural_bounds());
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0, renderer.natural_bounds());
         // Render just a 5x5 tile starting at (2, 2)
         let pixel_rect = PixelRect::new(2, 2, 5, 5);
         let pixels = renderer.render(&viewport, pixel_rect, (10, 10));

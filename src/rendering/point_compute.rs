@@ -1,4 +1,4 @@
-use crate::rendering::coords::{Coord, Rect};
+use crate::rendering::points::{Point, Rect};
 
 /// Trait for computing color values at points in image space
 ///
@@ -18,7 +18,7 @@ pub trait ImagePointComputer {
     ///
     /// # Returns
     /// (R, G, B, A) tuple, each 0-255
-    fn compute(&self, coord: Coord<Self::Coord>) -> (u8, u8, u8, u8);
+    fn compute(&self, coord: Point<Self::Coord>) -> (u8, u8, u8, u8);
 }
 
 #[cfg(test)]
@@ -34,10 +34,10 @@ mod tests {
         type Coord = f64;
 
         fn natural_bounds(&self) -> Rect<f64> {
-            Rect::new(Coord::new(0.0, 0.0), Coord::new(100.0, 100.0))
+            Rect::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0))
         }
 
-        fn compute(&self, _coord: Coord<f64>) -> (u8, u8, u8, u8) {
+        fn compute(&self, _coord: Point<f64>) -> (u8, u8, u8, u8) {
             self.color
         }
     }
@@ -47,7 +47,7 @@ mod tests {
         let computer = SolidColorCompute {
             color: (255, 0, 0, 255),
         };
-        let result = computer.compute(Coord::new(50.0, 50.0));
+        let result = computer.compute(Point::new(50.0, 50.0));
         assert_eq!(result, (255, 0, 0, 255));
     }
 }

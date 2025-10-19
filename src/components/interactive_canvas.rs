@@ -1,6 +1,6 @@
 use crate::hooks::use_canvas_interaction::{use_canvas_interaction, TransformResult};
 use crate::rendering::{
-    apply_pixel_transform_to_viewport, coords::Coord, render_with_viewport,
+    apply_pixel_transform_to_viewport, points::Point, render_with_viewport,
     renderer_trait::Renderer, viewport::Viewport,
 };
 use leptos::*;
@@ -38,11 +38,11 @@ where
 
     // Initialize viewport from renderer's natural bounds
     let natural_bounds = renderer.natural_bounds();
-    let center = Coord::new(
+    let center = Point::new(
         // Calculate center from bounds
         // For f64: (max + min) / 2, but we need generic approach
         // Use existing Viewport logic or make this configurable
-        // For now, assume Coord implements a center calculation
+        // For now, assume Point implements a center calculation
         natural_bounds.center().x().clone(),
         natural_bounds.center().y().clone(),
     );

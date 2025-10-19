@@ -1,4 +1,4 @@
-use crate::rendering::{coords::Rect, viewport::Viewport, PixelRect};
+use crate::rendering::{points::Rect, viewport::Viewport, PixelRect};
 
 /// Core trait for rendering pixel data given viewport and pixel-space dimensions
 ///
