@@ -1,12 +1,28 @@
-use crate::rendering::coords::Rect;
+use crate::rendering::{coords::Rect, viewport::Viewport, PixelRect};
 
-pub trait CanvasRenderer {
-    type Coord: Clone;
+/// Core trait for rendering pixel data given viewport and pixel-space dimensions
+///
+/// Implementations can be composed (e.g., TiledRenderer wrapping PixelRenderer)
+pub trait Renderer {
+    /// Coordinate type for image space (f64, rug::Float, etc.)
+    type Coord;
 
-    /// Returns the natural bounds of this renderer (what zoom 1.0 should display)
+    /// Natural bounds of the image in image-space coordinates
     fn natural_bounds(&self) -> Rect<Self::Coord>;
 
-    /// Renders the specified image-space rectangle to pixel data
-    /// Returns RGBA pixel data (width * height * 4 bytes)
-    fn render(&self, target_rect: &Rect<Self::Coord>, width: u32, height: u32) -> Vec<u8>;
+    /// Render pixels for a given viewport and pixel rectangle
+    ///
+    /// # Arguments
+    /// * `viewport` - What image coordinates the full canvas shows
+    /// * `pixel_rect` - Which portion of canvas to render (for tiling)
+    /// * `canvas_size` - Full canvas dimensions (width, height)
+    ///
+    /// # Returns
+    /// RGBA pixel data for the specified pixel_rect (length = width * height * 4)
+    fn render(
+        &self,
+        viewport: &Viewport<Self::Coord>,
+        pixel_rect: PixelRect,
+        canvas_size: (u32, u32),
+    ) -> Vec<u8>;
 }
