@@ -1,3 +1,4 @@
+use crate::rendering::transforms::{compose_affine_transformations, Mat3, Transform};
 use leptos::*;
 use leptos_use::use_raf_fn;
 use std::rc::Rc;
@@ -204,12 +205,15 @@ where
     let initial_image_data = store_value::<Option<ImageData>>(None);
     let initial_canvas_size = store_value::<Option<(u32, u32)>>(None); // Canvas size when interaction started
     let drag_start = store_value::<Option<(f64, f64)>>(None);
-    let base_offset = store_value((0.0, 0.0)); // Committed offset from all previous drags
-    let current_drag_offset = store_value((0.0, 0.0)); // Offset from current drag only
-    let accumulated_zoom = store_value(1.0);
+    let base_offset = store_value((0.0, 0.0)); // Committed offset from all previous drags (for preview)
+    let current_drag_offset = store_value((0.0, 0.0)); // Offset from current drag only (for preview)
+    let accumulated_zoom = store_value(1.0); // Accumulated zoom (for preview)
     let zoom_center = store_value::<Option<(f64, f64)>>(None);
     let animation_frame_id = store_value::<Option<i32>>(None);
     let timeout_id = store_value::<Option<i32>>(None);
+
+    // Transformation sequence - the source of truth for final result
+    let transform_sequence = store_value::<Vec<Transform>>(Vec::new());
 
     // Reset function
     let reset = move || {
@@ -225,6 +229,7 @@ where
         zoom_center.set_value(None);
         animation_frame_id.set_value(None);
         timeout_id.set_value(None);
+        transform_sequence.set_value(Vec::new());
     };
 
     // Store canvas_ref for multiple closures
@@ -280,6 +285,7 @@ where
                 current_drag_offset.set_value((0.0, 0.0));
                 accumulated_zoom.set_value(1.0);
                 zoom_center.set_value(None);
+                transform_sequence.set_value(Vec::new());
             }
         }
     };
@@ -295,12 +301,15 @@ where
         is_zooming.set(false);
         is_resizing.set(false);
 
-        // Build final result from total accumulated offset
-        let base = base_offset.get_value();
-        let current = current_drag_offset.get_value();
-        let total_offset = (base.0 + current.0, base.1 + current.1);
+        // Compose the transformation sequence to get the final matrix
+        let sequence = transform_sequence.get_value();
+        let composed_matrix: Mat3 = compose_affine_transformations(sequence);
 
-        let zoom = accumulated_zoom.get_value();
+        // Extract center-relative offset and zoom from the composed matrix
+        // The matrix is in the form: [[zoom, 0, offset_x], [0, zoom, offset_y], [0, 0, 1]]
+        let zoom_factor = composed_matrix.data[0][0];
+        let absolute_offset_x = composed_matrix.data[0][2];
+        let absolute_offset_y = composed_matrix.data[1][2];
 
         // Convert absolute pixel offset to center-relative offset
         // This makes the values more intuitive: (0, 0) means we zoomed at canvas center
@@ -312,21 +321,18 @@ where
 
                 // Offset is relative to top-left (0, 0), convert to relative to center
                 (
-                    total_offset.0 - canvas_center_x * (1.0 - zoom),
-                    total_offset.1 - canvas_center_y * (1.0 - zoom),
+                    absolute_offset_x - canvas_center_x * (1.0 - zoom_factor),
+                    absolute_offset_y - canvas_center_y * (1.0 - zoom_factor),
                 )
             } else {
-                total_offset
+                (absolute_offset_x, absolute_offset_y)
             };
-
-        // Matrix still uses absolute coordinates for internal rendering
-        let matrix = build_transform_matrix(total_offset, zoom, None);
 
         let result = TransformResult {
             offset_x: center_relative_x,
             offset_y: center_relative_y,
-            zoom_factor: zoom,
-            matrix,
+            zoom_factor,
+            matrix: composed_matrix.data,
         };
 
         // Clear state
@@ -335,6 +341,7 @@ where
         current_drag_offset.set_value((0.0, 0.0));
         accumulated_zoom.set_value(1.0);
         zoom_center.set_value(None);
+        transform_sequence.set_value(Vec::new());
 
         // Fire callback
         on_interaction_end.with_value(|cb| cb(result));
@@ -406,9 +413,21 @@ where
     let on_pointer_up = move |_ev: web_sys::PointerEvent| {
         is_dragging.set(false);
 
-        // Commit current drag offset into base offset for next drag
-        let base = base_offset.get_value();
+        // Get current drag offset
         let current = current_drag_offset.get_value();
+
+        // Add drag transformation to sequence (if there was actual movement)
+        if current.0.abs() > 0.01 || current.1.abs() > 0.01 {
+            transform_sequence.update_value(|seq| {
+                seq.push(Transform::Translate {
+                    dx: current.0,
+                    dy: current.1,
+                });
+            });
+        }
+
+        // Commit current drag offset into base offset for next drag (for preview)
+        let base = base_offset.get_value();
         base_offset.set_value((base.0 + current.0, base.1 + current.1));
         current_drag_offset.set_value((0.0, 0.0));
 
@@ -427,7 +446,7 @@ where
 
         is_zooming.set(true);
 
-        // Get current zoom and offset state
+        // Get current zoom and offset state (for preview)
         let old_zoom = accumulated_zoom.get_value();
         let old_base = base_offset.get_value();
 
@@ -443,6 +462,17 @@ where
             let mouse_x = ev.client_x() as f64 - rect.left();
             let mouse_y = ev.client_y() as f64 - rect.top();
 
+            // Add scale transformation to sequence
+            // The zoom is centered around the mouse position
+            transform_sequence.update_value(|seq| {
+                seq.push(Transform::Scale {
+                    factor: zoom_multiplier,
+                    center_x: mouse_x,
+                    center_y: mouse_y,
+                });
+            });
+
+            // Update preview state (for real-time rendering)
             // When zooming at point (mx, my) with current state (old_zoom, old_offset),
             // we want the image content at (mx, my) to stay at (mx, my).
             //

@@ -1040,10 +1040,7 @@ mod tests {
     fn test_compose_three_translations_to_identity() {
         // Three translations that cancel out to identity
         let transforms = vec![
-            Transform::Translate {
-                dx: 200.0,
-                dy: 0.0,
-            },
+            Transform::Translate { dx: 200.0, dy: 0.0 },
             Transform::Translate {
                 dx: 0.0,
                 dy: -200.0,
@@ -1082,10 +1079,7 @@ mod tests {
         // Complex sequence that cancels out to identity:
         // translate(200,0), scale(0.5, 0, 0), translate(-100,0), scale(2, 0, 0)
         let transforms = vec![
-            Transform::Translate {
-                dx: 200.0,
-                dy: 0.0,
-            },
+            Transform::Translate { dx: 200.0, dy: 0.0 },
             Transform::Scale {
                 factor: 0.5,
                 center_x: 0.0,
