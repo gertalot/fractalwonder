@@ -244,23 +244,10 @@ pub fn apply_pixel_transform_to_viewport(
         canvas_height,
     );
 
-    #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
-        "Image at original canvas center: ({:.6}, {:.6})",
-        image_at_original_center.x(),
-        image_at_original_center.y()
-    )));
-
     // During the preview transformation, the pixel at canvas_center moves to a new position:
     // new_pos = canvas_center * zoom + offset (using absolute offset)
     let new_center_px = canvas_center_px * transform.zoom_factor + absolute_offset_x;
     let new_center_py = canvas_center_py * transform.zoom_factor + absolute_offset_y;
-
-    #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
-        "Canvas center pixel moves to: ({:.6}, {:.6})",
-        new_center_px, new_center_py
-    )));
 
     // So the image point that was at canvas center should now be at new_center_px.
     // We need to create a viewport where that image point appears at new_center_px.
@@ -296,12 +283,6 @@ pub fn apply_pixel_transform_to_viewport(
         - (new_center_px / canvas_width as f64) * new_view_width;
     let new_viewport_center_y = *image_at_original_center.y() + new_view_height / 2.0
         - (new_center_py / canvas_height as f64) * new_view_height;
-
-    #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
-        "New viewport: center=({:.6}, {:.6}), zoom={:.6}, view_size=({:.6}, {:.6})",
-        new_viewport_center_x, new_viewport_center_y, new_zoom, new_view_width, new_view_height
-    )));
 
     Viewport::new(
         Coord::new(new_viewport_center_x, new_viewport_center_y),

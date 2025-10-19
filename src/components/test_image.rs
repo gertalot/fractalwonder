@@ -8,7 +8,6 @@ use crate::rendering::{
     viewport::Viewport,
 };
 use leptos::*;
-use wasm_bindgen::JsValue;
 
 #[derive(Clone)]
 pub struct TestImageRenderer {
@@ -96,12 +95,6 @@ pub fn TestImageView() -> impl IntoView {
 
     // Set up interaction hook with viewport update and re-render
     let handle = use_canvas_interaction(canvas_ref, move |result: TransformResult| {
-        let msg = format!(
-            "Interaction ended: offset=({:.2}, {:.2}), zoom={:.4}, matrix={:?}",
-            result.offset_x, result.offset_y, result.zoom_factor, result.matrix
-        );
-        web_sys::console::log_1(&JsValue::from_str(&msg));
-
         // Get current canvas dimensions
         if let Some(canvas) = canvas_ref.get_untracked() {
             let width = canvas.width();

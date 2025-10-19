@@ -303,6 +303,14 @@ where
 
         // Compose the transformation sequence to get the final matrix
         let sequence = transform_sequence.get_value();
+
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+            "stop_interaction: sequence has {} transforms: {:?}",
+            sequence.len(),
+            sequence
+        )));
+
         let composed_matrix: Mat3 = compose_affine_transformations(sequence);
 
         // Extract center-relative offset and zoom from the composed matrix
@@ -311,6 +319,14 @@ where
         let absolute_offset_x = composed_matrix.data[0][2];
         let absolute_offset_y = composed_matrix.data[1][2];
 
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+            "Composed: zoom={}, offset=({}, {})",
+            zoom_factor,
+            absolute_offset_x,
+            absolute_offset_y
+        )));
+        
         // Convert absolute pixel offset to center-relative offset
         // This makes the values more intuitive: (0, 0) means we zoomed at canvas center
         let canvas_ref = canvas_ref_stored.get_value();
@@ -440,7 +456,8 @@ where
         ev.prevent_default();
 
         // Start interaction if not already started (use get_untracked since we're in an event handler)
-        if !is_dragging.get_untracked() && !is_zooming.get_untracked() {
+        // Check if we have captured image data - if not, we need to start a new interaction
+        if initial_image_data.get_value().is_none() {
             start_interaction();
         }
 
@@ -464,7 +481,28 @@ where
 
             // Add scale transformation to sequence
             // The zoom is centered around the mouse position
+            // Optimization: if the last transform is a scale at the same point, combine them
             transform_sequence.update_value(|seq| {
+                if let Some(Transform::Scale {
+                    factor: last_factor,
+                    center_x: last_cx,
+                    center_y: last_cy,
+                }) = seq.last()
+                {
+                    // Check if zoom centers are the same (within 0.1 pixel tolerance)
+                    if (last_cx - mouse_x).abs() < 0.1 && (last_cy - mouse_y).abs() < 0.1 {
+                        // Combine: multiply the factors together
+                        let combined_factor = last_factor * zoom_multiplier;
+                        seq.pop(); // Remove last scale
+                        seq.push(Transform::Scale {
+                            factor: combined_factor,
+                            center_x: mouse_x,
+                            center_y: mouse_y,
+                        });
+                        return;
+                    }
+                }
+                // Otherwise, add new scale transform
                 seq.push(Transform::Scale {
                     factor: zoom_multiplier,
                     center_x: mouse_x,
