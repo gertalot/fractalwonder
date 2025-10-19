@@ -7,18 +7,12 @@ pub fn calculate_visible_bounds<T>(
     viewport: &Viewport<T>,
     canvas_width: u32,
     canvas_height: u32,
-) -> ImageRect<T>
+) -> Rect<T>
 where
-    T: Clone
-        + std::ops::Sub<Output = T>
-        + std::ops::Div<f64, Output = T>
-        + std::ops::Mul<f64, Output = T>
-        + std::ops::Add<Output = T>,
+    T: Clone + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + std::ops::Div<f64, Output = T> + std::ops::Mul<f64, Output = T>,
 {
-    let natural_width =
-        viewport.natural_bounds.max.x().clone() - viewport.natural_bounds.min.x().clone();
-    let natural_height =
-        viewport.natural_bounds.max.y().clone() - viewport.natural_bounds.min.y().clone();
+    let natural_width = viewport.natural_bounds.width();
+    let natural_height = viewport.natural_bounds.height();
 
     // Apply zoom (1.0 = show entire natural bounds)
     let view_width = natural_width / viewport.zoom;
@@ -27,7 +21,6 @@ where
     // Adjust for canvas aspect ratio - extend the wider dimension
     let canvas_aspect = canvas_width as f64 / canvas_height as f64;
 
-    // Simplified: assume T can be multiplied by f64
     let (final_width, final_height) = if canvas_aspect > 1.0 {
         // Landscape - extend width
         (view_height.clone() * canvas_aspect, view_height)
@@ -37,14 +30,17 @@ where
     };
 
     // Calculate bounds centered on viewport.center
-    ImageRect::new(
-        ImageCoord::new(
-            viewport.center.x().clone() - final_width.clone() / 2.0,
-            viewport.center.y().clone() - final_height.clone() / 2.0,
+    let half_width = final_width.clone() / 2.0;
+    let half_height = final_height.clone() / 2.0;
+
+    Rect::new(
+        Coord::new(
+            viewport.center.x().clone() - half_width.clone(),
+            viewport.center.y().clone() - half_height.clone(),
         ),
-        ImageCoord::new(
-            viewport.center.x().clone() + final_width / 2.0,
-            viewport.center.y().clone() + final_height / 2.0,
+        Coord::new(
+            viewport.center.x().clone() + half_width,
+            viewport.center.y().clone() + half_height,
         ),
     )
 }
@@ -57,7 +53,7 @@ pub fn pixel_to_image<T>(
     canvas_height: u32,
 ) -> Coord<T>
 where
-    T: Clone + std::ops::Mul<f64, Output = T>,
+    T: Clone + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + std::ops::Mul<f64, Output = T>,
 {
     let bounds_width = target_rect.width();
     let bounds_height = target_rect.height();
