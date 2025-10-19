@@ -79,8 +79,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rendering::{coords::Coord, pixel_compute::PixelCompute, pixel_renderer::PixelRenderer};
+    use crate::rendering::{
+        coords::Coord, pixel_compute::PixelCompute, pixel_renderer::PixelRenderer,
+    };
 
+    #[derive(Clone)]
     struct SolidColorCompute {
         color: (u8, u8, u8, u8),
     }

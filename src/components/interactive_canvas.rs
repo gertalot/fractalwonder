@@ -1,7 +1,7 @@
 use crate::hooks::use_canvas_interaction::{use_canvas_interaction, TransformResult};
 use crate::rendering::{
-    apply_pixel_transform_to_viewport, coords::Coord, render_with_viewport, renderer_trait::Renderer, viewport::Viewport,
-    PixelRect,
+    apply_pixel_transform_to_viewport, coords::Coord, render_with_viewport,
+    renderer_trait::Renderer, viewport::Viewport,
 };
 use leptos::*;
 use wasm_bindgen::JsCast;
@@ -57,7 +57,12 @@ where
             let width = canvas.width();
             let height = canvas.height();
 
-            let new_viewport = apply_pixel_transform_to_viewport(&viewport.get_untracked(), &result, width, height);
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport.get_untracked(),
+                &result,
+                width,
+                height,
+            );
 
             viewport.set(new_viewport);
         }
@@ -117,7 +122,10 @@ where
 
                 web_sys::window()
                     .expect("should have window")
-                    .add_event_listener_with_callback("resize", resize_handler.as_ref().unchecked_ref())
+                    .add_event_listener_with_callback(
+                        "resize",
+                        resize_handler.as_ref().unchecked_ref(),
+                    )
                     .expect("should add resize listener");
 
                 resize_handler.forget();
@@ -133,9 +141,11 @@ where
                 options.set_passive(false);
 
                 let on_wheel = handle.on_wheel.clone();
-                let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |ev: web_sys::WheelEvent| {
-                    (on_wheel)(ev);
-                }) as Box<dyn Fn(web_sys::WheelEvent) + 'static>);
+                let closure =
+                    wasm_bindgen::closure::Closure::wrap(Box::new(move |ev: web_sys::WheelEvent| {
+                        (on_wheel)(ev);
+                    })
+                        as Box<dyn Fn(web_sys::WheelEvent) + 'static>);
 
                 canvas
                     .add_event_listener_with_callback_and_add_event_listener_options(
