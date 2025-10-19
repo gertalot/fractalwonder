@@ -3,6 +3,7 @@ pub mod pixel_rect;
 pub mod pixel_renderer;
 pub mod point_compute;
 pub mod points;
+pub mod renderer_info;
 pub mod renderer_trait;
 pub mod tiled_renderer;
 pub mod transforms;
