@@ -1,5 +1,5 @@
 use crate::rendering::{
-    coords::{ImageCoord, ImageRect, PixelCoord},
+    coords::{Coord, Rect},
     viewport::Viewport,
 };
 
@@ -50,23 +50,21 @@ where
 }
 
 pub fn pixel_to_image<T>(
-    pixel: PixelCoord,
-    target_rect: &ImageRect<T>,
+    pixel_x: f64,
+    pixel_y: f64,
+    target_rect: &Rect<T>,
     canvas_width: u32,
     canvas_height: u32,
-) -> ImageCoord<T>
+) -> Coord<T>
 where
-    T: Clone
-        + std::ops::Sub<Output = T>
-        + std::ops::Mul<f64, Output = T>
-        + std::ops::Add<Output = T>,
+    T: Clone + std::ops::Mul<f64, Output = T>,
 {
-    let bounds_width = target_rect.max.x().clone() - target_rect.min.x().clone();
-    let bounds_height = target_rect.max.y().clone() - target_rect.min.y().clone();
+    let bounds_width = target_rect.width();
+    let bounds_height = target_rect.height();
 
-    ImageCoord::new(
-        target_rect.min.x().clone() + bounds_width * (pixel.x() / canvas_width as f64),
-        target_rect.min.y().clone() + bounds_height * (pixel.y() / canvas_height as f64),
+    Coord::new(
+        target_rect.min.x().clone() + bounds_width * (pixel_x / canvas_width as f64),
+        target_rect.min.y().clone() + bounds_height * (pixel_y / canvas_height as f64),
     )
 }
 
