@@ -56,7 +56,7 @@ where
     let viewport = create_rw_signal(Viewport::new(center, 1.0, natural_bounds));
 
     // Create info signal for UI display
-    let info = create_rw_signal(renderer.info(&viewport.get()));
+    let info = create_rw_signal(renderer.info(&viewport.get_untracked()));
 
     // Reset viewport callback for Home button
     let renderer_for_reset = renderer.clone();
