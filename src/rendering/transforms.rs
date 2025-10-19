@@ -275,7 +275,8 @@ pub fn apply_pixel_transform_to_viewport(
     // So: image_at_original_center = new_bounds.min + (new_center_px / canvas_width) * new_view_width
     // Also: new_bounds.min = new_viewport_center - new_view_width / 2
     // Substituting:
-    // image_at_original_center = (new_viewport_center - new_view_width/2) + (new_center_px / canvas_width) * new_view_width
+    // image_at_original_center = (new_viewport_center - new_view_width/2) +
+    //                            (new_center_px / canvas_width) * new_view_width
     // Solving for new_viewport_center:
     // new_viewport_center = image_at_original_center + new_view_width/2 - (new_center_px / canvas_width) * new_view_width
 

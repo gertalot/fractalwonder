@@ -10,7 +10,7 @@ pub enum RendererType {
 #[component]
 pub fn App() -> impl IntoView {
     // UI visibility state
-    let (is_visible, _set_is_visible, _is_hovering, set_is_hovering) = use_ui_visibility();
+    let ui_visibility = use_ui_visibility();
 
     // Currently fixed to TestImage
     let current_renderer = RendererType::TestImage;
@@ -24,7 +24,7 @@ pub fn App() -> impl IntoView {
           }
         }}
 
-        <UI is_visible=is_visible set_is_hovering=set_is_hovering />
+        <UI is_visible=ui_visibility.is_visible set_is_hovering=ui_visibility.set_is_hovering />
       </div>
     }
 }

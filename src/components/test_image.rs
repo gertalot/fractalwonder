@@ -234,11 +234,6 @@ pub fn TestImageView() -> impl IntoView {
                 on:pointerup=move |ev| (handle.on_pointer_up)(ev)
                 style="touch-action: none; cursor: grab;"
             />
-            <Show when=move || handle.is_interacting.get()>
-                <div class="absolute top-4 left-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg">
-                    "Interacting..."
-                </div>
-            </Show>
         </div>
     }
 }

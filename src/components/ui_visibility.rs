@@ -2,13 +2,17 @@ use leptos::*;
 
 const UI_HIDE_DELAY_MS: u64 = 3000;
 
-#[allow(clippy::type_complexity)]
-pub fn use_ui_visibility() -> (
-    ReadSignal<bool>,
-    WriteSignal<bool>,
-    ReadSignal<bool>,
-    WriteSignal<bool>,
-) {
+/// UI visibility state returned by use_ui_visibility hook
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+pub struct UiVisibility {
+    pub is_visible: ReadSignal<bool>,
+    pub set_is_visible: WriteSignal<bool>,
+    pub is_hovering: ReadSignal<bool>,
+    pub set_is_hovering: WriteSignal<bool>,
+}
+
+pub fn use_ui_visibility() -> UiVisibility {
     let (is_visible, set_is_visible) = create_signal(true);
     let (is_hovering, set_is_hovering) = create_signal(false);
 
@@ -38,7 +42,12 @@ pub fn use_ui_visibility() -> (
         },
     );
 
-    (is_visible, set_is_visible, is_hovering, set_is_hovering)
+    UiVisibility {
+        is_visible,
+        set_is_visible,
+        is_hovering,
+        set_is_hovering,
+    }
 }
 
 #[cfg(test)]
