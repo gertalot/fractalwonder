@@ -1,11 +1,19 @@
 use crate::hooks::use_canvas_interaction::{use_canvas_interaction, TransformResult};
 use crate::rendering::{
     apply_pixel_transform_to_viewport, points::Point, render_with_viewport,
+    renderer_info::{RendererInfo, RendererInfoData},
     renderer_trait::Renderer, viewport::Viewport,
 };
 use leptos::*;
 use wasm_bindgen::JsCast;
-use web_sys::AddEventListenerOptions;
+use web_sys::{window, AddEventListenerOptions};
+
+/// Return value from InteractiveCanvas containing the view and control signals
+pub struct CanvasWithInfo {
+    pub view: View,
+    pub info: ReadSignal<RendererInfoData>,
+    pub reset_viewport: Box<dyn Fn()>,
+}
 
 /// Generic interactive canvas component with pan/zoom support
 ///
@@ -22,7 +30,7 @@ use web_sys::AddEventListenerOptions;
 /// view! { <InteractiveCanvas renderer=renderer /> }
 /// ```
 #[component]
-pub fn InteractiveCanvas<T, R>(renderer: R) -> impl IntoView
+pub fn InteractiveCanvas<T, R>(renderer: R) -> CanvasWithInfo
 where
     T: Clone
         + std::ops::Add<Output = T>
@@ -32,7 +40,7 @@ where
         + std::ops::Mul<f64, Output = T>
         + From<f64>
         + 'static,
-    R: Renderer<Coord = T> + Clone + 'static,
+    R: Renderer<Coord = T> + RendererInfo<Coord = T> + Clone + 'static,
 {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
