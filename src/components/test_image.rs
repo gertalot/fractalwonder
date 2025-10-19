@@ -2,8 +2,8 @@ use crate::hooks::use_canvas_interaction::{use_canvas_interaction, TransformResu
 use crate::rendering::{
     apply_pixel_transform_to_viewport,
     coords::{Coord, Rect},
+    pixel_compute::PixelCompute,
     render_with_viewport,
-    renderer_trait::CanvasRenderer,
     transforms::pixel_to_image,
     viewport::Viewport,
 };
@@ -53,32 +53,15 @@ impl TestImageRenderer {
     }
 }
 
-impl CanvasRenderer for TestImageRenderer {
+impl PixelCompute for TestImageRenderer {
     type Coord = f64;
 
     fn natural_bounds(&self) -> Rect<f64> {
         Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0))
     }
 
-    fn render(&self, target_rect: &Rect<f64>, width: u32, height: u32) -> Vec<u8> {
-        let mut pixels = vec![0u8; (width * height * 4) as usize];
-
-        for py in 0..height {
-            for px in 0..width {
-                // Map pixel to image coordinates using centralized transform
-                let image_coord = pixel_to_image(px as f64, py as f64, target_rect, width, height);
-
-                let color = self.compute_pixel_color(*image_coord.x(), *image_coord.y());
-
-                let idx = ((py * width + px) * 4) as usize;
-                pixels[idx] = color.0; // R
-                pixels[idx + 1] = color.1; // G
-                pixels[idx + 2] = color.2; // B
-                pixels[idx + 3] = color.3; // A
-            }
-        }
-
-        pixels
+    fn compute(&self, coord: Coord<f64>) -> (u8, u8, u8, u8) {
+        self.compute_pixel_color(*coord.x(), *coord.y())
     }
 }
 
