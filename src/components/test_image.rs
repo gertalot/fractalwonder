@@ -2,6 +2,8 @@ use crate::components::InteractiveCanvas;
 use crate::rendering::{
     point_compute::ImagePointComputer,
     points::{Point, Rect},
+    renderer_info::{RendererInfo, RendererInfoData},
+    viewport::Viewport,
     PixelRenderer,
 };
 use leptos::*;
@@ -59,6 +61,24 @@ impl ImagePointComputer for TestImageRenderer {
 
     fn compute(&self, coord: Point<f64>) -> (u8, u8, u8, u8) {
         self.compute_point_color(*coord.x(), *coord.y())
+    }
+}
+
+impl RendererInfo for TestImageRenderer {
+    type Coord = f64;
+
+    fn info(&self, viewport: &Viewport<f64>) -> RendererInfoData {
+        RendererInfoData {
+            name: "Test Image".to_string(),
+            center_display: format!("x: {:.2}, y: {:.2}", viewport.center.x(), viewport.center.y()),
+            zoom_display: format!("{:.2}x", viewport.zoom),
+            custom_params: vec![
+                ("Checkerboard size".to_string(), format!("{:.1}", self.checkerboard_size)),
+                ("Circle radius step".to_string(), format!("{:.1}", self.circle_radius_step)),
+                ("Circle line thickness".to_string(), format!("{:.2}", self.circle_line_thickness)),
+            ],
+            render_time_ms: None, // Filled by InteractiveCanvas
+        }
     }
 }
 
