@@ -116,10 +116,13 @@ pub fn calculate_aspect_ratio(canvas_width: u32, canvas_height: u32) -> f64 {
     canvas_width as f64 / canvas_height as f64
 }
 
-pub fn pan_viewport(viewport: &Viewport<f64>, offset_x: f64, offset_y: f64) -> Viewport<f64> {
+pub fn pan_viewport<T>(viewport: &Viewport<T>, offset_x: T, offset_y: T) -> Viewport<T>
+where
+    T: Clone + std::ops::Add<Output = T>,
+{
     let new_center = Coord::new(
-        *viewport.center.x() + offset_x,
-        *viewport.center.y() + offset_y,
+        viewport.center.x().clone() + offset_x,
+        viewport.center.y().clone() + offset_y,
     );
 
     Viewport::new(new_center, viewport.zoom, viewport.natural_bounds.clone())
@@ -185,16 +188,23 @@ pub fn zoom_viewport_at_point(
 /// to absolute coordinates for calculation.
 ///
 /// This handles both pure panning, pure zooming, and combined pan+zoom operations.
-pub fn apply_pixel_transform_to_viewport(
-    viewport: &Viewport<f64>,
+pub fn apply_pixel_transform_to_viewport<T>(
+    viewport: &Viewport<T>,
     transform: &TransformResult,
     canvas_width: u32,
     canvas_height: u32,
-) -> Viewport<f64> {
+) -> Viewport<T>
+where
+    T: Clone
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Div<f64, Output = T>
+        + std::ops::Mul<f64, Output = T>,
+{
     let current_bounds = calculate_visible_bounds(viewport, canvas_width, canvas_height);
     let new_zoom = viewport.zoom * transform.zoom_factor;
 
-    // Convert center-relative offset to absolute offset
+    // Convert center-relative offset to absolute offset (pixel space)
     let canvas_center_x = canvas_width as f64 / 2.0;
     let canvas_center_y = canvas_height as f64 / 2.0;
     let absolute_offset_x = transform.offset_x + canvas_center_x * (1.0 - transform.zoom_factor);
@@ -207,18 +217,16 @@ pub fn apply_pixel_transform_to_viewport(
     if (transform.zoom_factor - 1.0).abs() < 1e-10 {
         // Pure pan: offset moves pixels, so viewport moves in opposite direction
         // offset in pixels → offset in image space
-        let image_offset_x = (absolute_offset_x / canvas_width as f64) * current_bounds.width();
-        let image_offset_y = (absolute_offset_y / canvas_height as f64) * current_bounds.height();
+        let image_offset_x = current_bounds.width() * (absolute_offset_x / canvas_width as f64);
+        let image_offset_y = current_bounds.height() * (absolute_offset_y / canvas_height as f64);
 
         // Viewport moves opposite to pixel offset (dragging right = looking left)
-        let new_center_x = *viewport.center.x() - image_offset_x;
-        let new_center_y = *viewport.center.y() - image_offset_y;
-
-        return Viewport::new(
-            Coord::new(new_center_x, new_center_y),
-            new_zoom,
-            viewport.natural_bounds.clone(),
+        let new_center = Coord::new(
+            viewport.center.x().clone() - image_offset_x,
+            viewport.center.y().clone() - image_offset_y,
         );
+
+        return Viewport::new(new_center, new_zoom, viewport.natural_bounds.clone());
     }
 
     // General case: transformation with zoom
@@ -260,12 +268,12 @@ pub fn apply_pixel_transform_to_viewport(
     let canvas_aspect = calculate_aspect_ratio(canvas_width, canvas_height);
     let (new_view_width, new_view_height) = if canvas_aspect > 1.0 {
         (
-            new_view_height_unscaled * canvas_aspect,
+            new_view_height_unscaled.clone() * canvas_aspect,
             new_view_height_unscaled,
         )
     } else {
         (
-            new_view_width_unscaled,
+            new_view_width_unscaled.clone(),
             new_view_width_unscaled / canvas_aspect,
         )
     };
@@ -280,13 +288,15 @@ pub fn apply_pixel_transform_to_viewport(
     // Solving for new_viewport_center:
     // new_viewport_center = image_at_original_center + new_view_width/2 - (new_center_px / canvas_width) * new_view_width
 
-    let new_viewport_center_x = *image_at_original_center.x() + new_view_width / 2.0
-        - (new_center_px / canvas_width as f64) * new_view_width;
-    let new_viewport_center_y = *image_at_original_center.y() + new_view_height / 2.0
-        - (new_center_py / canvas_height as f64) * new_view_height;
+    let new_viewport_center = Coord::new(
+        image_at_original_center.x().clone() + new_view_width.clone() / 2.0
+            - new_view_width * (new_center_px / canvas_width as f64),
+        image_at_original_center.y().clone() + new_view_height.clone() / 2.0
+            - new_view_height * (new_center_py / canvas_height as f64),
+    );
 
     Viewport::new(
-        Coord::new(new_viewport_center_x, new_viewport_center_y),
+        new_viewport_center,
         new_zoom,
         viewport.natural_bounds.clone(),
     )
@@ -664,20 +674,6 @@ mod tests {
 
         let new_viewport =
             apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
-
-        println!("Drag right 300px, zoom out 0.5x at pixel 700");
-        println!(
-            "offset_x: {}, offset_y: {}",
-            result.offset_x, result.offset_y
-        );
-        println!("zoom_factor: {}", result.zoom_factor);
-        println!("zoom point (mouse): ({}, {})", zoom_point_x, zoom_point_y);
-        println!(
-            "new viewport center: ({}, {})",
-            new_viewport.center.x(),
-            new_viewport.center.y()
-        );
-        println!("new viewport zoom: {}", new_viewport.zoom);
 
         // After dragging right, we're looking left (negative x)
         // After zooming out at the new center, that point should remain under the mouse

@@ -11,6 +11,13 @@ Fractal Wonder is a high-performance, browser-based Mandelbrot set explorer capa
 - Cargo
 - Tailwind CSS (styling)
 
+## ARCHITECTURE
+
+- we distinguish between "pixel space" which is represented by `f64` types, and "image space" which is a generic type,
+  potentially using arbitrary precision.
+- calculations in image space **MUST ALWAYS USE** the generic types in `src/rendering/coords.rs` and **NEVER**
+  hardcode `f64` types for these calculations.
+
 ## DEVELOPMENT
 
 **CRITICAL: Using Skills**
