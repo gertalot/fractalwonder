@@ -1,4 +1,6 @@
 use crate::components::interactive_canvas::InteractiveCanvas;
+use crate::components::ui::UI;
+use crate::components::ui_visibility::use_ui_visibility;
 use crate::rendering::{
     point_compute::ImagePointComputer,
     points::{Point, Rect},
@@ -6,6 +8,7 @@ use crate::rendering::{
     viewport::Viewport,
     PixelRenderer,
 };
+use crate::utils::fullscreen::toggle_fullscreen;
 use leptos::*;
 
 #[derive(Clone)]
@@ -86,7 +89,33 @@ impl RendererInfo for TestImageRenderer {
 pub fn TestImageView() -> impl IntoView {
     let renderer = PixelRenderer::new(TestImageRenderer::new());
     let canvas_with_info = InteractiveCanvas(renderer);
-    canvas_with_info.view
+
+    // UI visibility
+    let ui_visibility = use_ui_visibility();
+
+    // Clone reset callback for use in closure
+    let reset_fn = canvas_with_info.reset_viewport;
+    let on_home_click = move || {
+        (reset_fn)();
+    };
+
+    // Fullscreen callback
+    let on_fullscreen_click = move || {
+        toggle_fullscreen();
+    };
+
+    view! {
+        <div class="w-full h-full">
+            {canvas_with_info.view}
+        </div>
+        <UI
+            info=canvas_with_info.info
+            is_visible=ui_visibility.is_visible
+            set_is_hovering=ui_visibility.set_is_hovering
+            on_home_click=on_home_click
+            on_fullscreen_click=on_fullscreen_click
+        />
+    }
 }
 
 #[cfg(test)]
