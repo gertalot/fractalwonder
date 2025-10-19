@@ -1,6 +1,6 @@
 use crate::hooks::use_canvas_interaction::{use_canvas_interaction, TransformResult};
 use crate::rendering::{
-    coords::{ImageCoord, ImageRect, PixelCoord},
+    coords::{Coord, Rect},
     renderer_trait::CanvasRenderer,
     transforms::pixel_to_image,
 };
@@ -48,18 +48,17 @@ impl TestImageRenderer {
 impl CanvasRenderer for TestImageRenderer {
     type Coord = f64;
 
-    fn natural_bounds(&self) -> ImageRect<f64> {
-        ImageRect::new(ImageCoord::new(-50.0, -50.0), ImageCoord::new(50.0, 50.0))
+    fn natural_bounds(&self) -> Rect<f64> {
+        Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0))
     }
 
-    fn render(&self, target_rect: &ImageRect<f64>, width: u32, height: u32) -> Vec<u8> {
+    fn render(&self, target_rect: &Rect<f64>, width: u32, height: u32) -> Vec<u8> {
         let mut pixels = vec![0u8; (width * height * 4) as usize];
 
         for py in 0..height {
             for px in 0..width {
                 // Map pixel to image coordinates using centralized transform
-                let pixel = PixelCoord::new(px as f64, py as f64);
-                let image_coord = pixel_to_image(pixel, target_rect, width, height);
+                let image_coord = pixel_to_image(px as f64, py as f64, target_rect, width, height);
 
                 let color = self.compute_pixel_color(*image_coord.x(), *image_coord.y());
 
@@ -223,7 +222,7 @@ fn render_test_pattern(canvas: &web_sys::HtmlCanvasElement) {
     use crate::rendering::{transforms::calculate_visible_bounds, viewport::Viewport};
 
     let viewport = Viewport {
-        center: ImageCoord::new(0.0, 0.0),
+        center: Coord::new(0.0, 0.0),
         zoom: 1.0,
         natural_bounds: bounds,
     };
@@ -261,7 +260,7 @@ mod tests {
     #[test]
     fn test_renderer_produces_correct_pixel_count() {
         let renderer = TestImageRenderer::new();
-        let bounds = ImageRect::new(ImageCoord::new(-10.0, -10.0), ImageCoord::new(10.0, 10.0));
+        let bounds = Rect::new(Coord::new(-10.0, -10.0), Coord::new(10.0, 10.0));
         let pixels = renderer.render(&bounds, 100, 100);
         assert_eq!(pixels.len(), 100 * 100 * 4);
     }
