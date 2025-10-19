@@ -1,4 +1,4 @@
-use crate::components::InteractiveCanvas;
+use crate::components::interactive_canvas::InteractiveCanvas;
 use crate::rendering::{
     point_compute::ImagePointComputer,
     points::{Point, Rect},
@@ -85,7 +85,8 @@ impl RendererInfo for TestImageRenderer {
 #[component]
 pub fn TestImageView() -> impl IntoView {
     let renderer = PixelRenderer::new(TestImageRenderer::new());
-    view! { <InteractiveCanvas renderer=renderer /> }
+    let canvas_with_info = InteractiveCanvas(renderer);
+    canvas_with_info.view
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 use crate::rendering::{
     calculate_visible_bounds, point_compute::ImagePointComputer, points::Rect,
+    renderer_info::{RendererInfo, RendererInfoData},
     renderer_trait::Renderer, transforms::pixel_to_image, viewport::Viewport, PixelRect,
 };
 
@@ -72,6 +73,17 @@ where
         }
 
         pixels
+    }
+}
+
+impl<C> RendererInfo for PixelRenderer<C>
+where
+    C: ImagePointComputer + RendererInfo<Coord = <C as ImagePointComputer>::Coord>,
+{
+    type Coord = <C as ImagePointComputer>::Coord;
+
+    fn info(&self, viewport: &Viewport<Self::Coord>) -> RendererInfoData {
+        self.computer.info(viewport)
     }
 }
 

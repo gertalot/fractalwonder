@@ -27,9 +27,8 @@ pub struct CanvasWithInfo {
 /// # Example
 /// ```rust,ignore
 /// let renderer = PixelRenderer::new(MyCompute::new());
-/// view! { <InteractiveCanvas renderer=renderer /> }
+/// let canvas_with_info = InteractiveCanvas(renderer);
 /// ```
-#[component]
 pub fn InteractiveCanvas<T, R>(renderer: R) -> CanvasWithInfo
 where
     T: Clone
@@ -195,16 +194,21 @@ where
         }
     });
 
-    view! {
-        <div class="relative w-full h-full">
-            <canvas
-                node_ref=canvas_ref
-                class="block w-full h-full"
-                on:pointerdown=move |ev| (handle.on_pointer_down)(ev)
-                on:pointermove=move |ev| (handle.on_pointer_move)(ev)
-                on:pointerup=move |ev| (handle.on_pointer_up)(ev)
-                style="touch-action: none; cursor: grab;"
-            />
-        </div>
+    CanvasWithInfo {
+        view: view! {
+            <div class="relative w-full h-full">
+                <canvas
+                    node_ref=canvas_ref
+                    class="block w-full h-full"
+                    on:pointerdown=move |ev| (handle.on_pointer_down)(ev)
+                    on:pointermove=move |ev| (handle.on_pointer_move)(ev)
+                    on:pointerup=move |ev| (handle.on_pointer_up)(ev)
+                    style="touch-action: none; cursor: grab;"
+                />
+            </div>
+        }
+        .into_view(),
+        info: info.read_only(),
+        reset_viewport: Box::new(reset_viewport),
     }
 }
