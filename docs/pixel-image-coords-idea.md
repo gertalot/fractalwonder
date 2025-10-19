@@ -67,3 +67,35 @@ arbirtrary precision type. We don't know yet, that's why `Coord` is generic.
 3. implement the arithmetic operations as above on `Coord`.
 4. ensure ALL calculations in image space use `Coord` types.
 5. THOROUGHLY clean up the codebase and do NOT leave any legacy code.
+
+---
+
+## Implementation Complete
+
+**Date:** 2025-10-19
+
+**Implementation Plan:** [docs/plans/2025-10-19-robust-coordinate-types.md](plans/2025-10-19-robust-coordinate-types.md)
+
+**Changes:**
+- ✅ Removed `PixelCoord` - replaced with plain f64
+- ✅ Renamed `ImageCoord<T>` to `Coord<T>`
+- ✅ Renamed `ImageRect<T>` to `Rect<T>`
+- ✅ Implemented arithmetic operations: add, sub, mul_scalar, div_scalar
+- ✅ All calculations in image space use `Coord<T>` types
+- ✅ All calculations in pixel space use plain f64
+- ✅ Thoroughly cleaned up codebase - no legacy code remains
+
+**Files Modified:**
+- src/rendering/coords.rs (complete rewrite)
+- src/rendering/mod.rs
+- src/rendering/viewport.rs
+- src/rendering/transforms.rs
+- src/rendering/renderer_trait.rs
+- src/components/test_image.rs
+
+**Testing:**
+- All unit tests passing (34 tests)
+- All integration tests passing
+- WASM browser tests passing
+- Manual browser testing verified
+- Release build succeeds
