@@ -93,9 +93,9 @@ mod tests {
     #[test]
     fn test_calculate_visible_bounds_landscape() {
         let viewport = Viewport::new(
-            ImageCoord::new(0.0, 0.0),
+            Coord::new(0.0, 0.0),
             1.0,
-            ImageRect::new(ImageCoord::new(-50.0, -50.0), ImageCoord::new(50.0, 50.0)),
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
         );
 
         // Landscape canvas: 1600x900 (aspect ratio ~1.78)
@@ -112,9 +112,9 @@ mod tests {
     #[test]
     fn test_calculate_visible_bounds_portrait() {
         let viewport = Viewport::new(
-            ImageCoord::new(0.0, 0.0),
+            Coord::new(0.0, 0.0),
             1.0,
-            ImageRect::new(ImageCoord::new(-50.0, -50.0), ImageCoord::new(50.0, 50.0)),
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
         );
 
         // Portrait canvas: 900x1600
@@ -131,9 +131,9 @@ mod tests {
     #[test]
     fn test_calculate_visible_bounds_zoom() {
         let viewport = Viewport::new(
-            ImageCoord::new(0.0, 0.0),
+            Coord::new(0.0, 0.0),
             2.0, // 2x zoom
-            ImageRect::new(ImageCoord::new(-50.0, -50.0), ImageCoord::new(50.0, 50.0)),
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
         );
 
         // Square canvas
@@ -146,9 +146,8 @@ mod tests {
 
     #[test]
     fn test_pixel_to_image_center() {
-        let bounds = ImageRect::new(ImageCoord::new(-50.0, -50.0), ImageCoord::new(50.0, 50.0));
-        let pixel = PixelCoord::new(500.0, 500.0); // Center of 1000x1000 canvas
-        let image = pixel_to_image(pixel, &bounds, 1000, 1000);
+        let bounds = Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0));
+        let image = pixel_to_image(500.0, 500.0, &bounds, 1000, 1000);
 
         assert_eq!(*image.x(), 0.0);
         assert_eq!(*image.y(), 0.0);
@@ -156,38 +155,38 @@ mod tests {
 
     #[test]
     fn test_pixel_to_image_corners() {
-        let bounds = ImageRect::new(ImageCoord::new(-50.0, -50.0), ImageCoord::new(50.0, 50.0));
+        let bounds = Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0));
 
         // Top-left corner
-        let image = pixel_to_image(PixelCoord::new(0.0, 0.0), &bounds, 1000, 1000);
+        let image = pixel_to_image(0.0, 0.0, &bounds, 1000, 1000);
         assert_eq!(*image.x(), -50.0);
         assert_eq!(*image.y(), -50.0);
 
         // Bottom-right corner
-        let image = pixel_to_image(PixelCoord::new(1000.0, 1000.0), &bounds, 1000, 1000);
+        let image = pixel_to_image(1000.0, 1000.0, &bounds, 1000, 1000);
         assert_eq!(*image.x(), 50.0);
         assert_eq!(*image.y(), 50.0);
     }
 
     #[test]
     fn test_image_to_pixel_center() {
-        let bounds = ImageRect::new(ImageCoord::new(-50.0, -50.0), ImageCoord::new(50.0, 50.0));
-        let image = ImageCoord::new(0.0, 0.0);
-        let pixel = image_to_pixel(&image, &bounds, 1000, 1000);
+        let bounds = Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0));
+        let image = Coord::new(0.0, 0.0);
+        let (px, py) = image_to_pixel(&image, &bounds, 1000, 1000);
 
-        assert_eq!(pixel.x(), 500.0);
-        assert_eq!(pixel.y(), 500.0);
+        assert_eq!(px, 500.0);
+        assert_eq!(py, 500.0);
     }
 
     #[test]
     fn test_round_trip_pixel_image_pixel() {
-        let bounds = ImageRect::new(ImageCoord::new(-50.0, -50.0), ImageCoord::new(50.0, 50.0));
-        let original = PixelCoord::new(123.0, 456.0);
+        let bounds = Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0));
+        let (orig_x, orig_y) = (123.0, 456.0);
 
-        let image = pixel_to_image(original, &bounds, 1000, 1000);
-        let result = image_to_pixel(&image, &bounds, 1000, 1000);
+        let image = pixel_to_image(orig_x, orig_y, &bounds, 1000, 1000);
+        let (result_x, result_y) = image_to_pixel(&image, &bounds, 1000, 1000);
 
-        assert!((result.x() - original.x()).abs() < 0.001);
-        assert!((result.y() - original.y()).abs() < 0.001);
+        assert!((result_x - orig_x).abs() < 0.001);
+        assert!((result_y - orig_y).abs() < 0.001);
     }
 }
