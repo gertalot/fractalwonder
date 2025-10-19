@@ -49,3 +49,151 @@ fn GithubIcon() -> impl IntoView {
       </svg>
     }
 }
+
+#[component]
+fn InfoButton(is_open: ReadSignal<bool>, set_is_open: WriteSignal<bool>) -> impl IntoView {
+    view! {
+      <div class="relative">
+        <button
+          class="text-white hover:text-gray-200 hover:bg-white/10 rounded-full p-2 transition-colors"
+          on:click=move |_| set_is_open.set(!is_open.get())
+        >
+          <InfoIcon />
+        </button>
+
+        {move || is_open.get().then(|| view! {
+          <div class="absolute bottom-full mb-3 left-0 w-80 bg-black/70 backdrop-blur-sm border border-gray-800 rounded-lg p-4 text-white">
+            <h3 class="font-medium mb-2">"Fractal Wonder"</h3>
+            <p class="text-sm text-gray-300 mb-4">
+              "Use mouse/touch to pan and zoom. Keyboard shortcuts: [ and ] to cycle color schemes."
+            </p>
+            <div class="flex items-center gap-2 text-sm text-gray-400">
+              <a
+                href="https://github.com/gertalot/fractalwonder"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-white hover:text-gray-200 transition-colors"
+              >
+                <GithubIcon />
+              </a>
+              <span>"Made by Gert"</span>
+            </div>
+          </div>
+        })}
+      </div>
+    }
+}
+
+#[component]
+fn HomeButton(on_click: impl Fn() + 'static) -> impl IntoView {
+    view! {
+      <button
+        class="text-white hover:text-gray-200 hover:bg-white/10 rounded-full p-2 transition-colors"
+        on:click=move |_| on_click()
+      >
+        <HomeIcon />
+      </button>
+    }
+}
+
+#[component]
+fn FullscreenButton(on_click: impl Fn() + 'static) -> impl IntoView {
+    let (is_fullscreen, _) = use_fullscreen();
+
+    view! {
+      <button
+        class="text-white hover:text-gray-200 hover:bg-white/10 rounded-full p-2 transition-colors"
+        on:click=move |_| on_click()
+      >
+        {move || if is_fullscreen.get() {
+          view! { <MinimizeIcon /> }
+        } else {
+          view! { <MaximizeIcon /> }
+        }}
+      </button>
+    }
+}
+
+#[component]
+fn InfoDisplay(info: ReadSignal<RendererInfoData>) -> impl IntoView {
+    view! {
+      <div class="text-white text-sm">
+        <p>
+          {move || {
+            let i = info.get();
+            format!("Center: {}, zoom: {}", i.center_display, i.zoom_display)
+          }}
+          {move || {
+            info.get().render_time_ms.map(|ms|
+              format!(", render: {:.2}s", ms / 1000.0)
+            ).unwrap_or_default()
+          }}
+        </p>
+        <p>
+          "Algorithm: "
+          {move || info.get().name}
+          {move || {
+            info.get().custom_params.iter()
+              .map(|(k, v)| format!(" | {}: {}", k, v))
+              .collect::<Vec<_>>()
+              .join("")
+          }}
+        </p>
+      </div>
+    }
+}
+
+#[component]
+pub fn UI(
+    info: ReadSignal<RendererInfoData>,
+    is_visible: ReadSignal<bool>,
+    set_is_hovering: WriteSignal<bool>,
+    on_home_click: impl Fn() + 'static,
+    on_fullscreen_click: impl Fn() + 'static,
+) -> impl IntoView {
+    let (is_popover_open, set_is_popover_open) = create_signal(false);
+
+    // Keep UI visible when popover is open
+    create_effect(move |_| {
+        if is_popover_open.get() {
+            set_is_hovering.set(true);
+        }
+    });
+
+    let opacity_class = move || {
+        if is_visible.get() {
+            "opacity-100"
+        } else {
+            "opacity-0"
+        }
+    };
+
+    view! {
+      <div
+        class=move || format!(
+          "fixed inset-x-0 bottom-0 transition-opacity duration-300 {}",
+          opacity_class()
+        )
+        on:mouseenter=move |_| set_is_hovering.set(true)
+        on:mouseleave=move |_| set_is_hovering.set(false)
+      >
+        <div class="flex items-center justify-between px-4 py-3 bg-black/50 backdrop-blur-sm">
+          // Left section: buttons
+          <div class="flex items-center space-x-4">
+            <InfoButton is_open=is_popover_open set_is_open=set_is_popover_open />
+            <HomeButton on_click=on_home_click />
+          </div>
+
+          // Center section: info display
+          <div class="flex-1 text-center">
+            <InfoDisplay info=info />
+          </div>
+
+          // Right section: fullscreen
+          <div>
+            <FullscreenButton on_click=on_fullscreen_click />
+          </div>
+        </div>
+      </div>
+    }
+}
