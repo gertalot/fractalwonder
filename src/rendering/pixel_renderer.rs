@@ -21,7 +21,11 @@ impl<C: PixelCompute> PixelRenderer<C> {
 impl<C> Renderer for PixelRenderer<C>
 where
     C: PixelCompute,
-    C::Coord: Clone + std::ops::Sub<Output = C::Coord> + std::ops::Add<Output = C::Coord> + std::ops::Mul<f64, Output = C::Coord>,
+    C::Coord: Clone
+        + std::ops::Sub<Output = C::Coord>
+        + std::ops::Add<Output = C::Coord>
+        + std::ops::Mul<f64, Output = C::Coord>
+        + std::ops::Div<f64, Output = C::Coord>,
 {
     type Coord = C::Coord;
 
