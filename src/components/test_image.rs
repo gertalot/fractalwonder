@@ -27,6 +27,11 @@ impl TestImageRenderer {
     }
 
     fn compute_pixel_color(&self, x: f64, y: f64) -> (u8, u8, u8, u8) {
+        // Draw bright green vertical line through the center (x=0)
+        if x.abs() < 0.5 {
+            return (0, 255, 0, 255); // Bright green
+        }
+
         // Check if on circle first (circles drawn on top)
         let distance = (x * x + y * y).sqrt();
         let nearest_ring = (distance / self.circle_radius_step).round();
