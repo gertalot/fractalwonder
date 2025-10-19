@@ -16,15 +16,15 @@ pub struct TestImageRenderer {
 impl TestImageRenderer {
     pub fn new() -> Self {
         Self {
-            checkerboard_size: 10.0,
+            checkerboard_size: 5.0,
             circle_radius_step: 10.0,
-            circle_line_thickness: 0.5,
+            circle_line_thickness: 0.1,
         }
     }
 
-    fn compute_pixel_color(&self, x: f64, y: f64) -> (u8, u8, u8, u8) {
+    fn compute_point_color(&self, x: f64, y: f64) -> (u8, u8, u8, u8) {
         // Draw bright green vertical line through the center (x=0)
-        if x.abs() < 0.5 {
+        if x.abs() < self.circle_line_thickness {
             return (0, 255, 0, 255); // Bright green
         }
 
@@ -58,7 +58,7 @@ impl ImagePointComputer for TestImageRenderer {
     }
 
     fn compute(&self, coord: Point<f64>) -> (u8, u8, u8, u8) {
-        self.compute_pixel_color(*coord.x(), *coord.y())
+        self.compute_point_color(*coord.x(), *coord.y())
     }
 }
 
@@ -85,11 +85,11 @@ mod tests {
         let renderer = TestImageRenderer::new();
 
         // Point at (-5, -5) should be in one square
-        let color1 = renderer.compute_pixel_color(-5.0, -5.0);
+        let color1 = renderer.compute_point_color(-5.0, -5.0);
         // Point at (5, 5) should be in same color (both negative square indices sum to even)
-        let color2 = renderer.compute_pixel_color(5.0, 5.0);
+        let color2 = renderer.compute_point_color(5.0, 5.0);
         // Point at (5, -5) should be opposite color
-        let color3 = renderer.compute_pixel_color(5.0, -5.0);
+        let color3 = renderer.compute_point_color(5.0, -5.0);
 
         assert_eq!(color1, color2);
         assert_ne!(color1, color3);
@@ -100,11 +100,11 @@ mod tests {
         let renderer = TestImageRenderer::new();
 
         // Point exactly on circle (radius 10)
-        let color_on = renderer.compute_pixel_color(10.0, 0.0);
+        let color_on = renderer.compute_point_color(10.0, 0.0);
         assert_eq!(color_on, (255, 0, 0, 255)); // Red
 
         // Point between circles
-        let color_off = renderer.compute_pixel_color(15.0, 0.0);
+        let color_off = renderer.compute_point_color(15.0, 0.0);
         assert_ne!(color_off, (255, 0, 0, 255)); // Not red
     }
 
@@ -113,10 +113,10 @@ mod tests {
         let renderer = TestImageRenderer::new();
 
         // (0,0) is corner, so nearby points in different quadrants have different colors
-        let q1 = renderer.compute_pixel_color(1.0, 1.0);
-        let q2 = renderer.compute_pixel_color(-1.0, 1.0);
-        let q3 = renderer.compute_pixel_color(-1.0, -1.0);
-        let q4 = renderer.compute_pixel_color(1.0, -1.0);
+        let q1 = renderer.compute_point_color(1.0, 1.0);
+        let q2 = renderer.compute_point_color(-1.0, 1.0);
+        let q3 = renderer.compute_point_color(-1.0, -1.0);
+        let q4 = renderer.compute_point_color(1.0, -1.0);
 
         // Opposite quadrants should have same color
         assert_eq!(q1, q3);
