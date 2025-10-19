@@ -1,18 +1,18 @@
 use crate::rendering::{
-    calculate_visible_bounds, coords::Rect, pixel_compute::PixelCompute, renderer_trait::Renderer,
-    transforms::pixel_to_image, viewport::Viewport, PixelRect,
+    calculate_visible_bounds, coords::Rect, pixel_compute::ImagePointComputer,
+    renderer_trait::Renderer, transforms::pixel_to_image, viewport::Viewport, PixelRect,
 };
 
-/// Renderer that wraps a PixelCompute, adding pixel iteration logic
+/// Renderer that wraps an ImagePointComputer, adding pixel iteration logic
 ///
-/// This is a composable wrapper that converts PixelCompute (single pixel)
+/// This is a composable wrapper that converts ImagePointComputer (single point)
 /// into a full Renderer (pixel rectangle).
 #[derive(Clone)]
-pub struct PixelRenderer<C: PixelCompute> {
+pub struct PixelRenderer<C: ImagePointComputer> {
     computer: C,
 }
 
-impl<C: PixelCompute> PixelRenderer<C> {
+impl<C: ImagePointComputer> PixelRenderer<C> {
     pub fn new(computer: C) -> Self {
         Self { computer }
     }
@@ -20,7 +20,7 @@ impl<C: PixelCompute> PixelRenderer<C> {
 
 impl<C> Renderer for PixelRenderer<C>
 where
-    C: PixelCompute,
+    C: ImagePointComputer,
     C::Coord: Clone
         + std::ops::Sub<Output = C::Coord>
         + std::ops::Add<Output = C::Coord>
@@ -82,7 +82,7 @@ mod tests {
 
     struct TestCompute;
 
-    impl PixelCompute for TestCompute {
+    impl ImagePointComputer for TestCompute {
         type Coord = f64;
 
         fn natural_bounds(&self) -> Rect<f64> {

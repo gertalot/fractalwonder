@@ -10,7 +10,7 @@ pub mod viewport;
 
 pub use canvas_utils::render_with_viewport;
 pub use coords::{Coord, Rect};
-pub use pixel_compute::PixelCompute;
+pub use pixel_compute::ImagePointComputer;
 pub use pixel_rect::PixelRect;
 pub use pixel_renderer::PixelRenderer;
 pub use renderer_trait::Renderer;

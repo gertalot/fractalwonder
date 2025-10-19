@@ -1,7 +1,7 @@
 use crate::components::InteractiveCanvas;
 use crate::rendering::{
     coords::{Coord, Rect},
-    pixel_compute::PixelCompute,
+    pixel_compute::ImagePointComputer,
     PixelRenderer,
 };
 use leptos::*;
@@ -50,7 +50,7 @@ impl TestImageRenderer {
     }
 }
 
-impl PixelCompute for TestImageRenderer {
+impl ImagePointComputer for TestImageRenderer {
     type Coord = f64;
 
     fn natural_bounds(&self) -> Rect<f64> {

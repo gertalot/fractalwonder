@@ -1,10 +1,10 @@
 use crate::rendering::coords::{Coord, Rect};
 
-/// Trait for computing individual pixel colors from image coordinates
+/// Trait for computing color values at points in image space
 ///
 /// This is the lowest-level rendering abstraction - pure computation with no loops.
 /// Typically wrapped by PixelRenderer which adds the pixel iteration logic.
-pub trait PixelCompute {
+pub trait ImagePointComputer {
     /// Coordinate type for image space
     type Coord;
 
@@ -30,7 +30,7 @@ mod tests {
         color: (u8, u8, u8, u8),
     }
 
-    impl PixelCompute for SolidColorCompute {
+    impl ImagePointComputer for SolidColorCompute {
         type Coord = f64;
 
         fn natural_bounds(&self) -> Rect<f64> {
@@ -43,7 +43,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pixel_compute_trait() {
+    fn test_image_point_computer_trait() {
         let computer = SolidColorCompute {
             color: (255, 0, 0, 255),
         };

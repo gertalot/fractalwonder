@@ -80,7 +80,7 @@ where
 mod tests {
     use super::*;
     use crate::rendering::{
-        coords::Coord, pixel_compute::PixelCompute, pixel_renderer::PixelRenderer,
+        coords::Coord, pixel_compute::ImagePointComputer, pixel_renderer::PixelRenderer,
     };
 
     #[derive(Clone)]
@@ -88,7 +88,7 @@ mod tests {
         color: (u8, u8, u8, u8),
     }
 
-    impl PixelCompute for SolidColorCompute {
+    impl ImagePointComputer for SolidColorCompute {
         type Coord = f64;
 
         fn natural_bounds(&self) -> Rect<f64> {
