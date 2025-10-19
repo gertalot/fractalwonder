@@ -1,12 +1,16 @@
 use crate::hooks::use_canvas_interaction::{use_canvas_interaction, TransformResult};
 use crate::rendering::{
+    apply_pixel_transform_to_viewport,
     coords::{Coord, Rect},
+    render_with_viewport,
     renderer_trait::CanvasRenderer,
     transforms::pixel_to_image,
+    viewport::Viewport,
 };
 use leptos::*;
 use wasm_bindgen::JsValue;
 
+#[derive(Clone)]
 pub struct TestImageRenderer {
     checkerboard_size: f64,
     circle_radius_step: f64,
@@ -78,31 +82,67 @@ impl CanvasRenderer for TestImageRenderer {
 pub fn TestImageView() -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
-    // Set up interaction hook with console logging
+    // Initialize renderer and viewport state
+    let renderer = TestImageRenderer::new();
+    let natural_bounds = renderer.natural_bounds();
+
+    // Viewport state: center position and zoom level
+    let viewport = create_rw_signal(Viewport::new(Coord::new(0.0, 0.0), 1.0, natural_bounds));
+
+    // Set up interaction hook with viewport update and re-render
     let handle = use_canvas_interaction(canvas_ref, move |result: TransformResult| {
         let msg = format!(
             "Interaction ended: offset=({:.2}, {:.2}), zoom={:.4}, matrix={:?}",
             result.offset_x, result.offset_y, result.zoom_factor, result.matrix
         );
         web_sys::console::log_1(&JsValue::from_str(&msg));
-        // TODO: Trigger full re-render with transformation
+
+        // Get current canvas dimensions
+        if let Some(canvas) = canvas_ref.get_untracked() {
+            let width = canvas.width();
+            let height = canvas.height();
+
+            // Apply transformation to viewport
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport.get_untracked(),
+                &result,
+                width,
+                height,
+            );
+
+            // Update viewport state
+            viewport.set(new_viewport);
+
+            // Trigger full re-render (the effect below will handle it)
+        }
     });
 
     // Initialize canvas on mount
+    let renderer_for_init = renderer.clone();
     create_effect(move |_| {
         if let Some(canvas) = canvas_ref.get() {
             let window = web_sys::window().expect("should have window");
             canvas.set_width(window.inner_width().unwrap().as_f64().unwrap() as u32);
             canvas.set_height(window.inner_height().unwrap().as_f64().unwrap() as u32);
 
-            // Initial render - draw test pattern
-            render_test_pattern(&canvas);
+            // Initial render - draw test pattern with current viewport
+            render_with_viewport(&canvas, &renderer_for_init, &viewport.get());
+        }
+    });
+
+    // Re-render whenever viewport changes
+    let renderer_for_updates = renderer.clone();
+    create_effect(move |_| {
+        let current_viewport = viewport.get();
+        if let Some(canvas) = canvas_ref.get_untracked() {
+            render_with_viewport(&canvas, &renderer_for_updates, &current_viewport);
         }
     });
 
     // Handle window resize
     create_effect({
         let on_canvas_resize = handle.on_canvas_resize.clone();
+        let viewport_clone = viewport;
         move |_| {
             if let Some(canvas) = canvas_ref.get() {
                 use wasm_bindgen::closure::Closure;
@@ -110,6 +150,7 @@ pub fn TestImageView() -> impl IntoView {
 
                 let canvas_clone = canvas.clone();
                 let on_canvas_resize = on_canvas_resize.clone();
+                let viewport_for_resize = viewport_clone;
 
                 let resize_handler = Closure::wrap(Box::new(move || {
                     let window = web_sys::window().expect("should have window");
@@ -132,7 +173,12 @@ pub fn TestImageView() -> impl IntoView {
                         canvas_clone.set_height(new_height);
 
                         // The RAF loop will automatically re-draw the captured ImageData preview
-                        // with proper centering adjustments for the new canvas size
+                        // After interaction ends, the viewport effect will trigger a full re-render
+                        // Force a viewport update to trigger re-render after resize completes
+                        viewport_for_resize.update(|v| {
+                            // No change to viewport, just trigger reactivity
+                            *v = v.clone();
+                        });
                     }
                 }) as Box<dyn Fn() + 'static>);
 
@@ -199,52 +245,6 @@ pub fn TestImageView() -> impl IntoView {
     }
 }
 
-// Helper function to render the test pattern on canvas
-fn render_test_pattern(canvas: &web_sys::HtmlCanvasElement) {
-    use wasm_bindgen::JsCast;
-    use web_sys::CanvasRenderingContext2d;
-
-    let context = canvas
-        .get_context("2d")
-        .expect("should get 2d context")
-        .expect("context should not be null")
-        .dyn_into::<CanvasRenderingContext2d>()
-        .expect("should cast to CanvasRenderingContext2d");
-
-    let width = canvas.width();
-    let height = canvas.height();
-
-    // Create a simple test pattern
-    let renderer = TestImageRenderer::new();
-    let bounds = renderer.natural_bounds();
-
-    // Calculate visible bounds (centered at origin, zoom 1.0)
-    use crate::rendering::{transforms::calculate_visible_bounds, viewport::Viewport};
-
-    let viewport = Viewport {
-        center: Coord::new(0.0, 0.0),
-        zoom: 1.0,
-        natural_bounds: bounds,
-    };
-
-    let visible_bounds = calculate_visible_bounds(&viewport, width, height);
-
-    // Render the pattern
-    let pixel_data = renderer.render(&visible_bounds, width, height);
-
-    // Put pixels on canvas
-    let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
-        wasm_bindgen::Clamped(&pixel_data),
-        width,
-        height,
-    )
-    .expect("should create ImageData");
-
-    context
-        .put_image_data(&image_data, 0.0, 0.0)
-        .expect("should put image data");
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,6 +255,321 @@ mod tests {
         let bounds = renderer.natural_bounds();
         assert_eq!(*bounds.min.x(), -50.0);
         assert_eq!(*bounds.max.x(), 50.0);
+    }
+
+    #[test]
+    fn test_pure_pan_right_and_down() {
+        use crate::rendering::viewport::Viewport;
+
+        // Start with viewport at origin, zoom 1.0
+        let viewport = Viewport::new(
+            Coord::new(0.0, 0.0),
+            1.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        // Canvas is 800x600, landscape aspect ratio
+        let canvas_width = 800;
+        let canvas_height = 600;
+
+        // User panned right 100 pixels and down 50 pixels
+        // With zoom=1.0, offset is pure pan
+        let result = TransformResult {
+            offset_x: 100.0,
+            offset_y: 50.0,
+            zoom_factor: 1.0,
+            matrix: [[1.0, 0.0, 100.0], [0.0, 1.0, 50.0], [0.0, 0.0, 1.0]],
+        };
+
+        let new_viewport =
+            apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
+
+        // When user pans right, they're dragging the image to the right
+        // This means we're looking at content that was to the left
+        // So the viewport center should move LEFT (negative x)
+        // With zoom=1.0, we use canvas center as zoom point, so the offset
+        // moves us in the opposite direction
+        assert!(
+            *new_viewport.center.x() < 0.0,
+            "center should move left when dragging right"
+        );
+        assert!(
+            *new_viewport.center.y() < 0.0,
+            "center should move up when dragging down"
+        );
+        assert_eq!(new_viewport.zoom, 1.0, "zoom should be unchanged");
+    }
+
+    #[test]
+    fn test_zoom_centered_at_canvas_center() {
+        use crate::rendering::viewport::Viewport;
+
+        // Start at origin, zoom 1.0
+        let viewport = Viewport::new(
+            Coord::new(0.0, 0.0),
+            1.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        let canvas_width = 800;
+        let canvas_height = 600;
+
+        // User zooms in 2x at the center of the canvas (400, 300)
+        // The interaction hook computes: new_offset = old_offset * zoom + mouse * (1 - zoom)
+        // old_offset = (0, 0), zoom = 2.0, mouse = (400, 300)
+        // new_offset = (0, 0) * 2.0 + (400, 300) * (1 - 2.0) = (400, 300) * (-1.0) = (-400, -300)
+        let mouse_x = canvas_width as f64 / 2.0;
+        let mouse_y = canvas_height as f64 / 2.0;
+        let zoom_factor = 2.0;
+        let offset_x = mouse_x * (1.0 - zoom_factor);
+        let offset_y = mouse_y * (1.0 - zoom_factor);
+
+        let result = TransformResult {
+            offset_x,
+            offset_y,
+            zoom_factor,
+            matrix: [
+                [zoom_factor, 0.0, offset_x],
+                [0.0, zoom_factor, offset_y],
+                [0.0, 0.0, 1.0],
+            ],
+        };
+
+        let new_viewport =
+            apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
+
+        // When zooming at canvas center, the viewport center should stay the same
+        // because we're zooming into the center of what we're looking at
+        assert!(
+            (*new_viewport.center.x() - 0.0).abs() < 0.01,
+            "center.x should stay near 0.0, got {}",
+            new_viewport.center.x()
+        );
+        assert!(
+            (*new_viewport.center.y() - 0.0).abs() < 0.01,
+            "center.y should stay near 0.0, got {}",
+            new_viewport.center.y()
+        );
+        assert_eq!(new_viewport.zoom, 2.0);
+    }
+
+    #[test]
+    fn test_zoom_centered_at_top_left() {
+        use crate::rendering::viewport::Viewport;
+
+        // Start at origin, zoom 1.0
+        let viewport = Viewport::new(
+            Coord::new(0.0, 0.0),
+            1.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        let canvas_width = 800;
+        let canvas_height = 600;
+
+        // User zooms in 2x at top-left corner (0, 0)
+        let mouse_x = 0.0;
+        let mouse_y = 0.0;
+        let zoom_factor = 2.0;
+        let offset_x = mouse_x * (1.0 - zoom_factor);
+        let offset_y = mouse_y * (1.0 - zoom_factor);
+
+        let result = TransformResult {
+            offset_x,
+            offset_y,
+            zoom_factor,
+            matrix: [
+                [zoom_factor, 0.0, offset_x],
+                [0.0, zoom_factor, offset_y],
+                [0.0, 0.0, 1.0],
+            ],
+        };
+
+        let new_viewport =
+            apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
+
+        // When zooming at top-left, we should be looking at the top-left part of the original view
+        // The center should move towards the top-left
+        assert!(
+            *new_viewport.center.x() < 0.0,
+            "center should move left, got x={}",
+            new_viewport.center.x()
+        );
+        assert!(
+            *new_viewport.center.y() < 0.0,
+            "center should move up, got y={}",
+            new_viewport.center.y()
+        );
+        assert_eq!(new_viewport.zoom, 2.0);
+    }
+
+    #[test]
+    fn test_zoom_out_at_center() {
+        use crate::rendering::viewport::Viewport;
+
+        // Start zoomed in
+        let viewport = Viewport::new(
+            Coord::new(0.0, 0.0),
+            2.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        let canvas_width = 800;
+        let canvas_height = 600;
+
+        // User zooms out 0.5x at canvas center
+        let mouse_x = canvas_width as f64 / 2.0;
+        let mouse_y = canvas_height as f64 / 2.0;
+        let zoom_factor = 0.5;
+        let offset_x = mouse_x * (1.0 - zoom_factor);
+        let offset_y = mouse_y * (1.0 - zoom_factor);
+
+        let result = TransformResult {
+            offset_x,
+            offset_y,
+            zoom_factor,
+            matrix: [
+                [zoom_factor, 0.0, offset_x],
+                [0.0, zoom_factor, offset_y],
+                [0.0, 0.0, 1.0],
+            ],
+        };
+
+        let new_viewport =
+            apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
+
+        // Zooming out at center should keep center unchanged
+        assert!(
+            (*new_viewport.center.x() - 0.0).abs() < 0.01,
+            "center.x should stay near 0.0, got {}",
+            new_viewport.center.x()
+        );
+        assert!(
+            (*new_viewport.center.y() - 0.0).abs() < 0.01,
+            "center.y should stay near 0.0, got {}",
+            new_viewport.center.y()
+        );
+        assert_eq!(new_viewport.zoom, 1.0); // 2.0 * 0.5 = 1.0
+    }
+
+    #[test]
+    fn test_zoom_at_arbitrary_point() {
+        use crate::rendering::viewport::Viewport;
+
+        let viewport = Viewport::new(
+            Coord::new(0.0, 0.0),
+            1.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        let canvas_width = 800;
+        let canvas_height = 600;
+
+        // Zoom 3x at an arbitrary point (200, 150)
+        let mouse_x = 200.0;
+        let mouse_y = 150.0;
+        let zoom_factor = 3.0;
+        let offset_x = mouse_x * (1.0 - zoom_factor);
+        let offset_y = mouse_y * (1.0 - zoom_factor);
+
+        let result = TransformResult {
+            offset_x,
+            offset_y,
+            zoom_factor,
+            matrix: [
+                [zoom_factor, 0.0, offset_x],
+                [0.0, zoom_factor, offset_y],
+                [0.0, 0.0, 1.0],
+            ],
+        };
+
+        let new_viewport =
+            apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
+
+        // Verify zoom level
+        assert_eq!(new_viewport.zoom, 3.0);
+
+        // The center should have moved to keep the zoom point fixed
+        // We can't easily compute the exact expected center without duplicating the logic,
+        // but we can verify it changed
+        assert_ne!(*new_viewport.center.x(), 0.0, "center should have moved");
+        assert_ne!(*new_viewport.center.y(), 0.0, "center should have moved");
+    }
+
+    #[test]
+    fn test_pan_from_offset_viewport() {
+        use crate::rendering::viewport::Viewport;
+
+        // Start with viewport already offset
+        let viewport = Viewport::new(
+            Coord::new(20.0, -10.0),
+            1.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        let canvas_width = 800;
+        let canvas_height = 600;
+
+        // Pan left 50 pixels (negative offset means panning left)
+        let result = TransformResult {
+            offset_x: -50.0,
+            offset_y: 0.0,
+            zoom_factor: 1.0,
+            matrix: [[1.0, 0.0, -50.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        };
+
+        let new_viewport =
+            apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
+
+        // Panning left (negative offset) means looking right, so center moves right (positive)
+        assert!(*new_viewport.center.x() > 20.0, "center should move right");
+        assert_eq!(*new_viewport.center.y(), -10.0, "y should be unchanged");
+        assert_eq!(new_viewport.zoom, 1.0);
+    }
+
+    #[test]
+    fn test_zoom_from_zoomed_viewport() {
+        use crate::rendering::viewport::Viewport;
+
+        // Start already zoomed in at offset position
+        let viewport = Viewport::new(
+            Coord::new(10.0, 5.0),
+            4.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        let canvas_width = 800;
+        let canvas_height = 600;
+
+        // Zoom in 2x more at center
+        let mouse_x = canvas_width as f64 / 2.0;
+        let mouse_y = canvas_height as f64 / 2.0;
+        let zoom_factor = 2.0;
+        let offset_x = mouse_x * (1.0 - zoom_factor);
+        let offset_y = mouse_y * (1.0 - zoom_factor);
+
+        let result = TransformResult {
+            offset_x,
+            offset_y,
+            zoom_factor,
+            matrix: [
+                [zoom_factor, 0.0, offset_x],
+                [0.0, zoom_factor, offset_y],
+                [0.0, 0.0, 1.0],
+            ],
+        };
+
+        let new_viewport =
+            apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
+
+        // Zoom should multiply
+        assert_eq!(new_viewport.zoom, 8.0); // 4.0 * 2.0
+                                            // Center should stay roughly the same when zooming at canvas center
+        assert!(
+            (*new_viewport.center.x() - 10.0).abs() < 1.0,
+            "center.x should stay near 10.0, got {}",
+            new_viewport.center.x()
+        );
     }
 
     #[test]

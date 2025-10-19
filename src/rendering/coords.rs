@@ -88,6 +88,13 @@ impl<T> Rect<T> {
     {
         self.max.y().clone() - self.min.y().clone()
     }
+
+    pub fn is_valid(&self) -> bool
+    where
+        T: PartialOrd + Clone,
+    {
+        self.min.x() <= self.max.x() && self.min.y() <= self.max.y()
+    }
 }
 
 #[cfg(test)]
@@ -180,5 +187,35 @@ mod tests {
         let rect_i32 = Rect::new(Coord::new(0, 0), Coord::new(100, 50));
         assert_eq!(rect_f64.width(), 100.0);
         assert_eq!(rect_i32.width(), 100);
+    }
+
+    #[test]
+    fn test_rect_is_valid_for_valid_rect() {
+        let rect = Rect::new(Coord::new(0.0, 0.0), Coord::new(100.0, 50.0));
+        assert!(rect.is_valid());
+    }
+
+    #[test]
+    fn test_rect_is_valid_for_inverted_x() {
+        let rect = Rect::new(Coord::new(100.0, 0.0), Coord::new(0.0, 50.0));
+        assert!(!rect.is_valid());
+    }
+
+    #[test]
+    fn test_rect_is_valid_for_inverted_y() {
+        let rect = Rect::new(Coord::new(0.0, 50.0), Coord::new(100.0, 0.0));
+        assert!(!rect.is_valid());
+    }
+
+    #[test]
+    fn test_rect_is_valid_for_zero_width() {
+        let rect = Rect::new(Coord::new(50.0, 0.0), Coord::new(50.0, 100.0));
+        assert!(rect.is_valid()); // Zero width is valid (point or line)
+    }
+
+    #[test]
+    fn test_rect_is_valid_for_negative_coords() {
+        let rect = Rect::new(Coord::new(-100.0, -50.0), Coord::new(-10.0, 10.0));
+        assert!(rect.is_valid());
     }
 }

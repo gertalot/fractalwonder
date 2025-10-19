@@ -1,11 +1,9 @@
 use leptos::html::Canvas;
 use leptos::*;
 use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
+use web_sys::HtmlCanvasElement;
 
-use crate::rendering::{
-    renderer_trait::CanvasRenderer, transforms::calculate_visible_bounds, viewport::Viewport,
-};
+use crate::rendering::{render_with_viewport, renderer_trait::CanvasRenderer, viewport::Viewport};
 
 #[component]
 pub fn Canvas<R>(renderer: R, viewport: ReadSignal<Viewport<R::Coord>>) -> impl IntoView
@@ -28,34 +26,7 @@ where
 
         if let Some(canvas) = canvas_ref.get() {
             let canvas_element: HtmlCanvasElement = (*canvas).clone().unchecked_into();
-
-            let context = canvas_element
-                .get_context("2d")
-                .expect("should get 2d context")
-                .expect("context should not be null")
-                .dyn_into::<CanvasRenderingContext2d>()
-                .expect("should cast to CanvasRenderingContext2d");
-
-            let width = canvas_element.width();
-            let height = canvas_element.height();
-
-            // Calculate what image-space rectangle is visible
-            let visible_bounds = calculate_visible_bounds(&viewport.get(), width, height);
-
-            // Ask renderer for pixel data
-            let pixel_data = renderer.render(&visible_bounds, width, height);
-
-            // Put pixels on canvas
-            let image_data = ImageData::new_with_u8_clamped_array_and_sh(
-                wasm_bindgen::Clamped(&pixel_data),
-                width,
-                height,
-            )
-            .expect("should create ImageData");
-
-            context
-                .put_image_data(&image_data, 0.0, 0.0)
-                .expect("should put image data");
+            render_with_viewport(&canvas_element, &renderer, &viewport.get());
         }
     });
 

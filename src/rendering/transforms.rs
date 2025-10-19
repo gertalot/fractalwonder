@@ -1,7 +1,118 @@
+use crate::hooks::use_canvas_interaction::TransformResult;
 use crate::rendering::{
     coords::{Coord, Rect},
     viewport::Viewport,
 };
+
+pub fn calculate_aspect_ratio(canvas_width: u32, canvas_height: u32) -> f64 {
+    canvas_width as f64 / canvas_height as f64
+}
+
+pub fn pan_viewport(viewport: &Viewport<f64>, offset_x: f64, offset_y: f64) -> Viewport<f64> {
+    let new_center = Coord::new(
+        *viewport.center.x() + offset_x,
+        *viewport.center.y() + offset_y,
+    );
+
+    Viewport::new(new_center, viewport.zoom, viewport.natural_bounds.clone())
+}
+
+pub fn zoom_viewport_at_point(
+    viewport: &Viewport<f64>,
+    zoom_factor: f64,
+    pixel_x: f64,
+    pixel_y: f64,
+    canvas_width: u32,
+    canvas_height: u32,
+) -> Viewport<f64> {
+    let current_bounds = calculate_visible_bounds(viewport, canvas_width, canvas_height);
+
+    let bounds_width = current_bounds.width();
+    let bounds_height = current_bounds.height();
+
+    // Convert zoom point from pixel space to image space
+    let zoom_point_image_x =
+        *current_bounds.min.x() + (pixel_x / canvas_width as f64) * bounds_width;
+    let zoom_point_image_y =
+        *current_bounds.min.y() + (pixel_y / canvas_height as f64) * bounds_height;
+
+    let new_zoom = viewport.zoom * zoom_factor;
+
+    // Calculate new view dimensions
+    let canvas_aspect = calculate_aspect_ratio(canvas_width, canvas_height);
+
+    let new_view_width = (viewport.natural_bounds.width() / new_zoom)
+        * if canvas_aspect > 1.0 {
+            canvas_aspect
+        } else {
+            1.0
+        };
+
+    let new_view_height = (viewport.natural_bounds.height() / new_zoom)
+        * if canvas_aspect < 1.0 {
+            1.0 / canvas_aspect
+        } else {
+            1.0
+        };
+
+    // Calculate new center to keep zoom point fixed
+    let new_center_x = zoom_point_image_x - (pixel_x / canvas_width as f64 - 0.5) * new_view_width;
+    let new_center_y =
+        zoom_point_image_y - (pixel_y / canvas_height as f64 - 0.5) * new_view_height;
+
+    let new_center = Coord::new(new_center_x, new_center_y);
+
+    Viewport::new(new_center, new_zoom, viewport.natural_bounds.clone())
+}
+
+/// Applies a pixel-space transformation to a viewport, returning a new viewport
+///
+/// Converts pixel-space transformations from user interactions (TransformResult)
+/// into viewport changes in image-space coordinates. This function bridges the gap
+/// between the interaction system (which works in pixels) and the viewport system
+/// (which works in image coordinates).
+///
+/// The transformation matrix in TransformResult encodes the FULL transformation:
+/// `new_pixel = old_pixel * zoom + offset`
+///
+/// This handles both pure panning, pure zooming, and combined pan+zoom operations.
+pub fn apply_pixel_transform_to_viewport(
+    viewport: &Viewport<f64>,
+    transform: &TransformResult,
+    canvas_width: u32,
+    canvas_height: u32,
+) -> Viewport<f64> {
+    let current_bounds = calculate_visible_bounds(viewport, canvas_width, canvas_height);
+
+    // Find the canvas center in pixel coordinates
+    let canvas_center_px = canvas_width as f64 / 2.0;
+    let canvas_center_py = canvas_height as f64 / 2.0;
+
+    // Transform the canvas center through the pixel transformation
+    // Matrix: new = old * zoom + offset
+    // But the transformation is applied in REVERSE for the viewport:
+    // If pixels moved right (+offset), we're looking left (viewport moves left)
+    // So we need the INVERSE transformation
+    //
+    // The pixel transformation is: new_pixel = old_pixel * zoom + offset
+    // We want: given new_pixel (canvas center), what old_pixel does it correspond to?
+    // old_pixel = (new_pixel - offset) / zoom
+    let old_center_px = (canvas_center_px - transform.offset_x) / transform.zoom_factor;
+    let old_center_py = (canvas_center_py - transform.offset_y) / transform.zoom_factor;
+
+    // Now convert this "old pixel" position to image coordinates
+    // This tells us what image point should be at the canvas center
+    let image_x =
+        *current_bounds.min.x() + (old_center_px / canvas_width as f64) * current_bounds.width();
+    let image_y =
+        *current_bounds.min.y() + (old_center_py / canvas_height as f64) * current_bounds.height();
+
+    // Create new viewport centered on this image point with the new zoom
+    let new_zoom = viewport.zoom * transform.zoom_factor;
+    let new_center = Coord::new(image_x, image_y);
+
+    Viewport::new(new_center, new_zoom, viewport.natural_bounds.clone())
+}
 
 pub fn calculate_visible_bounds<T>(
     viewport: &Viewport<T>,
@@ -23,7 +134,7 @@ where
     let view_height = natural_height / viewport.zoom;
 
     // Adjust for canvas aspect ratio - extend the wider dimension
-    let canvas_aspect = canvas_width as f64 / canvas_height as f64;
+    let canvas_aspect = calculate_aspect_ratio(canvas_width, canvas_height);
 
     let (final_width, final_height) = if canvas_aspect > 1.0 {
         // Landscape - extend width
@@ -195,5 +306,202 @@ mod tests {
 
         assert!((result_x - orig_x).abs() < 0.001);
         assert!((result_y - orig_y).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_calculate_aspect_ratio_landscape() {
+        let aspect = calculate_aspect_ratio(1920, 1080);
+        assert!((aspect - 1.7777).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_calculate_aspect_ratio_portrait() {
+        let aspect = calculate_aspect_ratio(1080, 1920);
+        assert!((aspect - 0.5625).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_calculate_aspect_ratio_square() {
+        let aspect = calculate_aspect_ratio(1000, 1000);
+        assert_eq!(aspect, 1.0);
+    }
+
+    #[test]
+    fn test_pan_viewport_right() {
+        let viewport = Viewport::new(
+            Coord::new(0.0, 0.0),
+            1.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        // Pan right 10 image units
+        let new_viewport = pan_viewport(&viewport, 10.0, 0.0);
+
+        assert_eq!(*new_viewport.center.x(), 10.0);
+        assert_eq!(*new_viewport.center.y(), 0.0);
+        assert_eq!(new_viewport.zoom, 1.0);
+    }
+
+    #[test]
+    fn test_pan_viewport_from_offset_position() {
+        let viewport = Viewport::new(
+            Coord::new(20.0, -10.0),
+            1.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        // Pan left 5 units, down 3 units
+        let new_viewport = pan_viewport(&viewport, -5.0, 3.0);
+
+        assert_eq!(*new_viewport.center.x(), 15.0);
+        assert_eq!(*new_viewport.center.y(), -7.0);
+        assert_eq!(new_viewport.zoom, 1.0);
+    }
+
+    #[test]
+    fn test_zoom_viewport_at_center_point() {
+        let viewport = Viewport::new(
+            Coord::new(0.0, 0.0),
+            1.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        let canvas_width = 800;
+        let canvas_height = 600;
+
+        // Zoom 2x at canvas center
+        let zoom_point_x = canvas_width as f64 / 2.0;
+        let zoom_point_y = canvas_height as f64 / 2.0;
+
+        let new_viewport = zoom_viewport_at_point(
+            &viewport,
+            2.0,
+            zoom_point_x,
+            zoom_point_y,
+            canvas_width,
+            canvas_height,
+        );
+
+        // Center should stay the same when zooming at center
+        assert!((*new_viewport.center.x() - 0.0).abs() < 0.01);
+        assert!((*new_viewport.center.y() - 0.0).abs() < 0.01);
+        assert_eq!(new_viewport.zoom, 2.0);
+    }
+
+    #[test]
+    fn test_zoom_viewport_at_corner() {
+        let viewport = Viewport::new(
+            Coord::new(0.0, 0.0),
+            1.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        let canvas_width = 800;
+        let canvas_height = 600;
+
+        // Zoom 2x at top-left corner
+        let new_viewport =
+            zoom_viewport_at_point(&viewport, 2.0, 0.0, 0.0, canvas_width, canvas_height);
+
+        // Center should move toward top-left
+        assert!(*new_viewport.center.x() < 0.0);
+        assert!(*new_viewport.center.y() < 0.0);
+        assert_eq!(new_viewport.zoom, 2.0);
+    }
+
+    #[test]
+    fn test_zoom_viewport_out() {
+        let viewport = Viewport::new(
+            Coord::new(0.0, 0.0),
+            2.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        let canvas_width = 800;
+        let canvas_height = 600;
+
+        // Zoom out 0.5x at center
+        let zoom_point_x = canvas_width as f64 / 2.0;
+        let zoom_point_y = canvas_height as f64 / 2.0;
+
+        let new_viewport = zoom_viewport_at_point(
+            &viewport,
+            0.5,
+            zoom_point_x,
+            zoom_point_y,
+            canvas_width,
+            canvas_height,
+        );
+
+        // Center should stay roughly the same
+        assert!((*new_viewport.center.x() - 0.0).abs() < 0.01);
+        assert!((*new_viewport.center.y() - 0.0).abs() < 0.01);
+        assert_eq!(new_viewport.zoom, 1.0); // 2.0 * 0.5
+    }
+
+    #[test]
+    fn test_pan_left_then_zoom_at_new_center() {
+        use crate::hooks::use_canvas_interaction::TransformResult;
+
+        // Start at origin
+        let viewport = Viewport::new(
+            Coord::new(0.0, 0.0),
+            1.0,
+            Rect::new(Coord::new(-50.0, -50.0), Coord::new(50.0, 50.0)),
+        );
+
+        let canvas_width = 800;
+        let canvas_height = 600;
+
+        // User drags left 100 pixels, then zooms 2x at canvas center
+        // This simulates: pan image left, then zoom at what's now canvas center
+        // The interaction hook computes: offset = old_offset * zoom + mouse * (1 - zoom)
+        // For pan of 100px LEFT + zoom 2x at center:
+        // Dragging left means offset is NEGATIVE: old_offset = (-100, 0) from pan
+        // mouse = (400, 300) = canvas center
+        // zoom_factor = 2.0
+        // new_offset = -100 * 2.0 + 400 * (1 - 2.0) = -200 - 400 = -600
+        let drag_offset = -100.0;
+        let zoom_factor = 2.0;
+        let mouse_x = canvas_width as f64 / 2.0;
+        let mouse_y = canvas_height as f64 / 2.0;
+
+        let offset_x = drag_offset * zoom_factor + mouse_x * (1.0 - zoom_factor);
+        let offset_y = 0.0 * zoom_factor + mouse_y * (1.0 - zoom_factor);
+
+        let result = TransformResult {
+            offset_x,
+            offset_y,
+            zoom_factor,
+            matrix: [
+                [zoom_factor, 0.0, offset_x],
+                [0.0, zoom_factor, offset_y],
+                [0.0, 0.0, 1.0],
+            ],
+        };
+
+        let new_viewport =
+            apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
+
+        // The image was dragged left by 100px, so we're looking at content to the right
+        // Then we zoomed at canvas center
+        // Expected: viewport center should be to the RIGHT of origin (positive x)
+        // because dragging left means looking right
+
+        // At zoom=1, dragging left 100px on an 800px canvas moves viewport right
+        // by approximately 100/800 * bounds_width
+        // After the pan, if we were at zoom=1, center would be at positive x
+        // Then zooming 2x at the canvas center should keep that point relatively fixed
+
+        // Verify zoom is correct
+        assert_eq!(new_viewport.zoom, 2.0);
+
+        // The viewport should have moved due to the pan
+        // Dragging left means we're looking to the right, so center.x should be positive
+        assert!(
+            *new_viewport.center.x() > 0.0,
+            "After dragging left, viewport center should be positive (looking right), got x={}",
+            new_viewport.center.x()
+        );
     }
 }
