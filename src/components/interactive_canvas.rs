@@ -56,6 +56,20 @@ where
     );
     let viewport = create_rw_signal(Viewport::new(center, 1.0, natural_bounds));
 
+    // Create info signal for UI display
+    let info = create_rw_signal(renderer.info(&viewport.get()));
+
+    // Reset viewport callback for Home button
+    let renderer_for_reset = renderer.clone();
+    let reset_viewport = move || {
+        let bounds = renderer_for_reset.natural_bounds();
+        viewport.set(Viewport::new(
+            Point::new(bounds.center().x().clone(), bounds.center().y().clone()),
+            1.0,
+            bounds,
+        ));
+    };
+
     // Set up interaction hook with viewport update
     let handle = use_canvas_interaction(canvas_ref, move |result: TransformResult| {
         if let Some(canvas) = canvas_ref.get_untracked() {
