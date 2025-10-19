@@ -95,17 +95,33 @@ where
             canvas.set_width(window.inner_width().unwrap().as_f64().unwrap() as u32);
             canvas.set_height(window.inner_height().unwrap().as_f64().unwrap() as u32);
 
-            // Initial render
+            // Initial render (without timing - happens once)
             render_with_viewport(&canvas, &renderer_for_init, &viewport.get());
         }
     });
 
-    // Re-render whenever viewport changes
+    // Re-render whenever viewport changes (with performance timing)
     let renderer_for_updates = renderer.clone();
     create_effect(move |_| {
         let current_viewport = viewport.get();
         if let Some(canvas) = canvas_ref.get_untracked() {
+            // Time the render
+            let start = window()
+                .and_then(|w| w.performance())
+                .and_then(|p| Some(p.now()));
+
             render_with_viewport(&canvas, &renderer_for_updates, &current_viewport);
+
+            let end = window()
+                .and_then(|w| w.performance())
+                .and_then(|p| Some(p.now()));
+
+            // Update info with performance metrics
+            if let (Some(start_time), Some(end_time)) = (start, end) {
+                let mut info_data = renderer_for_updates.info(&current_viewport);
+                info_data.render_time_ms = Some(end_time - start_time);
+                info.set(info_data);
+            }
         }
     });
 
