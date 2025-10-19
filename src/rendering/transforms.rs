@@ -4,6 +4,114 @@ use crate::rendering::{
     viewport::Viewport,
 };
 
+/// A 2D affine transformation in pixel/canvas space
+#[derive(Debug, Clone, PartialEq)]
+pub enum Transform {
+    /// Translate by (dx, dy) in pixels. Positive dx moves right, positive dy moves down.
+    Translate { dx: f64, dy: f64 },
+    /// Scale by factor around point (center_x, center_y). Factor < 1 zooms out, > 1 zooms in.
+    /// The center point remains fixed during scaling.
+    Scale {
+        factor: f64,
+        center_x: f64,
+        center_y: f64,
+    },
+}
+
+/// A 3x3 homogeneous transformation matrix for 2D affine transformations
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Mat3 {
+    /// Row-major order: [[m00, m01, m02], [m10, m11, m12], [m20, m21, m22]]
+    pub data: [[f64; 3]; 3],
+}
+
+impl Mat3 {
+    /// Returns the identity matrix (no transformation)
+    pub fn identity() -> Self {
+        Self {
+            data: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        }
+    }
+
+    /// Creates a translation matrix for moving by (dx, dy)
+    pub fn translation(dx: f64, dy: f64) -> Self {
+        Self {
+            data: [[1.0, 0.0, dx], [0.0, 1.0, dy], [0.0, 0.0, 1.0]],
+        }
+    }
+
+    /// Creates a scale matrix around a point (cx, cy)
+    ///
+    /// This is equivalent to: translate(-cx, -cy) → scale(factor) → translate(cx, cy)
+    /// The point (cx, cy) remains fixed during the scaling operation.
+    pub fn scale_around(factor: f64, cx: f64, cy: f64) -> Self {
+        Self {
+            data: [
+                [factor, 0.0, cx * (1.0 - factor)],
+                [0.0, factor, cy * (1.0 - factor)],
+                [0.0, 0.0, 1.0],
+            ],
+        }
+    }
+
+    /// Multiplies this matrix by another (self × other)
+    ///
+    /// For transformations, left-multiplying applies the transformation:
+    /// To compose transformations [T1, T2, T3], compute: T3 × T2 × T1
+    pub fn multiply(&self, other: &Mat3) -> Self {
+        let mut result = [[0.0; 3]; 3];
+
+        for (i, row) in result.iter_mut().enumerate() {
+            for (j, cell) in row.iter_mut().enumerate() {
+                *cell = self.data[i][0] * other.data[0][j]
+                    + self.data[i][1] * other.data[1][j]
+                    + self.data[i][2] * other.data[2][j];
+            }
+        }
+
+        Self { data: result }
+    }
+}
+
+/// Composes a sequence of 2D affine transformations into a single transformation matrix
+///
+/// Transformations are applied in order: the first transformation in the sequence
+/// is applied first to any point transformed by the resulting matrix.
+///
+/// # Example
+/// ```ignore
+/// use fractalwonder::rendering::transforms::{Transform, compose_affine_transformations};
+///
+/// // Translate right 200px, then scale 0.5x around point (200, 0)
+/// let transforms = vec![
+///     Transform::Translate { dx: 200.0, dy: 0.0 },
+///     Transform::Scale { factor: 0.5, center_x: 200.0, center_y: 0.0 },
+/// ];
+///
+/// let matrix = compose_affine_transformations(transforms);
+/// // Point (0, 0) transforms to (200, 0): moved right 200px, then stays there during scaling
+/// ```
+pub fn compose_affine_transformations(transforms: impl IntoIterator<Item = Transform>) -> Mat3 {
+    let mut result = Mat3::identity();
+
+    for transform in transforms {
+        let matrix = match transform {
+            Transform::Translate { dx, dy } => Mat3::translation(dx, dy),
+            Transform::Scale {
+                factor,
+                center_x,
+                center_y,
+            } => Mat3::scale_around(factor, center_x, center_y),
+        };
+
+        // Left-multiply: result = matrix × result
+        // This ensures transformations apply in the correct order
+        result = matrix.multiply(&result);
+    }
+
+    result
+}
+
 pub fn calculate_aspect_ratio(canvas_width: u32, canvas_height: u32) -> f64 {
     canvas_width as f64 / canvas_height as f64
 }
@@ -89,10 +197,8 @@ pub fn apply_pixel_transform_to_viewport(
     // Convert center-relative offset to absolute offset
     let canvas_center_x = canvas_width as f64 / 2.0;
     let canvas_center_y = canvas_height as f64 / 2.0;
-    let absolute_offset_x =
-        transform.offset_x + canvas_center_x * (1.0 - transform.zoom_factor);
-    let absolute_offset_y =
-        transform.offset_y + canvas_center_y * (1.0 - transform.zoom_factor);
+    let absolute_offset_x = transform.offset_x + canvas_center_x * (1.0 - transform.zoom_factor);
+    let absolute_offset_y = transform.offset_y + canvas_center_y * (1.0 - transform.zoom_factor);
 
     // Special case: pure translation (zoom = 1.0)
     // When zoom_factor = 1.0, transformation is: new_pixel = old_pixel + offset
@@ -153,8 +259,7 @@ pub fn apply_pixel_transform_to_viewport(
     #[cfg(target_arch = "wasm32")]
     web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
         "Canvas center pixel moves to: ({:.6}, {:.6})",
-        new_center_px,
-        new_center_py
+        new_center_px, new_center_py
     )));
 
     // So the image point that was at canvas center should now be at new_center_px.
@@ -167,9 +272,15 @@ pub fn apply_pixel_transform_to_viewport(
     // Adjust for canvas aspect ratio
     let canvas_aspect = calculate_aspect_ratio(canvas_width, canvas_height);
     let (new_view_width, new_view_height) = if canvas_aspect > 1.0 {
-        (new_view_height_unscaled * canvas_aspect, new_view_height_unscaled)
+        (
+            new_view_height_unscaled * canvas_aspect,
+            new_view_height_unscaled,
+        )
     } else {
-        (new_view_width_unscaled, new_view_width_unscaled / canvas_aspect)
+        (
+            new_view_width_unscaled,
+            new_view_width_unscaled / canvas_aspect,
+        )
     };
 
     // We want: image_at_original_center appears at pixel new_center_px
@@ -189,11 +300,7 @@ pub fn apply_pixel_transform_to_viewport(
     #[cfg(target_arch = "wasm32")]
     web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
         "New viewport: center=({:.6}, {:.6}), zoom={:.6}, view_size=({:.6}, {:.6})",
-        new_viewport_center_x,
-        new_viewport_center_y,
-        new_zoom,
-        new_view_width,
-        new_view_height
+        new_viewport_center_x, new_viewport_center_y, new_zoom, new_view_width, new_view_height
     )));
 
     Viewport::new(
@@ -772,6 +879,292 @@ mod tests {
             pixel_x,
             pixel_x - mouse_x
         );
+    }
+
+    #[test]
+    fn test_mat3_identity() {
+        let id = Mat3::identity();
+        assert_eq!(id.data, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+    }
+
+    #[test]
+    fn test_mat3_translation() {
+        let t = Mat3::translation(200.0, 100.0);
+        assert_eq!(
+            t.data,
+            [[1.0, 0.0, 200.0], [0.0, 1.0, 100.0], [0.0, 0.0, 1.0]]
+        );
+
+        // Transform point (0, 0) → should move to (200, 100)
+        let x = 0.0 * t.data[0][0] + 0.0 * t.data[0][1] + 1.0 * t.data[0][2];
+        let y = 0.0 * t.data[1][0] + 0.0 * t.data[1][1] + 1.0 * t.data[1][2];
+        assert_eq!(x, 200.0);
+        assert_eq!(y, 100.0);
+    }
+
+    #[test]
+    fn test_mat3_scale_around_origin() {
+        let s = Mat3::scale_around(0.5, 0.0, 0.0);
+        assert_eq!(s.data, [[0.5, 0.0, 0.0], [0.0, 0.5, 0.0], [0.0, 0.0, 1.0]]);
+    }
+
+    #[test]
+    fn test_mat3_scale_around_point() {
+        // Scale 0.5x around point (200, 0)
+        let s = Mat3::scale_around(0.5, 200.0, 0.0);
+
+        // Matrix should be: [[0.5, 0, 100], [0, 0.5, 0], [0, 0, 1]]
+        // Because: cx(1-s) = 200(1-0.5) = 100
+        assert_eq!(s.data[0][0], 0.5);
+        assert_eq!(s.data[1][1], 0.5);
+        assert_eq!(s.data[0][2], 100.0);
+        assert_eq!(s.data[1][2], 0.0);
+
+        // Point (200, 0) should stay at (200, 0) after scaling
+        let x = 200.0 * s.data[0][0] + 0.0 * s.data[0][1] + 1.0 * s.data[0][2];
+        let y = 200.0 * s.data[1][0] + 0.0 * s.data[1][1] + 1.0 * s.data[1][2];
+        assert_eq!(x, 200.0);
+        assert_eq!(y, 0.0);
+
+        // Point (0, 0) should move toward (200, 0)
+        let x = 0.0 * s.data[0][0] + 0.0 * s.data[0][1] + 1.0 * s.data[0][2];
+        let y = 0.0 * s.data[1][0] + 0.0 * s.data[1][1] + 1.0 * s.data[1][2];
+        assert_eq!(x, 100.0);
+        assert_eq!(y, 0.0);
+    }
+
+    #[test]
+    fn test_mat3_multiply_identity() {
+        let t = Mat3::translation(100.0, 50.0);
+        let id = Mat3::identity();
+        let result = t.multiply(&id);
+        assert_eq!(result.data, t.data);
+    }
+
+    #[test]
+    fn test_mat3_multiply_translations() {
+        // Translate by (100, 0) then by (50, 0) = translate by (150, 0)
+        let t1 = Mat3::translation(100.0, 0.0);
+        let t2 = Mat3::translation(50.0, 0.0);
+        let result = t2.multiply(&t1);
+
+        // Transform point (0, 0)
+        let x = 0.0 * result.data[0][0] + 0.0 * result.data[0][1] + 1.0 * result.data[0][2];
+        assert_eq!(x, 150.0);
+    }
+
+    #[test]
+    fn test_compose_single_translation() {
+        let transforms = vec![Transform::Translate { dx: 200.0, dy: 0.0 }];
+        let matrix = compose_affine_transformations(transforms);
+
+        assert_eq!(
+            matrix.data,
+            [[1.0, 0.0, 200.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        );
+    }
+
+    #[test]
+    fn test_compose_single_scale() {
+        let transforms = vec![Transform::Scale {
+            factor: 0.5,
+            center_x: 200.0,
+            center_y: 0.0,
+        }];
+        let matrix = compose_affine_transformations(transforms);
+
+        assert_eq!(
+            matrix.data,
+            [[0.5, 0.0, 100.0], [0.0, 0.5, 0.0], [0.0, 0.0, 1.0]]
+        );
+    }
+
+    #[test]
+    fn test_compose_translate_then_scale() {
+        // Your example: translate(200, 0) then scale(0.5) around (200, 0)
+        let transforms = vec![
+            Transform::Translate { dx: 200.0, dy: 0.0 },
+            Transform::Scale {
+                factor: 0.5,
+                center_x: 200.0,
+                center_y: 0.0,
+            },
+        ];
+        let matrix = compose_affine_transformations(transforms);
+
+        // Expected result: point (0,0) should end up at (200, 0)
+        // T1 = [[1, 0, 200], [0, 1, 0], [0, 0, 1]]
+        // T2 = [[0.5, 0, 100], [0, 0.5, 0], [0, 0, 1]]
+        // Final = T2 × T1 = [[0.5, 0, 200], [0, 0.5, 0], [0, 0, 1]]
+
+        println!("Result matrix: {:?}", matrix.data);
+
+        // Transform point (0, 0)
+        let x = 0.0 * matrix.data[0][0] + 0.0 * matrix.data[0][1] + 1.0 * matrix.data[0][2];
+        let y = 0.0 * matrix.data[1][0] + 0.0 * matrix.data[1][1] + 1.0 * matrix.data[1][2];
+
+        println!("Point (0,0) transforms to ({}, {})", x, y);
+
+        assert!((x - 200.0).abs() < 0.0001, "Expected x=200, got x={}", x);
+        assert!((y - 0.0).abs() < 0.0001, "Expected y=0, got y={}", y);
+    }
+
+    #[test]
+    fn test_compose_empty_sequence() {
+        let transforms: Vec<Transform> = vec![];
+        let matrix = compose_affine_transformations(transforms);
+        assert_eq!(matrix.data, Mat3::identity().data);
+    }
+
+    #[test]
+    fn test_compose_multiple_translations() {
+        let transforms = vec![
+            Transform::Translate { dx: 100.0, dy: 0.0 },
+            Transform::Translate { dx: 50.0, dy: 0.0 },
+            Transform::Translate {
+                dx: -20.0,
+                dy: 30.0,
+            },
+        ];
+        let matrix = compose_affine_transformations(transforms);
+
+        // Transform point (0, 0) - should be at (130, 30)
+        let x = 0.0 * matrix.data[0][0] + 0.0 * matrix.data[0][1] + 1.0 * matrix.data[0][2];
+        let y = 0.0 * matrix.data[1][0] + 0.0 * matrix.data[1][1] + 1.0 * matrix.data[1][2];
+
+        assert!((x - 130.0).abs() < 0.0001);
+        assert!((y - 30.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_compose_three_translations_to_identity() {
+        // Three translations that cancel out to identity
+        let transforms = vec![
+            Transform::Translate {
+                dx: 200.0,
+                dy: 0.0,
+            },
+            Transform::Translate {
+                dx: 0.0,
+                dy: -200.0,
+            },
+            Transform::Translate {
+                dx: -200.0,
+                dy: 200.0,
+            },
+        ];
+        let matrix = compose_affine_transformations(transforms);
+
+        // Should be identity matrix
+        let expected = Mat3::identity();
+        for i in 0..3 {
+            for j in 0..3 {
+                assert!(
+                    (matrix.data[i][j] - expected.data[i][j]).abs() < 0.0001,
+                    "Matrix element [{},{}]: expected {}, got {}",
+                    i,
+                    j,
+                    expected.data[i][j],
+                    matrix.data[i][j]
+                );
+            }
+        }
+
+        // Verify with a test point: (100, 100) should stay at (100, 100)
+        let x = 100.0 * matrix.data[0][0] + 100.0 * matrix.data[0][1] + 1.0 * matrix.data[0][2];
+        let y = 100.0 * matrix.data[1][0] + 100.0 * matrix.data[1][1] + 1.0 * matrix.data[1][2];
+        assert!((x - 100.0).abs() < 0.0001);
+        assert!((y - 100.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_compose_translate_scale_translate_scale_to_identity() {
+        // Complex sequence that cancels out to identity:
+        // translate(200,0), scale(0.5, 0, 0), translate(-100,0), scale(2, 0, 0)
+        let transforms = vec![
+            Transform::Translate {
+                dx: 200.0,
+                dy: 0.0,
+            },
+            Transform::Scale {
+                factor: 0.5,
+                center_x: 0.0,
+                center_y: 0.0,
+            },
+            Transform::Translate {
+                dx: -100.0,
+                dy: 0.0,
+            },
+            Transform::Scale {
+                factor: 2.0,
+                center_x: 0.0,
+                center_y: 0.0,
+            },
+        ];
+        let matrix = compose_affine_transformations(transforms);
+
+        println!("Result matrix: {:?}", matrix.data);
+
+        // Should be identity matrix
+        let expected = Mat3::identity();
+        for i in 0..3 {
+            for j in 0..3 {
+                assert!(
+                    (matrix.data[i][j] - expected.data[i][j]).abs() < 0.0001,
+                    "Matrix element [{},{}]: expected {}, got {}",
+                    i,
+                    j,
+                    expected.data[i][j],
+                    matrix.data[i][j]
+                );
+            }
+        }
+
+        // Verify with test points
+        // Point (0, 0) should stay at (0, 0)
+        let x = 0.0 * matrix.data[0][0] + 0.0 * matrix.data[0][1] + 1.0 * matrix.data[0][2];
+        let y = 0.0 * matrix.data[1][0] + 0.0 * matrix.data[1][1] + 1.0 * matrix.data[1][2];
+        assert!((x - 0.0).abs() < 0.0001);
+        assert!((y - 0.0).abs() < 0.0001);
+
+        // Point (100, 100) should stay at (100, 100)
+        let x = 100.0 * matrix.data[0][0] + 100.0 * matrix.data[0][1] + 1.0 * matrix.data[0][2];
+        let y = 100.0 * matrix.data[1][0] + 100.0 * matrix.data[1][1] + 1.0 * matrix.data[1][2];
+        println!("Point (100,100) transforms to ({}, {})", x, y);
+        assert!((x - 100.0).abs() < 0.0001);
+        assert!((y - 100.0).abs() < 0.0001);
+
+        // Point (10, 20) should stay at (10, 20)
+        let x = 10.0 * matrix.data[0][0] + 20.0 * matrix.data[0][1] + 1.0 * matrix.data[0][2];
+        let y = 10.0 * matrix.data[1][0] + 20.0 * matrix.data[1][1] + 1.0 * matrix.data[1][2];
+        println!("Point (10,20) transforms to ({}, {})", x, y);
+        assert!((x - 10.0).abs() < 0.0001);
+        assert!((y - 20.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_compose_scale_then_translate() {
+        // Scale 0.5x around origin, then translate (100, 0)
+        let transforms = vec![
+            Transform::Scale {
+                factor: 0.5,
+                center_x: 0.0,
+                center_y: 0.0,
+            },
+            Transform::Translate { dx: 100.0, dy: 0.0 },
+        ];
+        let matrix = compose_affine_transformations(transforms);
+
+        // Point (0, 0) should be at (100, 0)
+        let x = 0.0 * matrix.data[0][0] + 0.0 * matrix.data[0][1] + 1.0 * matrix.data[0][2];
+        let y = 0.0 * matrix.data[1][0] + 0.0 * matrix.data[1][1] + 1.0 * matrix.data[1][2];
+
+        assert!((x - 100.0).abs() < 0.0001);
+        assert!((y - 0.0).abs() < 0.0001);
+
+        // Point (200, 0) should be at: scaled to (100, 0), then translated to (200, 0)
+        let x = 200.0 * matrix.data[0][0] + 0.0 * matrix.data[0][1] + 1.0 * matrix.data[0][2];
+        assert!((x - 200.0).abs() < 0.0001);
     }
 
     #[test]

@@ -305,19 +305,19 @@ where
         // Convert absolute pixel offset to center-relative offset
         // This makes the values more intuitive: (0, 0) means we zoomed at canvas center
         let canvas_ref = canvas_ref_stored.get_value();
-        let (center_relative_x, center_relative_y) = if let Some(canvas) = canvas_ref.get_untracked()
-        {
-            let canvas_center_x = canvas.width() as f64 / 2.0;
-            let canvas_center_y = canvas.height() as f64 / 2.0;
+        let (center_relative_x, center_relative_y) =
+            if let Some(canvas) = canvas_ref.get_untracked() {
+                let canvas_center_x = canvas.width() as f64 / 2.0;
+                let canvas_center_y = canvas.height() as f64 / 2.0;
 
-            // Offset is relative to top-left (0, 0), convert to relative to center
-            (
-                total_offset.0 - canvas_center_x * (1.0 - zoom),
-                total_offset.1 - canvas_center_y * (1.0 - zoom),
-            )
-        } else {
-            total_offset
-        };
+                // Offset is relative to top-left (0, 0), convert to relative to center
+                (
+                    total_offset.0 - canvas_center_x * (1.0 - zoom),
+                    total_offset.1 - canvas_center_y * (1.0 - zoom),
+                )
+            } else {
+                total_offset
+            };
 
         // Matrix still uses absolute coordinates for internal rendering
         let matrix = build_transform_matrix(total_offset, zoom, None);
