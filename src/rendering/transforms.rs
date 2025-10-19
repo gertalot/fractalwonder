@@ -72,8 +72,9 @@ pub fn zoom_viewport_at_point(
 /// between the interaction system (which works in pixels) and the viewport system
 /// (which works in image coordinates).
 ///
-/// The transformation matrix in TransformResult encodes the FULL transformation:
-/// `new_pixel = old_pixel * zoom + offset`
+/// TransformResult offsets are **center-relative**, meaning (0, 0) represents a
+/// transformation centered at the canvas center point. This function converts them
+/// to absolute coordinates for calculation.
 ///
 /// This handles both pure panning, pure zooming, and combined pan+zoom operations.
 pub fn apply_pixel_transform_to_viewport(
@@ -85,6 +86,14 @@ pub fn apply_pixel_transform_to_viewport(
     let current_bounds = calculate_visible_bounds(viewport, canvas_width, canvas_height);
     let new_zoom = viewport.zoom * transform.zoom_factor;
 
+    // Convert center-relative offset to absolute offset
+    let canvas_center_x = canvas_width as f64 / 2.0;
+    let canvas_center_y = canvas_height as f64 / 2.0;
+    let absolute_offset_x =
+        transform.offset_x + canvas_center_x * (1.0 - transform.zoom_factor);
+    let absolute_offset_y =
+        transform.offset_y + canvas_center_y * (1.0 - transform.zoom_factor);
+
     // Special case: pure translation (zoom = 1.0)
     // When zoom_factor = 1.0, transformation is: new_pixel = old_pixel + offset
     // There's no fixed point (or equivalently, fixed point is at infinity)
@@ -92,8 +101,8 @@ pub fn apply_pixel_transform_to_viewport(
     if (transform.zoom_factor - 1.0).abs() < 1e-10 {
         // Pure pan: offset moves pixels, so viewport moves in opposite direction
         // offset in pixels → offset in image space
-        let image_offset_x = (transform.offset_x / canvas_width as f64) * current_bounds.width();
-        let image_offset_y = (transform.offset_y / canvas_height as f64) * current_bounds.height();
+        let image_offset_x = (absolute_offset_x / canvas_width as f64) * current_bounds.width();
+        let image_offset_y = (absolute_offset_y / canvas_height as f64) * current_bounds.height();
 
         // Viewport moves opposite to pixel offset (dragging right = looking left)
         let new_center_x = *viewport.center.x() - image_offset_x;
@@ -129,6 +138,7 @@ pub fn apply_pixel_transform_to_viewport(
         canvas_height,
     );
 
+    #[cfg(target_arch = "wasm32")]
     web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
         "Image at original canvas center: ({:.6}, {:.6})",
         image_at_original_center.x(),
@@ -136,10 +146,11 @@ pub fn apply_pixel_transform_to_viewport(
     )));
 
     // During the preview transformation, the pixel at canvas_center moves to a new position:
-    // new_pos = canvas_center * zoom + offset
-    let new_center_px = canvas_center_px * transform.zoom_factor + transform.offset_x;
-    let new_center_py = canvas_center_py * transform.zoom_factor + transform.offset_y;
+    // new_pos = canvas_center * zoom + offset (using absolute offset)
+    let new_center_px = canvas_center_px * transform.zoom_factor + absolute_offset_x;
+    let new_center_py = canvas_center_py * transform.zoom_factor + absolute_offset_y;
 
+    #[cfg(target_arch = "wasm32")]
     web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
         "Canvas center pixel moves to: ({:.6}, {:.6})",
         new_center_px,
@@ -175,6 +186,7 @@ pub fn apply_pixel_transform_to_viewport(
     let new_viewport_center_y = *image_at_original_center.y() + new_view_height / 2.0
         - (new_center_py / canvas_height as f64) * new_view_height;
 
+    #[cfg(target_arch = "wasm32")]
     web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
         "New viewport: center=({:.6}, {:.6}), zoom={:.6}, view_size=({:.6}, {:.6})",
         new_viewport_center_x,
@@ -539,18 +551,24 @@ mod tests {
         let zoom_point_x = 700.0; // Where user's mouse is (new image center)
         let zoom_point_y = 300.0;
 
-        // offset = old_offset * zoom + mouse * (1 - zoom)
-        // offset = 300 * 0.5 + 700 * (1 - 0.5) = 150 + 350 = 500
-        let offset_x = drag_offset * zoom_factor + zoom_point_x * (1.0 - zoom_factor);
-        let offset_y = 0.0 * zoom_factor + zoom_point_y * (1.0 - zoom_factor);
+        // Absolute offset (internal calculation) = old_offset * zoom + mouse * (1 - zoom)
+        // absolute = 300 * 0.5 + 700 * (1 - 0.5) = 150 + 350 = 500
+        let absolute_offset_x = drag_offset * zoom_factor + zoom_point_x * (1.0 - zoom_factor);
+        let absolute_offset_y = 0.0 * zoom_factor + zoom_point_y * (1.0 - zoom_factor);
+
+        // Convert to center-relative for TransformResult
+        let canvas_center_x = canvas_width as f64 / 2.0;
+        let canvas_center_y = canvas_height as f64 / 2.0;
+        let offset_x = absolute_offset_x - canvas_center_x * (1.0 - zoom_factor);
+        let offset_y = absolute_offset_y - canvas_center_y * (1.0 - zoom_factor);
 
         let result = TransformResult {
             offset_x,
             offset_y,
             zoom_factor,
             matrix: [
-                [zoom_factor, 0.0, offset_x],
-                [0.0, zoom_factor, offset_y],
+                [zoom_factor, 0.0, absolute_offset_x],
+                [0.0, zoom_factor, absolute_offset_y],
                 [0.0, 0.0, 1.0],
             ],
         };
@@ -635,28 +653,29 @@ mod tests {
         let canvas_height = 600;
 
         // User drags left 100 pixels, then zooms 2x at canvas center
-        // This simulates: pan image left, then zoom at what's now canvas center
-        // The interaction hook computes: offset = old_offset * zoom + mouse * (1 - zoom)
-        // For pan of 100px LEFT + zoom 2x at center:
-        // Dragging left means offset is NEGATIVE: old_offset = (-100, 0) from pan
-        // mouse = (400, 300) = canvas center
-        // zoom_factor = 2.0
-        // new_offset = -100 * 2.0 + 400 * (1 - 2.0) = -200 - 400 = -600
+        // Absolute offset = old_offset * zoom + mouse * (1 - zoom)
+        // absolute = -100 * 2.0 + 400 * (1 - 2.0) = -200 - 400 = -600
         let drag_offset = -100.0;
         let zoom_factor = 2.0;
         let mouse_x = canvas_width as f64 / 2.0;
         let mouse_y = canvas_height as f64 / 2.0;
 
-        let offset_x = drag_offset * zoom_factor + mouse_x * (1.0 - zoom_factor);
-        let offset_y = 0.0 * zoom_factor + mouse_y * (1.0 - zoom_factor);
+        let absolute_offset_x = drag_offset * zoom_factor + mouse_x * (1.0 - zoom_factor);
+        let absolute_offset_y = 0.0 * zoom_factor + mouse_y * (1.0 - zoom_factor);
+
+        // Convert to center-relative
+        let canvas_center_x = canvas_width as f64 / 2.0;
+        let canvas_center_y = canvas_height as f64 / 2.0;
+        let offset_x = absolute_offset_x - canvas_center_x * (1.0 - zoom_factor);
+        let offset_y = absolute_offset_y - canvas_center_y * (1.0 - zoom_factor);
 
         let result = TransformResult {
             offset_x,
             offset_y,
             zoom_factor,
             matrix: [
-                [zoom_factor, 0.0, offset_x],
-                [0.0, zoom_factor, offset_y],
+                [zoom_factor, 0.0, absolute_offset_x],
+                [0.0, zoom_factor, absolute_offset_y],
                 [0.0, 0.0, 1.0],
             ],
         };
@@ -781,17 +800,23 @@ mod tests {
         let mouse_x = 700.0;
         let mouse_y = 300.0;
 
-        // Interaction hook formula
-        let offset_x = drag_offset * zoom_factor + mouse_x * (1.0 - zoom_factor);
-        let offset_y = 0.0 * zoom_factor + mouse_y * (1.0 - zoom_factor);
+        // Interaction hook formula for absolute offset
+        let absolute_offset_x = drag_offset * zoom_factor + mouse_x * (1.0 - zoom_factor);
+        let absolute_offset_y = 0.0 * zoom_factor + mouse_y * (1.0 - zoom_factor);
+
+        // Convert to center-relative
+        let canvas_center_x = canvas_width as f64 / 2.0;
+        let canvas_center_y = canvas_height as f64 / 2.0;
+        let offset_x = absolute_offset_x - canvas_center_x * (1.0 - zoom_factor);
+        let offset_y = absolute_offset_y - canvas_center_y * (1.0 - zoom_factor);
 
         let result = TransformResult {
             offset_x,
             offset_y,
             zoom_factor,
             matrix: [
-                [zoom_factor, 0.0, offset_x],
-                [0.0, zoom_factor, offset_y],
+                [zoom_factor, 0.0, absolute_offset_x],
+                [0.0, zoom_factor, absolute_offset_y],
                 [0.0, 0.0, 1.0],
             ],
         };

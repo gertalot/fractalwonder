@@ -254,6 +254,32 @@ pub fn TestImageView() -> impl IntoView {
 mod tests {
     use super::*;
 
+    /// Helper to create TransformResult with center-relative offsets
+    fn make_transform_result(
+        offset_x: f64,
+        offset_y: f64,
+        zoom_factor: f64,
+        canvas_width: u32,
+        canvas_height: u32,
+    ) -> TransformResult {
+        // Convert center-relative to absolute for matrix
+        let canvas_center_x = canvas_width as f64 / 2.0;
+        let canvas_center_y = canvas_height as f64 / 2.0;
+        let absolute_offset_x = offset_x + canvas_center_x * (1.0 - zoom_factor);
+        let absolute_offset_y = offset_y + canvas_center_y * (1.0 - zoom_factor);
+
+        TransformResult {
+            offset_x,
+            offset_y,
+            zoom_factor,
+            matrix: [
+                [zoom_factor, 0.0, absolute_offset_x],
+                [0.0, zoom_factor, absolute_offset_y],
+                [0.0, 0.0, 1.0],
+            ],
+        }
+    }
+
     #[test]
     fn test_renderer_natural_bounds() {
         let renderer = TestImageRenderer::new();
@@ -320,25 +346,8 @@ mod tests {
         let canvas_height = 600;
 
         // User zooms in 2x at the center of the canvas (400, 300)
-        // The interaction hook computes: new_offset = old_offset * zoom + mouse * (1 - zoom)
-        // old_offset = (0, 0), zoom = 2.0, mouse = (400, 300)
-        // new_offset = (0, 0) * 2.0 + (400, 300) * (1 - 2.0) = (400, 300) * (-1.0) = (-400, -300)
-        let mouse_x = canvas_width as f64 / 2.0;
-        let mouse_y = canvas_height as f64 / 2.0;
-        let zoom_factor = 2.0;
-        let offset_x = mouse_x * (1.0 - zoom_factor);
-        let offset_y = mouse_y * (1.0 - zoom_factor);
-
-        let result = TransformResult {
-            offset_x,
-            offset_y,
-            zoom_factor,
-            matrix: [
-                [zoom_factor, 0.0, offset_x],
-                [0.0, zoom_factor, offset_y],
-                [0.0, 0.0, 1.0],
-            ],
-        };
+        // With center-relative offsets, zooming at canvas center produces offset (0, 0)
+        let result = make_transform_result(0.0, 0.0, 2.0, canvas_width, canvas_height);
 
         let new_viewport =
             apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
@@ -373,22 +382,13 @@ mod tests {
         let canvas_height = 600;
 
         // User zooms in 2x at top-left corner (0, 0)
-        let mouse_x = 0.0;
-        let mouse_y = 0.0;
-        let zoom_factor = 2.0;
-        let offset_x = mouse_x * (1.0 - zoom_factor);
-        let offset_y = mouse_y * (1.0 - zoom_factor);
-
-        let result = TransformResult {
-            offset_x,
-            offset_y,
-            zoom_factor,
-            matrix: [
-                [zoom_factor, 0.0, offset_x],
-                [0.0, zoom_factor, offset_y],
-                [0.0, 0.0, 1.0],
-            ],
-        };
+        // Center-relative offset: (0, 0) is 400px left and 300px up from canvas center
+        // So center-relative offset = (400, 300) * (1 - 2) = (-400, -300)
+        // Wait, that's wrong. Let me recalculate:
+        // Mouse at (0, 0), canvas center at (400, 300)
+        // Absolute offset = mouse * (1 - zoom) = 0 * (-1) = 0
+        // Center-relative = absolute - canvas_center * (1 - zoom) = 0 - (400, 300) * (-1) = (400, 300)
+        let result = make_transform_result(400.0, 300.0, 2.0, canvas_width, canvas_height);
 
         let new_viewport =
             apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
@@ -423,22 +423,8 @@ mod tests {
         let canvas_height = 600;
 
         // User zooms out 0.5x at canvas center
-        let mouse_x = canvas_width as f64 / 2.0;
-        let mouse_y = canvas_height as f64 / 2.0;
-        let zoom_factor = 0.5;
-        let offset_x = mouse_x * (1.0 - zoom_factor);
-        let offset_y = mouse_y * (1.0 - zoom_factor);
-
-        let result = TransformResult {
-            offset_x,
-            offset_y,
-            zoom_factor,
-            matrix: [
-                [zoom_factor, 0.0, offset_x],
-                [0.0, zoom_factor, offset_y],
-                [0.0, 0.0, 1.0],
-            ],
-        };
+        // Center-relative offset is (0, 0) for zooming at center
+        let result = make_transform_result(0.0, 0.0, 0.5, canvas_width, canvas_height);
 
         let new_viewport =
             apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
@@ -471,22 +457,13 @@ mod tests {
         let canvas_height = 600;
 
         // Zoom 3x at an arbitrary point (200, 150)
-        let mouse_x = 200.0;
-        let mouse_y = 150.0;
-        let zoom_factor = 3.0;
-        let offset_x = mouse_x * (1.0 - zoom_factor);
-        let offset_y = mouse_y * (1.0 - zoom_factor);
-
-        let result = TransformResult {
-            offset_x,
-            offset_y,
-            zoom_factor,
-            matrix: [
-                [zoom_factor, 0.0, offset_x],
-                [0.0, zoom_factor, offset_y],
-                [0.0, 0.0, 1.0],
-            ],
-        };
+        // Mouse at (200, 150), canvas center at (400, 300)
+        // Absolute offset = mouse * (1 - zoom) = (200, 150) * (1 - 3) = (200, 150) * (-2) = (-400, -300)
+        // Center-relative = absolute - canvas_center * (1 - zoom)
+        //                 = (-400, -300) - (400, 300) * (-2)
+        //                 = (-400, -300) - (-800, -600)
+        //                 = (400, 300)
+        let result = make_transform_result(400.0, 300.0, 3.0, canvas_width, canvas_height);
 
         let new_viewport =
             apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
@@ -547,22 +524,8 @@ mod tests {
         let canvas_height = 600;
 
         // Zoom in 2x more at center
-        let mouse_x = canvas_width as f64 / 2.0;
-        let mouse_y = canvas_height as f64 / 2.0;
-        let zoom_factor = 2.0;
-        let offset_x = mouse_x * (1.0 - zoom_factor);
-        let offset_y = mouse_y * (1.0 - zoom_factor);
-
-        let result = TransformResult {
-            offset_x,
-            offset_y,
-            zoom_factor,
-            matrix: [
-                [zoom_factor, 0.0, offset_x],
-                [0.0, zoom_factor, offset_y],
-                [0.0, 0.0, 1.0],
-            ],
-        };
+        // Zooming at canvas center means center-relative offset is (0, 0)
+        let result = make_transform_result(0.0, 0.0, 2.0, canvas_width, canvas_height);
 
         let new_viewport =
             apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);

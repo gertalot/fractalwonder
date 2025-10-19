@@ -11,16 +11,19 @@ const ZOOM_SENSITIVITY: f64 = 0.0005;
 /// Transformation result returned when user interaction ends (after 1.5s of inactivity)
 ///
 /// Contains both discrete values and a pre-computed affine transformation matrix.
-/// All coordinates are in screen pixel space.
+/// Offsets are **center-relative** for intuitive interpretation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TransformResult {
-    /// Horizontal offset in pixels
+    /// Horizontal offset in pixels relative to canvas center
+    /// (0, 0) means no offset from center; positive = right, negative = left
     pub offset_x: f64,
-    /// Vertical offset in pixels
+    /// Vertical offset in pixels relative to canvas center
+    /// (0, 0) means no offset from center; positive = down, negative = up
     pub offset_y: f64,
     /// Cumulative zoom factor (1.0 = no zoom, 2.0 = 2x zoom, 0.5 = 0.5x zoom)
     pub zoom_factor: f64,
-    /// 2D affine transformation matrix \[3x3\] encoding offset + zoom
+    /// 2D affine transformation matrix \[3x3\] encoding offset + zoom in absolute coordinates
+    /// (used internally for canvas rendering, not for external interpretation)
     pub matrix: [[f64; 3]; 3],
 }
 
@@ -298,12 +301,30 @@ where
         let total_offset = (base.0 + current.0, base.1 + current.1);
 
         let zoom = accumulated_zoom.get_value();
-        // No zoom_center - adjustments are baked into offset
+
+        // Convert absolute pixel offset to center-relative offset
+        // This makes the values more intuitive: (0, 0) means we zoomed at canvas center
+        let canvas_ref = canvas_ref_stored.get_value();
+        let (center_relative_x, center_relative_y) = if let Some(canvas) = canvas_ref.get_untracked()
+        {
+            let canvas_center_x = canvas.width() as f64 / 2.0;
+            let canvas_center_y = canvas.height() as f64 / 2.0;
+
+            // Offset is relative to top-left (0, 0), convert to relative to center
+            (
+                total_offset.0 - canvas_center_x * (1.0 - zoom),
+                total_offset.1 - canvas_center_y * (1.0 - zoom),
+            )
+        } else {
+            total_offset
+        };
+
+        // Matrix still uses absolute coordinates for internal rendering
         let matrix = build_transform_matrix(total_offset, zoom, None);
 
         let result = TransformResult {
-            offset_x: total_offset.0,
-            offset_y: total_offset.1,
+            offset_x: center_relative_x,
+            offset_y: center_relative_y,
             zoom_factor: zoom,
             matrix,
         };
