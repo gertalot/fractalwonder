@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Skill(superpowers:brainstorming)",
+      "WebSearch",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(wasm-pack test --headless --chrome)",
+      "Bash(trunk build --release)",
+      "mcp__chrome-devtools__list_pages",
+      "mcp__chrome-devtools__take_screenshot",
+      "mcp__chrome-devtools__list_console_messages",
+      "Bash(git merge-base feature/robust-coordinates main)",
+      "Bash(git merge-base feature/robust-coordinates develop)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Read(./config/credentials.json)",
+      "Read(./build)"
+    ],
+    "defaultMode": "acceptEdits"
+  },
+  "enabledMcpjsonServers": ["context7", "chrome-devtools"]
+}
