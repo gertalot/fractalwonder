@@ -65,7 +65,7 @@ fn InfoButton(is_open: ReadSignal<bool>, set_is_open: WriteSignal<bool>) -> impl
           <div class="absolute bottom-full mb-3 left-0 w-80 bg-black/70 backdrop-blur-sm border border-gray-800 rounded-lg p-4 text-white">
             <h3 class="font-medium mb-2">"Fractal Wonder"</h3>
             <p class="text-sm text-gray-300 mb-4">
-              "Use mouse/touch to pan and zoom. Keyboard shortcuts: [ and ] to cycle color schemes."
+              "Use mouse/touch to pan and zoom."
             </p>
             <div class="flex items-center gap-2 text-sm text-gray-400">
               <a
@@ -130,7 +130,6 @@ fn InfoDisplay(info: ReadSignal<RendererInfoData>) -> impl IntoView {
           }}
         </p>
         <p>
-          "Algorithm: "
           {move || info.get().name}
           {move || {
             info.get().custom_params.iter()

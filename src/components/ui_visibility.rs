@@ -1,6 +1,6 @@
 use leptos::*;
 
-const UI_HIDE_DELAY_MS: u64 = 3000;
+const UI_HIDE_DELAY_MS: u64 = 2000;
 
 /// UI visibility state returned by use_ui_visibility hook
 #[derive(Debug, Clone, Copy)]
@@ -53,78 +53,120 @@ pub fn use_ui_visibility() -> UiVisibility {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::*;
 
-    #[test]
-    fn test_hide_delay_constant() {
-        assert_eq!(
-            UI_HIDE_DELAY_MS, 3000,
-            "UI hide delay should be 3000ms (3 seconds)"
-        );
-    }
+    wasm_bindgen_test_configure!(run_in_browser);
 
-    #[test]
-    fn test_auto_hide_logic_conditions() {
-        // Test the core logic conditions without calling the hook
-        // This tests the business logic without WASM dependencies
+    #[wasm_bindgen_test]
+    async fn test_ui_hides_after_delay_when_not_hovering() {
+        use wasm_bindgen_futures::JsFuture;
+        use web_sys::window;
 
-        // Test case 1: Not hovering -> should hide
-        let is_hovering = false;
-        let should_hide = !is_hovering;
-        assert!(should_hide, "UI should hide when not hovering");
+        let _runtime = leptos::create_runtime();
+        let ui_vis = use_ui_visibility();
 
-        // Test case 2: Hovering -> should stay visible
-        let is_hovering = true;
-        let should_hide = !is_hovering;
-        assert!(!should_hide, "UI should stay visible when hovering");
-    }
-
-    #[test]
-    fn test_visibility_state_transitions() {
-        // Test the state transitions without WASM dependencies
-        let mut is_visible = true;
-        let mut is_hovering = false;
-
-        // Initial state: visible, not hovering
-        assert!(is_visible);
-        assert!(!is_hovering);
-
-        // Simulate timer firing when not hovering -> should hide
-        if !is_hovering {
-            is_visible = false;
-        }
+        // Initially visible
         assert!(
-            !is_visible,
-            "UI should hide when timer fires and not hovering"
+            ui_vis.is_visible.get_untracked(),
+            "UI should be visible initially"
         );
 
-        // Simulate mouse movement -> should show
-        is_visible = true;
-        assert!(is_visible, "UI should show on mouse movement");
+        // Wait for the hide delay + buffer
+        let promise = js_sys::Promise::new(&mut |resolve, _| {
+            let win = window().expect("should have window");
+            win.set_timeout_with_callback_and_timeout_and_arguments_0(
+                &resolve,
+                (UI_HIDE_DELAY_MS + 500) as i32,
+            )
+            .expect("should set timeout");
+        });
+        JsFuture::from(promise).await.expect("timeout should resolve");
 
-        // Simulate hovering -> should stay visible even if timer fires
-        is_hovering = true;
-        if !is_hovering {
-            is_visible = false;
-        }
-        assert!(is_visible, "UI should stay visible when hovering");
+        // Should now be hidden (not hovering)
+        assert!(
+            !ui_vis.is_visible.get_untracked(),
+            "UI should be hidden after delay when not hovering"
+        );
     }
 
-    #[test]
-    fn test_timer_restart_behavior() {
-        // Test the timer restart logic
-        let mut is_visible = true;
-        let is_hovering = false;
+    #[wasm_bindgen_test]
+    async fn test_ui_stays_visible_when_hovering() {
+        use wasm_bindgen_futures::JsFuture;
+        use web_sys::window;
 
-        // Simulate mouse movement: should make visible AND restart timer
-        // Mouse movement makes visible (already true from initial state)
-        // Timer restart happens (we can't test the actual timer, but we can test the logic)
+        let _runtime = leptos::create_runtime();
+        let ui_vis = use_ui_visibility();
 
-        assert!(is_visible, "Mouse movement should make UI visible");
+        // Set hovering to true
+        ui_vis.set_is_hovering.set(true);
 
-        // After mouse movement, if we wait and not hovering, should hide
-        if !is_hovering {
-            is_visible = false;
-        }
-        assert!(!is_visible, "UI should hide after timer if not hovering");
+        // Initially visible
+        assert!(
+            ui_vis.is_visible.get_untracked(),
+            "UI should be visible initially"
+        );
+
+        // Wait for the hide delay + buffer
+        let promise = js_sys::Promise::new(&mut |resolve, _| {
+            let win = window().expect("should have window");
+            win.set_timeout_with_callback_and_timeout_and_arguments_0(
+                &resolve,
+                (UI_HIDE_DELAY_MS + 500) as i32,
+            )
+            .expect("should set timeout");
+        });
+        JsFuture::from(promise).await.expect("timeout should resolve");
+
+        // Should still be visible (hovering)
+        assert!(
+            ui_vis.is_visible.get_untracked(),
+            "UI should stay visible when hovering, even after delay"
+        );
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_mouse_movement_makes_ui_visible_and_resets_timer() {
+        use wasm_bindgen_futures::JsFuture;
+        use web_sys::{window, MouseEvent};
+
+        let _runtime = leptos::create_runtime();
+        let ui_vis = use_ui_visibility();
+
+        // Wait for initial hide
+        let promise = js_sys::Promise::new(&mut |resolve, _| {
+            let win = window().expect("should have window");
+            win.set_timeout_with_callback_and_timeout_and_arguments_0(
+                &resolve,
+                (UI_HIDE_DELAY_MS + 500) as i32,
+            )
+            .expect("should set timeout");
+        });
+        JsFuture::from(promise).await.expect("timeout should resolve");
+
+        // Should be hidden
+        assert!(
+            !ui_vis.is_visible.get_untracked(),
+            "UI should be hidden after initial delay"
+        );
+
+        // Simulate mouse movement
+        let win = window().expect("should have window");
+        let mouse_event = MouseEvent::new("mousemove").expect("should create mouse event");
+        win.dispatch_event(&mouse_event)
+            .expect("should dispatch event");
+
+        // Small delay to let event handler run
+        let promise = js_sys::Promise::new(&mut |resolve, _| {
+            let win = window().expect("should have window");
+            win.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 100)
+                .expect("should set timeout");
+        });
+        JsFuture::from(promise).await.expect("timeout should resolve");
+
+        // Should now be visible again
+        assert!(
+            ui_vis.is_visible.get_untracked(),
+            "UI should be visible after mouse movement"
+        );
     }
 }

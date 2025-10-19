@@ -88,10 +88,6 @@ impl RendererInfo for TestImageRenderer {
                     "Circle radius step".to_string(),
                     format!("{:.1}", self.circle_radius_step),
                 ),
-                (
-                    "Circle line thickness".to_string(),
-                    format!("{:.2}", self.circle_line_thickness),
-                ),
             ],
             render_time_ms: None, // Filled by InteractiveCanvas
         }
