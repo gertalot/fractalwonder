@@ -1,5 +1,5 @@
 use crate::rendering::{
-    calculate_visible_bounds, coords::Rect, pixel_compute::ImagePointComputer,
+    calculate_visible_bounds, coords::Rect, point_compute::ImagePointComputer,
     renderer_trait::Renderer, transforms::pixel_to_image, viewport::Viewport, PixelRect,
 };
 

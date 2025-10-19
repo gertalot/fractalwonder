@@ -1,8 +1,8 @@
 pub mod canvas_utils;
 pub mod coords;
-pub mod pixel_compute;
 pub mod pixel_rect;
 pub mod pixel_renderer;
+pub mod point_compute;
 pub mod renderer_trait;
 pub mod tiled_renderer;
 pub mod transforms;
@@ -10,9 +10,9 @@ pub mod viewport;
 
 pub use canvas_utils::render_with_viewport;
 pub use coords::{Coord, Rect};
-pub use pixel_compute::ImagePointComputer;
 pub use pixel_rect::PixelRect;
 pub use pixel_renderer::PixelRenderer;
+pub use point_compute::ImagePointComputer;
 pub use renderer_trait::Renderer;
 pub use tiled_renderer::TiledRenderer;
 pub use transforms::{

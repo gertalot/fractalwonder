@@ -80,7 +80,7 @@ where
 mod tests {
     use super::*;
     use crate::rendering::{
-        coords::Coord, pixel_compute::ImagePointComputer, pixel_renderer::PixelRenderer,
+        coords::Coord, pixel_renderer::PixelRenderer, point_compute::ImagePointComputer,
     };
 
     #[derive(Clone)]

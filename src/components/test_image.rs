@@ -1,7 +1,7 @@
 use crate::components::InteractiveCanvas;
 use crate::rendering::{
     coords::{Coord, Rect},
-    pixel_compute::ImagePointComputer,
+    point_compute::ImagePointComputer,
     PixelRenderer,
 };
 use leptos::*;
