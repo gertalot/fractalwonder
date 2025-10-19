@@ -688,7 +688,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "Image center x should be at mouse position")]
-    fn test_image_center_position_after_drag_zoom_FAILS() {
+    fn test_image_center_position_after_drag_zoom_fails() {
         use crate::hooks::use_canvas_interaction::TransformResult;
 
         // This test DEMONSTRATES THE BUG: after drag + zoom, the image center
