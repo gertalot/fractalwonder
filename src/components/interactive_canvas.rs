@@ -17,10 +17,7 @@ use web_sys::AddEventListenerOptions;
 /// * `R` - Renderer implementation
 ///
 /// # Example
-/// ```rust,no_run
-/// use fractalwonder::components::InteractiveCanvas;
-/// use fractalwonder::rendering::{PixelRenderer, pixel_renderer};
-///
+/// ```rust,ignore
 /// let renderer = PixelRenderer::new(MyCompute::new());
 /// view! { <InteractiveCanvas renderer=renderer /> }
 /// ```

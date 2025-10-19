@@ -13,12 +13,22 @@ pub struct PixelRect {
 
 impl PixelRect {
     pub fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     /// Create a PixelRect covering full canvas
     pub fn full_canvas(width: u32, height: u32) -> Self {
-        Self { x: 0, y: 0, width, height }
+        Self {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        }
     }
 }
 
