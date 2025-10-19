@@ -4,6 +4,7 @@ pub mod pixel_compute;
 pub mod pixel_rect;
 pub mod pixel_renderer;
 pub mod renderer_trait;
+pub mod tiled_renderer;
 pub mod transforms;
 pub mod viewport;
 
@@ -13,6 +14,7 @@ pub use pixel_compute::PixelCompute;
 pub use pixel_rect::PixelRect;
 pub use pixel_renderer::PixelRenderer;
 pub use renderer_trait::Renderer;
+pub use tiled_renderer::TiledRenderer;
 pub use transforms::{
     apply_pixel_transform_to_viewport, calculate_aspect_ratio, calculate_visible_bounds,
     image_to_pixel, pan_viewport, pixel_to_image, zoom_viewport_at_point,
