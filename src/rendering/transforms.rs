@@ -69,22 +69,22 @@ where
 }
 
 pub fn image_to_pixel<T>(
-    image: &ImageCoord<T>,
-    target_rect: &ImageRect<T>,
+    image: &Coord<T>,
+    target_rect: &Rect<T>,
     canvas_width: u32,
     canvas_height: u32,
-) -> PixelCoord
+) -> (f64, f64)
 where
     T: Clone + std::ops::Sub<Output = T> + std::ops::Div<Output = T>,
     f64: std::ops::Mul<T, Output = f64>,
 {
-    let bounds_width = target_rect.max.x().clone() - target_rect.min.x().clone();
-    let bounds_height = target_rect.max.y().clone() - target_rect.min.y().clone();
+    let bounds_width = target_rect.width();
+    let bounds_height = target_rect.height();
 
     let normalized_x = (image.x().clone() - target_rect.min.x().clone()) / bounds_width;
     let normalized_y = (image.y().clone() - target_rect.min.y().clone()) / bounds_height;
 
-    PixelCoord::new(
+    (
         canvas_width as f64 * normalized_x,
         canvas_height as f64 * normalized_y,
     )
