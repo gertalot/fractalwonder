@@ -375,9 +375,6 @@ mod tests {
         let canvas_height = 600;
 
         // User zooms in 2x at top-left corner (0, 0)
-        // Center-relative offset: (0, 0) is 400px left and 300px up from canvas center
-        // So center-relative offset = (400, 300) * (1 - 2) = (-400, -300)
-        // Wait, that's wrong. Let me recalculate:
         // Mouse at (0, 0), canvas center at (400, 300)
         // Absolute offset = mouse * (1 - zoom) = 0 * (-1) = 0
         // Center-relative = absolute - canvas_center * (1 - zoom) = 0 - (400, 300) * (-1) = (400, 300)

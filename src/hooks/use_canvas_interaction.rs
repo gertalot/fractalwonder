@@ -44,8 +44,6 @@ pub struct InteractionHandle {
     pub on_wheel: Rc<dyn Fn(web_sys::WheelEvent)>,
     /// Event handler for canvas resize events
     pub on_canvas_resize: Rc<dyn Fn(u32, u32)>,
-    /// Reset all interaction state
-    pub reset: Rc<dyn Fn()>,
 }
 
 /// Builds a 2D affine transformation matrix from offset, zoom, and optional zoom center
@@ -209,28 +207,10 @@ where
     let current_drag_offset = store_value((0.0, 0.0)); // Offset from current drag only (for preview)
     let accumulated_zoom = store_value(1.0); // Accumulated zoom (for preview)
     let zoom_center = store_value::<Option<(f64, f64)>>(None);
-    let animation_frame_id = store_value::<Option<i32>>(None);
     let timeout_id = store_value::<Option<i32>>(None);
 
     // Transformation sequence - the source of truth for final result
     let transform_sequence = store_value::<Vec<Transform>>(Vec::new());
-
-    // Reset function
-    let reset = move || {
-        is_dragging.set(false);
-        is_zooming.set(false);
-        is_resizing.set(false);
-        initial_image_data.set_value(None);
-        initial_canvas_size.set_value(None);
-        drag_start.set_value(None);
-        base_offset.set_value((0.0, 0.0));
-        current_drag_offset.set_value((0.0, 0.0));
-        accumulated_zoom.set_value(1.0);
-        zoom_center.set_value(None);
-        animation_frame_id.set_value(None);
-        timeout_id.set_value(None);
-        transform_sequence.set_value(Vec::new());
-    };
 
     // Store canvas_ref for multiple closures
     let canvas_ref_stored = store_value(canvas_ref);
@@ -322,11 +302,9 @@ where
         #[cfg(target_arch = "wasm32")]
         web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
             "Composed: zoom={}, offset=({}, {})",
-            zoom_factor,
-            absolute_offset_x,
-            absolute_offset_y
+            zoom_factor, absolute_offset_x, absolute_offset_y
         )));
-        
+
         // Convert absolute pixel offset to center-relative offset
         // This makes the values more intuitive: (0, 0) means we zoomed at canvas center
         let canvas_ref = canvas_ref_stored.get_value();
@@ -561,7 +539,6 @@ where
         on_pointer_up: Rc::new(on_pointer_up),
         on_wheel: Rc::new(on_wheel),
         on_canvas_resize: Rc::new(on_canvas_resize),
-        reset: Rc::new(reset),
     }
 }
 
