@@ -1,21 +1,28 @@
 {
   "permissions": {
     "allow": [
+      "Bash(cargo build:*)",
       "Bash(cargo check:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)",
       "Bash(cargo test:*)",
+      "Bash(find *)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Skill(superpowers:brainstorming)",
-      "WebSearch",
-      "Bash(cargo fmt:*)",
-      "Bash(cargo clippy:*)",
-      "Bash(wasm-pack test --headless --chrome)",
-      "Bash(trunk build --release)",
-      "mcp__chrome-devtools__list_pages",
-      "mcp__chrome-devtools__take_screenshot",
-      "mcp__chrome-devtools__list_console_messages",
+      "Bash(git log:*)",
+      "Bash(git merge-base feature/robust-coordinates develop)",
       "Bash(git merge-base feature/robust-coordinates main)",
-      "Bash(git merge-base feature/robust-coordinates develop)"
+      "Bash(trunk build --release)",
+      "Bash(wasm-pack test --headless --chrome)",
+      "mcp__chrome-devtools__evaluate_script",
+      "mcp__chrome-devtools__list_console_messages",
+      "mcp__chrome-devtools__list_pages",
+      "mcp__chrome-devtools__navigate_page",
+      "mcp__chrome-devtools__take_screenshot",
+      "mcp__chrome-devtools__take_snapshot",
+      "mcp__chrome-devtools__wait_for",
+      "Skill(superpowers:brainstorming)",
+      "WebSearch"
     ],
     "deny": [
       "Read(./.env)",
