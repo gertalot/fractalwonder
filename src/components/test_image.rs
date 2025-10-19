@@ -73,12 +73,25 @@ impl RendererInfo for TestImageRenderer {
     fn info(&self, viewport: &Viewport<f64>) -> RendererInfoData {
         RendererInfoData {
             name: "Test Image".to_string(),
-            center_display: format!("x: {:.2}, y: {:.2}", viewport.center.x(), viewport.center.y()),
+            center_display: format!(
+                "x: {:.2}, y: {:.2}",
+                viewport.center.x(),
+                viewport.center.y()
+            ),
             zoom_display: format!("{:.2}x", viewport.zoom),
             custom_params: vec![
-                ("Checkerboard size".to_string(), format!("{:.1}", self.checkerboard_size)),
-                ("Circle radius step".to_string(), format!("{:.1}", self.circle_radius_step)),
-                ("Circle line thickness".to_string(), format!("{:.2}", self.circle_line_thickness)),
+                (
+                    "Checkerboard size".to_string(),
+                    format!("{:.1}", self.checkerboard_size),
+                ),
+                (
+                    "Circle radius step".to_string(),
+                    format!("{:.1}", self.circle_radius_step),
+                ),
+                (
+                    "Circle line thickness".to_string(),
+                    format!("{:.2}", self.circle_line_thickness),
+                ),
             ],
             render_time_ms: None, // Filled by InteractiveCanvas
         }
@@ -134,15 +147,15 @@ mod tests {
     fn test_checkerboard_pattern_at_origin() {
         let renderer = TestImageRenderer::new();
 
-        // Point at (-5, -5) should be in one square
-        let color1 = renderer.compute_point_color(-5.0, -5.0);
-        // Point at (5, 5) should be in same color (both negative square indices sum to even)
-        let color2 = renderer.compute_point_color(5.0, 5.0);
-        // Point at (5, -5) should be opposite color
-        let color3 = renderer.compute_point_color(5.0, -5.0);
+        // Point at (-2.5, -2.5) in square (-1, -1), sum=-2 (even) -> white
+        let color1 = renderer.compute_point_color(-2.5, -2.5);
+        // Point at (2.5, 2.5) in square (0, 0), sum=0 (even) -> white
+        let color2 = renderer.compute_point_color(2.5, 2.5);
+        // Point at (2.5, -2.5) in square (0, -1), sum=-1 (odd) -> grey
+        let color3 = renderer.compute_point_color(2.5, -2.5);
 
-        assert_eq!(color1, color2);
-        assert_ne!(color1, color3);
+        assert_eq!(color1, color2); // Both white (even sum)
+        assert_ne!(color1, color3); // color1 white, color3 grey
     }
 
     #[test]

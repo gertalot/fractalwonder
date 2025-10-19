@@ -1,8 +1,11 @@
 use crate::hooks::use_canvas_interaction::{use_canvas_interaction, TransformResult};
 use crate::rendering::{
-    apply_pixel_transform_to_viewport, points::Point, render_with_viewport,
+    apply_pixel_transform_to_viewport,
+    points::Point,
+    render_with_viewport,
     renderer_info::{RendererInfo, RendererInfoData},
-    renderer_trait::Renderer, viewport::Viewport,
+    renderer_trait::Renderer,
+    viewport::Viewport,
 };
 use leptos::*;
 use wasm_bindgen::JsCast;
@@ -29,6 +32,7 @@ pub struct CanvasWithInfo {
 /// let renderer = PixelRenderer::new(MyCompute::new());
 /// let canvas_with_info = InteractiveCanvas(renderer);
 /// ```
+#[allow(non_snake_case)]
 pub fn InteractiveCanvas<T, R>(renderer: R) -> CanvasWithInfo
 where
     T: Clone
@@ -105,15 +109,11 @@ where
         let current_viewport = viewport.get();
         if let Some(canvas) = canvas_ref.get_untracked() {
             // Time the render
-            let start = window()
-                .and_then(|w| w.performance())
-                .and_then(|p| Some(p.now()));
+            let start = window().and_then(|w| w.performance()).map(|p| p.now());
 
             render_with_viewport(&canvas, &renderer_for_updates, &current_viewport);
 
-            let end = window()
-                .and_then(|w| w.performance())
-                .and_then(|p| Some(p.now()));
+            let end = window().and_then(|w| w.performance()).map(|p| p.now());
 
             // Update info with performance metrics
             if let (Some(start_time), Some(end_time)) = (start, end) {

@@ -1,7 +1,12 @@
 use crate::rendering::{
-    calculate_visible_bounds, point_compute::ImagePointComputer, points::Rect,
+    calculate_visible_bounds,
+    point_compute::ImagePointComputer,
+    points::Rect,
     renderer_info::{RendererInfo, RendererInfoData},
-    renderer_trait::Renderer, transforms::pixel_to_image, viewport::Viewport, PixelRect,
+    renderer_trait::Renderer,
+    transforms::pixel_to_image,
+    viewport::Viewport,
+    PixelRect,
 };
 
 /// Renderer that wraps an ImagePointComputer, adding pixel iteration logic

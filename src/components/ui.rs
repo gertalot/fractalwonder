@@ -1,6 +1,6 @@
-use leptos::*;
 use crate::rendering::renderer_info::RendererInfoData;
 use crate::utils::fullscreen::use_fullscreen;
+use leptos::*;
 
 #[component]
 fn InfoIcon() -> impl IntoView {

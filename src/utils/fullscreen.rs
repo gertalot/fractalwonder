@@ -1,13 +1,13 @@
 use leptos::*;
 use wasm_bindgen::prelude::*;
-use web_sys::{Document, window};
+use web_sys::{window, Document};
 
 /// Toggle fullscreen mode for the document
 pub fn toggle_fullscreen() {
     if let Some(window) = window() {
         if let Some(document) = window.document() {
             if is_fullscreen(&document) {
-                let _ = document.exit_fullscreen();
+                document.exit_fullscreen();
             } else if let Some(element) = document.document_element() {
                 let _ = element.request_fullscreen();
             }
