@@ -9,7 +9,11 @@ pub fn calculate_visible_bounds<T>(
     canvas_height: u32,
 ) -> Rect<T>
 where
-    T: Clone + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + std::ops::Div<f64, Output = T> + std::ops::Mul<f64, Output = T>,
+    T: Clone
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Div<f64, Output = T>
+        + std::ops::Mul<f64, Output = T>,
 {
     let natural_width = viewport.natural_bounds.width();
     let natural_height = viewport.natural_bounds.height();
@@ -53,7 +57,10 @@ pub fn pixel_to_image<T>(
     canvas_height: u32,
 ) -> Coord<T>
 where
-    T: Clone + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + std::ops::Mul<f64, Output = T>,
+    T: Clone
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<f64, Output = T>,
 {
     let bounds_width = target_rect.width();
     let bounds_height = target_rect.height();
