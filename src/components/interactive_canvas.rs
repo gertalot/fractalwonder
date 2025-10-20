@@ -50,14 +50,10 @@ where
     // Initialize viewport from renderer's natural bounds
     let natural_bounds = renderer.natural_bounds();
     let center = Point::new(
-        // Calculate center from bounds
-        // For f64: (max + min) / 2, but we need generic approach
-        // Use existing Viewport logic or make this configurable
-        // For now, assume Point implements a center calculation
         natural_bounds.center().x().clone(),
         natural_bounds.center().y().clone(),
     );
-    let viewport = create_rw_signal(Viewport::new(center, 1.0, natural_bounds));
+    let viewport = create_rw_signal(Viewport::new(center, 1.0));
 
     // Create info signal for UI display
     let info = create_rw_signal(renderer.info(&viewport.get_untracked()));
@@ -69,18 +65,20 @@ where
         viewport.set(Viewport::new(
             Point::new(bounds.center().x().clone(), bounds.center().y().clone()),
             1.0,
-            bounds,
         ));
     };
 
     // Set up interaction hook with viewport update
+    let renderer_for_interaction = renderer.clone();
     let handle = use_canvas_interaction(canvas_ref, move |result: TransformResult| {
         if let Some(canvas) = canvas_ref.get_untracked() {
             let width = canvas.width();
             let height = canvas.height();
+            let natural_bounds = renderer_for_interaction.natural_bounds();
 
             let new_viewport = apply_pixel_transform_to_viewport(
                 &viewport.get_untracked(),
+                &natural_bounds,
                 &result,
                 width,
                 height,

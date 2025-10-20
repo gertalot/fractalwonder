@@ -14,3 +14,6 @@ cargo check --workspace --all-targets --all-features
 
 echo "—————————————— Running cargo test ——————————————"
 cargo test --workspace --all-targets --all-features
+
+echo "—————————————— Running wasm-pack test ——————————————"
+wasm-pack test --headless --chrome

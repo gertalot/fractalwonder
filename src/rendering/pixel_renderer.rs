@@ -48,7 +48,9 @@ where
         let mut pixels = vec![0u8; (pixel_rect.width * pixel_rect.height * 4) as usize];
 
         // Calculate visible bounds from viewport once
-        let visible_bounds = calculate_visible_bounds(viewport, canvas_size.0, canvas_size.1);
+        let natural_bounds = self.computer.natural_bounds();
+        let visible_bounds =
+            calculate_visible_bounds(viewport, &natural_bounds, canvas_size.0, canvas_size.1);
 
         for local_y in 0..pixel_rect.height {
             for local_x in 0..pixel_rect.width {
@@ -119,7 +121,7 @@ mod tests {
     #[test]
     fn test_pixel_renderer_full_canvas() {
         let renderer = PixelRenderer::new(TestCompute);
-        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0, renderer.natural_bounds());
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
         let pixel_rect = PixelRect::full_canvas(10, 10);
         let pixels = renderer.render(&viewport, pixel_rect, (10, 10));
 
@@ -132,7 +134,7 @@ mod tests {
     #[test]
     fn test_pixel_renderer_partial_rect() {
         let renderer = PixelRenderer::new(TestCompute);
-        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0, renderer.natural_bounds());
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
         // Render just a 5x5 tile starting at (2, 2)
         let pixel_rect = PixelRect::new(2, 2, 5, 5);
         let pixels = renderer.render(&viewport, pixel_rect, (10, 10));

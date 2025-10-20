@@ -125,41 +125,50 @@ where
         viewport.center.y().clone() + offset_y,
     );
 
-    Viewport::new(new_center, viewport.zoom, viewport.natural_bounds.clone())
+    Viewport::new(new_center, viewport.zoom)
 }
 
-pub fn zoom_viewport_at_point(
-    viewport: &Viewport<f64>,
+pub fn zoom_viewport_at_point<T>(
+    viewport: &Viewport<T>,
+    natural_bounds: &Rect<T>,
     zoom_factor: f64,
     pixel_x: f64,
     pixel_y: f64,
     canvas_width: u32,
     canvas_height: u32,
-) -> Viewport<f64> {
-    let current_bounds = calculate_visible_bounds(viewport, canvas_width, canvas_height);
+) -> Viewport<T>
+where
+    T: Clone
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Div<f64, Output = T>
+        + std::ops::Mul<f64, Output = T>,
+{
+    let current_bounds =
+        calculate_visible_bounds(viewport, natural_bounds, canvas_width, canvas_height);
 
     let bounds_width = current_bounds.width();
     let bounds_height = current_bounds.height();
 
     // Convert zoom point from pixel space to image space
     let zoom_point_image_x =
-        *current_bounds.min.x() + (pixel_x / canvas_width as f64) * bounds_width;
+        current_bounds.min.x().clone() + bounds_width.clone() * (pixel_x / canvas_width as f64);
     let zoom_point_image_y =
-        *current_bounds.min.y() + (pixel_y / canvas_height as f64) * bounds_height;
+        current_bounds.min.y().clone() + bounds_height.clone() * (pixel_y / canvas_height as f64);
 
     let new_zoom = viewport.zoom * zoom_factor;
 
     // Calculate new view dimensions
     let canvas_aspect = calculate_aspect_ratio(canvas_width, canvas_height);
 
-    let new_view_width = (viewport.natural_bounds.width() / new_zoom)
+    let new_view_width = (natural_bounds.width() / new_zoom)
         * if canvas_aspect > 1.0 {
             canvas_aspect
         } else {
             1.0
         };
 
-    let new_view_height = (viewport.natural_bounds.height() / new_zoom)
+    let new_view_height = (natural_bounds.height() / new_zoom)
         * if canvas_aspect < 1.0 {
             1.0 / canvas_aspect
         } else {
@@ -167,13 +176,14 @@ pub fn zoom_viewport_at_point(
         };
 
     // Calculate new center to keep zoom point fixed
-    let new_center_x = zoom_point_image_x - (pixel_x / canvas_width as f64 - 0.5) * new_view_width;
+    let new_center_x =
+        zoom_point_image_x - new_view_width.clone() * (pixel_x / canvas_width as f64 - 0.5);
     let new_center_y =
-        zoom_point_image_y - (pixel_y / canvas_height as f64 - 0.5) * new_view_height;
+        zoom_point_image_y - new_view_height.clone() * (pixel_y / canvas_height as f64 - 0.5);
 
     let new_center = Point::new(new_center_x, new_center_y);
 
-    Viewport::new(new_center, new_zoom, viewport.natural_bounds.clone())
+    Viewport::new(new_center, new_zoom)
 }
 
 /// Applies a pixel-space transformation to a viewport, returning a new viewport
@@ -190,6 +200,7 @@ pub fn zoom_viewport_at_point(
 /// This handles both pure panning, pure zooming, and combined pan+zoom operations.
 pub fn apply_pixel_transform_to_viewport<T>(
     viewport: &Viewport<T>,
+    natural_bounds: &Rect<T>,
     transform: &TransformResult,
     canvas_width: u32,
     canvas_height: u32,
@@ -201,7 +212,8 @@ where
         + std::ops::Div<f64, Output = T>
         + std::ops::Mul<f64, Output = T>,
 {
-    let current_bounds = calculate_visible_bounds(viewport, canvas_width, canvas_height);
+    let current_bounds =
+        calculate_visible_bounds(viewport, natural_bounds, canvas_width, canvas_height);
     let new_zoom = viewport.zoom * transform.zoom_factor;
 
     // Convert center-relative offset to absolute offset (pixel space)
@@ -226,7 +238,7 @@ where
             viewport.center.y().clone() - image_offset_y,
         );
 
-        return Viewport::new(new_center, new_zoom, viewport.natural_bounds.clone());
+        return Viewport::new(new_center, new_zoom);
     }
 
     // General case: transformation with zoom
@@ -261,8 +273,8 @@ where
     // We need to create a viewport where that image point appears at new_center_px.
 
     // Calculate new bounds dimensions at new zoom
-    let new_view_width_unscaled = viewport.natural_bounds.width() / new_zoom;
-    let new_view_height_unscaled = viewport.natural_bounds.height() / new_zoom;
+    let new_view_width_unscaled = natural_bounds.width() / new_zoom;
+    let new_view_height_unscaled = natural_bounds.height() / new_zoom;
 
     // Adjust for canvas aspect ratio
     let canvas_aspect = calculate_aspect_ratio(canvas_width, canvas_height);
@@ -295,15 +307,12 @@ where
             - new_view_height * (new_center_py / canvas_height as f64),
     );
 
-    Viewport::new(
-        new_viewport_center,
-        new_zoom,
-        viewport.natural_bounds.clone(),
-    )
+    Viewport::new(new_viewport_center, new_zoom)
 }
 
 pub fn calculate_visible_bounds<T>(
     viewport: &Viewport<T>,
+    natural_bounds: &Rect<T>,
     canvas_width: u32,
     canvas_height: u32,
 ) -> Rect<T>
@@ -314,8 +323,8 @@ where
         + std::ops::Div<f64, Output = T>
         + std::ops::Mul<f64, Output = T>,
 {
-    let natural_width = viewport.natural_bounds.width();
-    let natural_height = viewport.natural_bounds.height();
+    let natural_width = natural_bounds.width();
+    let natural_height = natural_bounds.height();
 
     // Apply zoom (1.0 = show entire natural bounds)
     let view_width = natural_width / viewport.zoom;
@@ -398,14 +407,11 @@ mod tests {
 
     #[test]
     fn test_calculate_visible_bounds_landscape() {
-        let viewport = Viewport::new(
-            Point::new(0.0, 0.0),
-            1.0,
-            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
-        );
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+        let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
 
         // Landscape canvas: 1600x900 (aspect ratio ~1.78)
-        let bounds = calculate_visible_bounds(&viewport, 1600, 900);
+        let bounds = calculate_visible_bounds(&viewport, &natural_bounds, 1600, 900);
 
         // At zoom 1.0, should show entire natural height (100 units)
         // Width should extend to maintain aspect ratio
@@ -417,14 +423,11 @@ mod tests {
 
     #[test]
     fn test_calculate_visible_bounds_portrait() {
-        let viewport = Viewport::new(
-            Point::new(0.0, 0.0),
-            1.0,
-            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
-        );
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+        let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
 
         // Portrait canvas: 900x1600
-        let bounds = calculate_visible_bounds(&viewport, 900, 1600);
+        let bounds = calculate_visible_bounds(&viewport, &natural_bounds, 900, 1600);
 
         // At zoom 1.0, should show entire natural width (100 units)
         // Height should extend to maintain aspect ratio
@@ -436,14 +439,11 @@ mod tests {
 
     #[test]
     fn test_calculate_visible_bounds_zoom() {
-        let viewport = Viewport::new(
-            Point::new(0.0, 0.0),
-            2.0, // 2x zoom
-            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
-        );
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 2.0); // 2x zoom
+        let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
 
         // Square canvas
-        let bounds = calculate_visible_bounds(&viewport, 1000, 1000);
+        let bounds = calculate_visible_bounds(&viewport, &natural_bounds, 1000, 1000);
 
         // At zoom 2.0, should show half the natural area (50 units)
         assert_eq!(bounds.width(), 50.0);
@@ -516,11 +516,7 @@ mod tests {
 
     #[test]
     fn test_pan_viewport_right() {
-        let viewport = Viewport::new(
-            Point::new(0.0, 0.0),
-            1.0,
-            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
-        );
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
 
         // Pan right 10 image units
         let new_viewport = pan_viewport(&viewport, 10.0, 0.0);
@@ -532,11 +528,7 @@ mod tests {
 
     #[test]
     fn test_pan_viewport_from_offset_position() {
-        let viewport = Viewport::new(
-            Point::new(20.0, -10.0),
-            1.0,
-            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
-        );
+        let viewport = Viewport::new(Point::new(20.0, -10.0), 1.0);
 
         // Pan left 5 units, down 3 units
         let new_viewport = pan_viewport(&viewport, -5.0, 3.0);
@@ -548,11 +540,8 @@ mod tests {
 
     #[test]
     fn test_zoom_viewport_at_center_point() {
-        let viewport = Viewport::new(
-            Point::new(0.0, 0.0),
-            1.0,
-            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
-        );
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+        let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
 
         let canvas_width = 800;
         let canvas_height = 600;
@@ -563,6 +552,7 @@ mod tests {
 
         let new_viewport = zoom_viewport_at_point(
             &viewport,
+            &natural_bounds,
             2.0,
             zoom_point_x,
             zoom_point_y,
@@ -578,18 +568,22 @@ mod tests {
 
     #[test]
     fn test_zoom_viewport_at_corner() {
-        let viewport = Viewport::new(
-            Point::new(0.0, 0.0),
-            1.0,
-            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
-        );
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+        let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
 
         let canvas_width = 800;
         let canvas_height = 600;
 
         // Zoom 2x at top-left corner
-        let new_viewport =
-            zoom_viewport_at_point(&viewport, 2.0, 0.0, 0.0, canvas_width, canvas_height);
+        let new_viewport = zoom_viewport_at_point(
+            &viewport,
+            &natural_bounds,
+            2.0,
+            0.0,
+            0.0,
+            canvas_width,
+            canvas_height,
+        );
 
         // Center should move toward top-left
         assert!(*new_viewport.center.x() < 0.0);
@@ -599,11 +593,8 @@ mod tests {
 
     #[test]
     fn test_zoom_viewport_out() {
-        let viewport = Viewport::new(
-            Point::new(0.0, 0.0),
-            2.0,
-            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
-        );
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 2.0);
+        let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
 
         let canvas_width = 800;
         let canvas_height = 600;
@@ -614,6 +605,7 @@ mod tests {
 
         let new_viewport = zoom_viewport_at_point(
             &viewport,
+            &natural_bounds,
             0.5,
             zoom_point_x,
             zoom_point_y,
@@ -632,11 +624,8 @@ mod tests {
         use crate::hooks::use_canvas_interaction::TransformResult;
 
         // Start at origin
-        let viewport = Viewport::new(
-            Point::new(0.0, 0.0),
-            1.0,
-            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
-        );
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+        let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
 
         let canvas_width = 800;
         let canvas_height = 600;
@@ -672,8 +661,13 @@ mod tests {
             ],
         };
 
-        let new_viewport =
-            apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
+        let new_viewport = apply_pixel_transform_to_viewport(
+            &viewport,
+            &natural_bounds,
+            &result,
+            canvas_width,
+            canvas_height,
+        );
 
         // After dragging right, we're looking left (negative x)
         // After zooming out at the new center, that point should remain under the mouse
@@ -691,13 +685,15 @@ mod tests {
         // Actually, let me just verify that the zoom point stays fixed
 
         // Calculate where the zoom point appears in the new viewport
-        let new_bounds = calculate_visible_bounds(&new_viewport, canvas_width, canvas_height);
+        let new_bounds =
+            calculate_visible_bounds(&new_viewport, &natural_bounds, canvas_width, canvas_height);
         let zoom_point_in_new_viewport_x =
             *new_bounds.min.x() + (zoom_point_x / canvas_width as f64) * new_bounds.width();
 
         // This should equal where the zoom point was in the original (dragged) viewport
         let original_dragged_center_x = -(drag_offset / canvas_width as f64)
-            * calculate_visible_bounds(&viewport, canvas_width, canvas_height).width();
+            * calculate_visible_bounds(&viewport, &natural_bounds, canvas_width, canvas_height)
+                .width();
         let original_bounds_at_drag = Rect::new(
             Point::new(original_dragged_center_x - 66.67, -50.0),
             Point::new(original_dragged_center_x + 66.67, 50.0),
@@ -728,11 +724,8 @@ mod tests {
         use crate::hooks::use_canvas_interaction::TransformResult;
 
         // Start at origin
-        let viewport = Viewport::new(
-            Point::new(0.0, 0.0),
-            1.0,
-            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
-        );
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+        let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
 
         let canvas_width = 800;
         let canvas_height = 600;
@@ -765,8 +758,13 @@ mod tests {
             ],
         };
 
-        let new_viewport =
-            apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
+        let new_viewport = apply_pixel_transform_to_viewport(
+            &viewport,
+            &natural_bounds,
+            &result,
+            canvas_width,
+            canvas_height,
+        );
 
         // The image was dragged left by 100px, so we're looking at content to the right
         // Then we zoomed at canvas center
@@ -1081,11 +1079,8 @@ mod tests {
         // When we then zoom, we want to keep THAT content (post-drag) fixed, not the
         // original content that was there before the drag.
 
-        let viewport = Viewport::new(
-            Point::new(0.0, 0.0),
-            1.0,
-            Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0)),
-        );
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+        let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
 
         let canvas_width = 800;
         let canvas_height = 600;
@@ -1119,7 +1114,8 @@ mod tests {
 
         // Calculate what image point is under the mouse AFTER the drag (but before zoom)
         // The drag moves the viewport, so we need to calculate the intermediate state
-        let original_bounds = calculate_visible_bounds(&viewport, canvas_width, canvas_height);
+        let original_bounds =
+            calculate_visible_bounds(&viewport, &natural_bounds, canvas_width, canvas_height);
         let drag_in_image_units = (drag_offset / canvas_width as f64) * original_bounds.width();
 
         // After dragging right, we're looking left, so subtract
@@ -1127,11 +1123,14 @@ mod tests {
         let intermediate_viewport = Viewport::new(
             Point::new(intermediate_center_x, *viewport.center.y()),
             viewport.zoom,
-            viewport.natural_bounds.clone(),
         );
 
-        let intermediate_bounds =
-            calculate_visible_bounds(&intermediate_viewport, canvas_width, canvas_height);
+        let intermediate_bounds = calculate_visible_bounds(
+            &intermediate_viewport,
+            &natural_bounds,
+            canvas_width,
+            canvas_height,
+        );
         let image_point_at_mouse = pixel_to_image(
             mouse_x,
             mouse_y,
@@ -1152,8 +1151,13 @@ mod tests {
         );
 
         // Apply transformation
-        let new_viewport =
-            apply_pixel_transform_to_viewport(&viewport, &result, canvas_width, canvas_height);
+        let new_viewport = apply_pixel_transform_to_viewport(
+            &viewport,
+            &natural_bounds,
+            &result,
+            canvas_width,
+            canvas_height,
+        );
 
         println!(
             "New viewport center: ({}, {})",
@@ -1163,7 +1167,8 @@ mod tests {
         println!("New viewport zoom: {}", new_viewport.zoom);
 
         // Get the image point that's under the mouse AFTER the complete transformation
-        let new_bounds = calculate_visible_bounds(&new_viewport, canvas_width, canvas_height);
+        let new_bounds =
+            calculate_visible_bounds(&new_viewport, &natural_bounds, canvas_width, canvas_height);
         let image_point_after =
             pixel_to_image(mouse_x, mouse_y, &new_bounds, canvas_width, canvas_height);
 

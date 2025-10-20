@@ -73,7 +73,7 @@ mod tests {
         let renderer = MockRenderer {
             color: (255, 0, 0, 255),
         };
-        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0, renderer.natural_bounds());
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
         let pixel_rect = PixelRect::full_canvas(100, 100);
         let pixels = renderer.render(&viewport, pixel_rect, (100, 100));
         assert_eq!(pixels.len(), 100 * 100 * 4);
@@ -84,7 +84,7 @@ mod tests {
         let renderer = MockRenderer {
             color: (128, 64, 32, 255),
         };
-        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0, renderer.natural_bounds());
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
         let pixel_rect = PixelRect::full_canvas(10, 10);
         let pixels = renderer.render(&viewport, pixel_rect, (10, 10));
 

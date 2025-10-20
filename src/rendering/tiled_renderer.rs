@@ -108,11 +108,7 @@ mod tests {
         let direct_renderer = PixelRenderer::new(computer.clone());
         let tiled_renderer = TiledRenderer::new(PixelRenderer::new(computer), 16);
 
-        let viewport = Viewport::new(
-            Point::new(50.0, 50.0),
-            1.0,
-            Rect::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0)),
-        );
+        let viewport = Viewport::new(Point::new(50.0, 50.0), 1.0);
         let pixel_rect = PixelRect::full_canvas(32, 32);
 
         let direct_pixels = direct_renderer.render(&viewport, pixel_rect, (32, 32));
@@ -129,11 +125,7 @@ mod tests {
         };
         let tiled_renderer = TiledRenderer::new(PixelRenderer::new(computer), 10);
 
-        let viewport = Viewport::new(
-            Point::new(50.0, 50.0),
-            1.0,
-            Rect::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0)),
-        );
+        let viewport = Viewport::new(Point::new(50.0, 50.0), 1.0);
         let pixel_rect = PixelRect::full_canvas(27, 27); // Not divisible by 10
 
         let pixels = tiled_renderer.render(&viewport, pixel_rect, (27, 27));
