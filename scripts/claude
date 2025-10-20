@@ -1,0 +1,13 @@
+#!/bin/bash
+# Run Claude Code inside the FractalWonder development container
+# Usage: ./scripts/claude [claude arguments...]
+# Example: ./scripts/claude --dangerously-skip-permissions
+
+set -e
+
+# Get the project root directory (parent of scripts/)
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Start the devcontainer and run claude with all features applied
+npx @devcontainers/cli up --workspace-folder "$PROJECT_ROOT"
+npx @devcontainers/cli exec --workspace-folder "$PROJECT_ROOT" claude "$@"

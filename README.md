@@ -5,7 +5,27 @@ beyond) with interactive real-time exploration. Built entirely in Rust using Lep
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed:
+You can develop FractalWonder in two ways:
+
+### Option 1: Development Container (Recommended)
+
+Use VS Code's devcontainer feature for an isolated, fully-configured environment with all tools pre-installed.
+
+**Requirements:**
+- [Docker Desktop](https://www.docker.com/products/docker-desktop)
+- [VS Code](https://code.visualstudio.com/) with the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+
+**Setup:**
+1. Open the project in VS Code
+2. When prompted, click "Reopen in Container" (or use Command Palette: "Dev Containers: Reopen in Container")
+3. Wait for the container to build (5-10 minutes first time, cached afterward)
+4. All dependencies are pre-installed and ready to use
+
+See the [Development Container](#development-container) section below for details.
+
+### Option 2: Local Installation
+
+Install dependencies directly on your system:
 
 - **Rust 1.80 or later**: Install via [rustup](https://rustup.rs/)
 
@@ -109,6 +129,179 @@ python3 -m http.server 8080
 - `Cross-Origin-Embedder-Policy: require-corp`
 
 Trunk's dev server includes these headers automatically.
+
+## Development Container
+
+FractalWonder includes a fully-configured development container for isolated, reproducible development environments. The container is designed to run **Claude Code in isolation** while your normal development tools (trunk, Chrome) run on the host.
+
+### What's Included
+
+The devcontainer provides:
+- **Full Rust toolchain**: rustc, cargo, clippy, rustfmt (stable channel)
+- **WASM tools**: wasm32-unknown-unknown target, wasm-pack, Trunk
+- **Node.js 20**: For Tailwind CSS and npm tooling
+- **Chrome**: Headless Chrome for browser testing
+- **Git & GitHub CLI**: Full version control integration
+- **VS Code extensions**: rust-analyzer, Claude Code, Tailwind CSS IntelliSense
+- **Shared credentials**: Your host `~/.claude` folder is automatically mounted for authentication
+
+### Recommended Workflow: Hybrid Setup
+
+The most practical setup is to run Claude Code in the container while keeping your development tools on the host:
+
+**On Host (your normal machine):**
+```bash
+# Terminal 1: Start the dev server
+trunk serve
+# Access at http://localhost:8080
+
+# Terminal 2: Run Chrome with remote debugging for Claude's chrome-devtools MCP
+google-chrome --remote-debugging-port=9222
+# (On Windows: chrome.exe --remote-debugging-port=9222)
+
+# Terminal 3 (optional): Run tests, format, lint as usual
+cargo test
+cargo fmt --all
+cargo clippy --all-targets --all-features -- -D warnings -W clippy::all
+```
+
+**In Container (via VS Code):**
+```bash
+# Open project in VS Code → "Reopen in Container"
+# Once inside container, run Claude Code with full permissions
+claude --dangerously-skip-permissions
+```
+
+**How it works:**
+- Claude Code runs isolated in the container (safe to use `--dangerously-skip-permissions`)
+- Claude edits files via mounted workspace → host `trunk serve` detects changes → hot reload
+- Claude controls host Chrome via `http://host.docker.internal:9222`
+- All test/format/lint commands work normally on host
+- Container shares your `~/.claude` credentials (no separate login needed)
+
+### Setup Option A: Using VS Code (Easier)
+
+1. **Install prerequisites**:
+   - [Docker Desktop](https://www.docker.com/products/docker-desktop)
+   - [VS Code](https://code.visualstudio.com/) with the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+   - Rust toolchain on host (for running cargo/trunk locally - see [Prerequisites](#prerequisites))
+
+2. **Open in container**:
+   - Open FractalWonder in VS Code
+   - Click "Reopen in Container" when prompted
+   - Or use Command Palette: `Dev Containers: Reopen in Container`
+
+3. **First build** (one-time, 5-10 minutes):
+   - Container downloads Node.js base image
+   - Installs Rust toolchain, WASM tools, Chrome
+   - Subsequent starts use cached image (~30 seconds)
+
+4. **Start developing**:
+   - Run `trunk serve` on **host** (in a separate terminal outside VS Code)
+   - Run `google-chrome --remote-debugging-port=9222` on **host**
+   - Open VS Code terminal inside container and run `claude --dangerously-skip-permissions`
+   - Access application at `http://localhost:8080` in your host browser
+
+### Setup Option B: Using Command Line (Without VS Code)
+
+If you prefer to run Claude in the container from the terminal without VS Code:
+
+1. **Use the provided script** (easiest):
+   ```bash
+   # Run Claude in container with any arguments
+   ./scripts/claude --dangerously-skip-permissions
+
+   # The script automatically builds the container image if needed
+   # and passes all arguments to Claude Code
+   ```
+
+2. **On host** (in separate terminals):
+   ```bash
+   # Terminal 1: Dev server
+   trunk serve
+
+   # Terminal 2: Chrome with remote debugging
+   google-chrome --remote-debugging-port=9222
+   ```
+
+**Alternative: Manual Docker command:**
+
+If you prefer not to use the script:
+
+1. **Build the container image** (one-time):
+   ```bash
+   docker build -t fractalwonder-dev .devcontainer/
+   ```
+
+2. **Run Claude in the container**:
+   ```bash
+   docker run -it --rm \
+     --add-host=host.docker.internal:host-gateway \
+     -v ~/.claude:/home/node/.claude \
+     -v "$(pwd)":/workspaces/fractalwonder \
+     -w /workspaces/fractalwonder \
+     -u node \
+     fractalwonder-dev \
+     claude --dangerously-skip-permissions
+   ```
+
+   **What this does:**
+   - Mounts your `~/.claude` credentials folder
+   - Mounts current directory as workspace
+   - Enables `host.docker.internal` for Chrome DevTools bridge
+   - Runs as non-root user (`node`)
+   - Launches Claude Code with full permissions inside container
+
+### Alternative: Fully Containerized Workflow
+
+You can also run everything inside the container:
+
+```bash
+# Inside container (VS Code terminal)
+trunk serve    # Runs on port 8080, auto-forwarded to host
+cargo test
+cargo fmt --all
+cargo clippy --all-targets --all-features -- -D warnings -W clippy::all
+```
+
+This is slower due to Docker filesystem overhead but ensures identical environment across machines.
+
+### Features
+
+- **Shared credentials**: `~/.claude` folder mounted from host - Claude Code in container uses your existing authentication
+- **Workspace mounting**: All file changes sync between container and host instantly
+- **Port forwarding**: Port 8080 automatically forwarded to host
+- **Chrome DevTools bridge**: Container can control host Chrome at `http://host.docker.internal:9222`
+- **Isolated environment**: Safe to run Claude Code with `--dangerously-skip-permissions`
+- **Full network access**: WebSearch, WebFetch, package managers all work normally
+
+#### Troubleshooting
+
+**Container build fails:**
+- Ensure Docker Desktop is running
+- Check Docker has sufficient memory allocated (4GB+ recommended)
+- Try rebuilding: Command Palette → `Dev Containers: Rebuild Container`
+
+**Port 8080 already in use:**
+- Stop any local `trunk serve` processes on the host
+- Or change port in `.devcontainer/devcontainer.json`
+
+**File permission issues:**
+- Files created in container should match host user automatically
+- If issues occur, check Docker Desktop file sharing settings
+
+**Slow builds:**
+- First Rust build is always slow (downloading all crates)
+- Subsequent builds use cargo cache
+- Consider adding cargo registry cache mount for faster dependency downloads
+
+### Container Configuration
+
+Configuration files are in `.devcontainer/`:
+- `Dockerfile`: Container image definition (Rust, WASM, Chrome installation)
+- `devcontainer.json`: VS Code settings, extensions, mounts, port forwarding
+
+To customize the environment, edit these files and rebuild the container.
 
 ## Architecture
 
@@ -298,6 +491,11 @@ The architecture ensures:
 
 ```txt
 fractalwonder/
+├── .devcontainer/          # Development container configuration
+│   ├── Dockerfile          # Container image definition
+│   └── devcontainer.json   # VS Code devcontainer settings
+├── scripts/
+│   └── claude              # Helper script to run Claude Code in container
 ├── src/
 │   ├── lib.rs              # WASM entry point
 │   ├── main.rs             # Empty main (for test compatibility)
