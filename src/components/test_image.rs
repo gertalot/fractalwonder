@@ -1,6 +1,7 @@
 use crate::components::interactive_canvas::InteractiveCanvas;
 use crate::components::ui::UI;
-use crate::components::ui_visibility::use_ui_visibility;
+use crate::hooks::fullscreen::toggle_fullscreen;
+use crate::hooks::ui_visibility::use_ui_visibility;
 use crate::rendering::{
     point_compute::ImagePointComputer,
     points::{Point, Rect},
@@ -8,7 +9,6 @@ use crate::rendering::{
     viewport::Viewport,
     PixelRenderer,
 };
-use crate::utils::fullscreen::toggle_fullscreen;
 use leptos::*;
 
 #[derive(Clone)]

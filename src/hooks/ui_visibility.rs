@@ -80,7 +80,9 @@ mod tests {
             )
             .expect("should set timeout");
         });
-        JsFuture::from(promise).await.expect("timeout should resolve");
+        JsFuture::from(promise)
+            .await
+            .expect("timeout should resolve");
 
         // Should now be hidden (not hovering)
         assert!(
@@ -115,7 +117,9 @@ mod tests {
             )
             .expect("should set timeout");
         });
-        JsFuture::from(promise).await.expect("timeout should resolve");
+        JsFuture::from(promise)
+            .await
+            .expect("timeout should resolve");
 
         // Should still be visible (hovering)
         assert!(
@@ -141,7 +145,9 @@ mod tests {
             )
             .expect("should set timeout");
         });
-        JsFuture::from(promise).await.expect("timeout should resolve");
+        JsFuture::from(promise)
+            .await
+            .expect("timeout should resolve");
 
         // Should be hidden
         assert!(
@@ -161,7 +167,9 @@ mod tests {
             win.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 100)
                 .expect("should set timeout");
         });
-        JsFuture::from(promise).await.expect("timeout should resolve");
+        JsFuture::from(promise)
+            .await
+            .expect("timeout should resolve");
 
         // Should now be visible again
         assert!(
