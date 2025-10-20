@@ -1,6 +1,6 @@
 use crate::rendering::{renderer_trait::Renderer, viewport::Viewport, PixelRect};
 use wasm_bindgen::{Clamped, JsCast};
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
+use web_sys::{CanvasRenderingContext2d, ContextAttributes2d, HtmlCanvasElement, ImageData};
 
 pub fn render_with_viewport<R>(
     canvas: &HtmlCanvasElement,
@@ -16,8 +16,11 @@ pub fn render_with_viewport<R>(
     let pixels = renderer.render(viewport, pixel_rect, (width, height));
 
     // Put pixels on canvas
+    let attrs = ContextAttributes2d::new();
+    attrs.set_will_read_frequently(true);
+
     let context = canvas
-        .get_context("2d")
+        .get_context_with_context_options("2d", &attrs)
         .expect("Failed to get context")
         .expect("Context is None")
         .dyn_into::<CanvasRenderingContext2d>()

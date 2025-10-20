@@ -4,7 +4,7 @@ use leptos_use::use_raf_fn;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
+use web_sys::{CanvasRenderingContext2d, ContextAttributes2d, HtmlCanvasElement, ImageData};
 
 const INTERACTION_TIMEOUT_MS: i32 = 1500;
 const ZOOM_SENSITIVITY: f64 = 0.0005;
@@ -72,8 +72,11 @@ fn build_transform_matrix(
 }
 
 fn capture_canvas_image_data(canvas: &HtmlCanvasElement) -> Result<ImageData, JsValue> {
+    let attrs = ContextAttributes2d::new();
+    attrs.set_will_read_frequently(true);
+
     let context = canvas
-        .get_context("2d")?
+        .get_context_with_context_options("2d", &attrs)?
         .ok_or_else(|| JsValue::from_str("Failed to get 2D context"))?
         .dyn_into::<CanvasRenderingContext2d>()?;
 
@@ -87,8 +90,11 @@ fn render_preview(
     zoom: f64,
     zoom_center: Option<(f64, f64)>,
 ) -> Result<(), JsValue> {
+    let attrs = ContextAttributes2d::new();
+    attrs.set_will_read_frequently(true);
+
     let context = canvas
-        .get_context("2d")?
+        .get_context_with_context_options("2d", &attrs)?
         .ok_or_else(|| JsValue::from_str("Failed to get 2D context"))?
         .dyn_into::<CanvasRenderingContext2d>()?;
 
@@ -111,8 +117,11 @@ fn render_preview(
     temp_canvas.set_width(image_data.width());
     temp_canvas.set_height(image_data.height());
 
+    let attrs = ContextAttributes2d::new();
+    attrs.set_will_read_frequently(true);
+
     let temp_context = temp_canvas
-        .get_context("2d")?
+        .get_context_with_context_options("2d", &attrs)?
         .ok_or_else(|| JsValue::from_str("Failed to get 2D context"))?
         .dyn_into::<CanvasRenderingContext2d>()?;
 
