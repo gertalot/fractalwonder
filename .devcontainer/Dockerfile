@@ -1,11 +1,11 @@
 FROM node:20
 
 ARG TZ
-ENV TZ="$TZ"
+ENV TZ="${TZ:-America/Los_Angeles}"
 
 ARG CLAUDE_CODE_VERSION=latest
 
-# Install basic development tools and iptables/ipset
+# Install basic development tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
   less \
   git \
@@ -17,11 +17,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   unzip \
   gnupg2 \
   gh \
-  iptables \
-  ipset \
-  iproute2 \
-  dnsutils \
-  aggregate \
   jq \
   nano \
   vim \
@@ -46,7 +41,7 @@ RUN mkdir -p /usr/local/share/npm-global && \
 
 ARG USERNAME=node
 
-# Persist bash history.
+# Persist bash history
 RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
   && mkdir /commandhistory \
   && touch /commandhistory/.bash_history \
@@ -92,24 +87,11 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
   -a "if ! pgrep -f 'socat.*9222' > /dev/null; then /usr/local/bin/start-chrome-proxy.sh; fi" \
   -x
 
-# Install Claude
+# Install Claude Code
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
-# Install Rust toolchain
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-ENV PATH="/home/node/.cargo/bin:${PATH}"
-
-# Install wasm32 target and tools
-RUN rustup target add wasm32-unknown-unknown && \
-  curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh && \
-  cargo install --locked trunk
-
-# Configure cargo to use git CLI for dependencies
-RUN mkdir -p /home/node/.cargo && \
-  echo '[net]' >> /home/node/.cargo/config.toml && \
-  echo 'git-fetch-with-cli = true' >> /home/node/.cargo/config.toml
-
 # Create Chrome proxy startup script
+# This forwards port 9222 from the host to the container
 USER root
 RUN echo '#!/bin/bash' > /usr/local/bin/start-chrome-proxy.sh && \
   echo 'nohup socat TCP-LISTEN:9222,bind=127.0.0.1,fork,reuseaddr TCP:host.docker.internal:9222 </dev/null >/tmp/chrome-proxy.log 2>&1 &' >> /usr/local/bin/start-chrome-proxy.sh && \

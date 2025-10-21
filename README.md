@@ -3,6 +3,43 @@
 A high-performance, browser-based Mandelbrot set explorer capable of rendering at extreme zoom levels (up to 10^100 and
 beyond) with interactive real-time exploration. Built entirely in Rust using Leptos and WebAssembly.
 
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+  - [Option 1: Development Container (Recommended)](#option-1-development-container-recommended)
+  - [Option 2: Local Installation](#option-2-local-installation)
+- [Development](#development)
+  - [Clone and Run](#clone-and-run)
+  - [Development Modes](#development-modes)
+- [Testing](#testing)
+- [Building](#building)
+  - [Production Build](#production-build)
+  - [Serving Production Build Locally](#serving-production-build-locally)
+- [Development Container](#development-container)
+  - [What's Included](#whats-included)
+  - [Recommended Workflow: Hybrid Setup](#recommended-workflow-hybrid-setup)
+  - [Setup Option A: Using VS Code (Easier)](#setup-option-a-using-vs-code-easier)
+  - [Setup Option B: Using Command Line (Without VS Code)](#setup-option-b-using-command-line-without-vs-code)
+  - [Alternative: Fully Containerized Workflow](#alternative-fully-containerized-workflow)
+  - [Features](#features)
+  - [Troubleshooting](#troubleshooting)
+  - [Container Configuration](#container-configuration)
+- [Architecture](#architecture)
+  - [Coordinate Spaces](#coordinate-spaces)
+  - [Core Traits](#core-traits)
+  - [Renderer Implementations](#renderer-implementations)
+  - [Generic Coordinate System](#generic-coordinate-system)
+  - [Coordinate Transformations](#coordinate-transformations)
+  - [Rendering Pipeline](#rendering-pipeline)
+  - [Precision Handling for Extreme Zoom](#precision-handling-for-extreme-zoom)
+  - [Key Architectural Patterns](#key-architectural-patterns)
+  - [Key Files](#key-files)
+- [Project Structure](#project-structure)
+- [Technology Stack](#technology-stack)
+- [Development Notes](#development-notes)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Prerequisites
 
 You can develop FractalWonder in two ways:
