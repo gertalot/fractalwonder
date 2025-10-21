@@ -2,18 +2,15 @@
   "mcpServers": {
     "context7": {
       "command": "npx",
-      "args": [
-        "-y",
-        "@upstash/context7-mcp@latest"
-      ]
+      "args": ["-y", "@upstash/context7-mcp@latest"]
     },
     "chrome-devtools": {
       "command": "npx",
       "args": [
         "-y",
         "chrome-devtools-mcp@latest",
-        "--logFile=/Users/gert/Library/Logs/chrome-devtools-mcp.log",
-        "--browserUrl=http://localhost:9222"
+        "--browserUrl=http://localhost:9222",
+        "--logFile=/tmp/chrome-devtools-mcp.log"
       ],
       "env": {}
     }

@@ -175,9 +175,11 @@ claude --dangerously-skip-permissions
 **How it works:**
 - Claude Code runs isolated in the container (safe to use `--dangerously-skip-permissions`)
 - Claude edits files via mounted workspace → host `trunk serve` detects changes → hot reload
-- Claude controls host Chrome via `http://host.docker.internal:9222`
+- Claude controls host Chrome via `localhost:9222` (socat proxy forwards to host automatically)
 - All test/format/lint commands work normally on host
 - Container shares your `~/.claude` credentials (no separate login needed)
+
+> **Note:** The container uses `socat` to forward `localhost:9222` inside the container to Chrome running on the host. Your `.mcp.json` can use `http://localhost:9222` both on the host and in the container - it works the same everywhere.
 
 ### Setup Option A: Using VS Code (Easier)
 
