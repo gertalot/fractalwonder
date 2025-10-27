@@ -9,13 +9,14 @@
       "ZSH_IN_DOCKER_VERSION": "1.2.0"
     }
   },
-  "runArgs": [
-    "--add-host=host.docker.internal:host-gateway"
-  ],
+  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
   "customizations": {
     "vscode": {
       "extensions": [
-        "anthropic.claude-code"
+        "anthropic.claude-code",
+        "bierner.markdown-mermaid",
+        "rust-lang.rust-analyzer",
+        "bradlc.vscode-tailwindcss"
       ],
       "settings": {
         "editor.formatOnSave": true,
@@ -30,7 +31,12 @@
           "zsh": {
             "path": "zsh"
           }
-        }
+        },
+        "[rust]": {
+          "editor.formatOnSave": true
+        },
+        "rust-analyzer.check.command": "clippy",
+        "rust-analyzer.rustfmt.extraArgs": ["--edition", "2021"]
       }
     }
   },

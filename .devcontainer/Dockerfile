@@ -5,7 +5,7 @@ ENV TZ="${TZ:-America/Los_Angeles}"
 
 ARG CLAUDE_CODE_VERSION=latest
 
-# Install basic development tools
+# Install basic development tools and Chrome for browser testing
 RUN apt-get update && apt-get install -y --no-install-recommends \
   less \
   git \
@@ -26,6 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   curl \
   socat \
   locales \
+  chromium \
+  chromium-driver \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Generate and set locale
@@ -85,10 +87,28 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
   -a "source /usr/share/doc/fzf/examples/completion.zsh" \
   -a "export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
   -a "if ! pgrep -f 'socat.*9222' > /dev/null; then /usr/local/bin/start-chrome-proxy.sh; fi" \
+  -a "alias claude='claude --dangerously-skip-permissions'" \
   -x
 
 # Install Claude Code
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+
+# Install Rust toolchain
+USER root
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile default
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install WASM target and tools as root, then copy to node user
+RUN /root/.cargo/bin/rustup target add wasm32-unknown-unknown && \
+  /root/.cargo/bin/cargo install wasm-pack trunk
+
+# Copy Rust installation to node user
+RUN cp -r /root/.cargo /home/node/.cargo && \
+  cp -r /root/.rustup /home/node/.rustup && \
+  chown -R node:node /home/node/.cargo /home/node/.rustup
+
+USER node
+ENV PATH="/home/node/.cargo/bin:${PATH}"
 
 # Create Chrome proxy startup script
 # This forwards port 9222 from the host to the container

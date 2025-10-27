@@ -23,12 +23,8 @@ Fractal Wonder is a high-performance, browser-based Mandelbrot set explorer capa
 **CRITICAL: Using Skills**
 
 - NEVER claim to be "using a skill" without FIRST using the Read tool to read the skill file
-- ALWAYS use `Read` tool on the skill file BEFORE announcing you're using it
-- ONLY announce skill usage AFTER you have actually read the skill file
-- Example: First `Read /Users/gert/.claude/plugins/cache/superpowers/skills/SKILLNAME/SKILL.md`, THEN announce "I'm using the SKILLNAME skill to..."
+- ALWAYS use the `Skill` tool to use the skill BEFORE announcing you're using it
 - Violating this rule is completely unacceptable
-
-**GATE 0 CRITICAL CHECK: ONLY PROCEED IF YOU HAVE FOUND AND READ THE SKILL FILE AND ARE FOLLOWING ITS INSTRUCTIONS**
 
 **Development tools**
 
