@@ -6,7 +6,7 @@ pub type Colorizer<D> = fn(&D) -> (u8, u8, u8, u8);
 /// Colorize TestImageData
 pub fn test_image_colorizer(data: &AppData) -> (u8, u8, u8, u8) {
     match data {
-        AppData::TestImage(d) => test_image_data_to_rgba(d),
+        AppData::TestImageData(d) => test_image_data_to_rgba(d),
         #[allow(unreachable_patterns)]
         _ => (0, 0, 0, 255), // Black for wrong type
     }
@@ -32,21 +32,21 @@ mod tests {
 
     #[test]
     fn test_colorizer_on_circle() {
-        let data = AppData::TestImage(TestImageData::new(true, 0.05));
+        let data = AppData::TestImageData(TestImageData::new(true, 0.05));
         let color = test_image_colorizer(&data);
         assert_eq!(color, (255, 0, 0, 255)); // Red
     }
 
     #[test]
     fn test_colorizer_checkerboard_white() {
-        let data = AppData::TestImage(TestImageData::new(true, 5.0));
+        let data = AppData::TestImageData(TestImageData::new(true, 5.0));
         let color = test_image_colorizer(&data);
         assert_eq!(color, (255, 255, 255, 255)); // White
     }
 
     #[test]
     fn test_colorizer_checkerboard_grey() {
-        let data = AppData::TestImage(TestImageData::new(false, 5.0));
+        let data = AppData::TestImageData(TestImageData::new(false, 5.0));
         let color = test_image_colorizer(&data);
         assert_eq!(color, (204, 204, 204, 255)); // Grey
     }

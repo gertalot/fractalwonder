@@ -4,8 +4,8 @@
 /// runtime polymorphism via trait objects.
 #[derive(Clone, Debug)]
 pub enum AppData {
-    TestImage(TestImageData),
-    // Future: Mandelbrot(MandelbrotData), etc.
+    TestImageData(TestImageData),
+    // Future: MandelbrotData(MandelbrotData), etc.
 }
 
 /// Data computed by TestImageRenderer
