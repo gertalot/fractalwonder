@@ -17,6 +17,8 @@ Fractal Wonder is a high-performance, browser-based Mandelbrot set explorer capa
   potentially using arbitrary precision.
 - calculations in image space **MUST ALWAYS USE** the generic types in `src/rendering/coords.rs` and **NEVER**
   hardcode `f64` types for these calculations.
+- Rust supports **RUNTIME POLYMORPHISM** via **TRAITS**. Anything that implements Trait X can be used AT
+  RUNTIME where something needs to call a function defined by X. Traits are **EXACTLY LIKE INTERFACES IN OOP**.
 
 ## DEVELOPMENT
 
