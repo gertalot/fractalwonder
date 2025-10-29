@@ -1,5 +1,6 @@
 pub mod app_data;
 pub mod canvas_utils;
+pub mod colorizers;
 pub mod pixel_rect;
 pub mod pixel_renderer;
 pub mod point_compute;
@@ -12,6 +13,7 @@ pub mod viewport;
 
 pub use app_data::{AppData, TestImageData};
 pub use canvas_utils::render_with_viewport;
+pub use colorizers::{test_image_colorizer, Colorizer};
 pub use pixel_rect::PixelRect;
 pub use pixel_renderer::PixelRenderer;
 pub use point_compute::ImagePointComputer;
