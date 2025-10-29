@@ -1,24 +1,19 @@
-use crate::components::interactive_canvas::InteractiveCanvas;
-use crate::components::ui::UI;
-use crate::hooks::fullscreen::toggle_fullscreen;
-use crate::hooks::ui_visibility::use_ui_visibility;
 use crate::rendering::{
     point_compute::ImagePointComputer,
     points::{Point, Rect},
     renderer_info::{RendererInfo, RendererInfoData},
     viewport::Viewport,
-    PixelRenderer, TestImageData,
+    TestImageData,
 };
-use leptos::*;
 
 #[derive(Clone)]
-pub struct TestImageRenderer {
+pub struct TestImageComputer {
     checkerboard_size: f64,
     circle_radius_step: f64,
     circle_line_thickness: f64,
 }
 
-impl TestImageRenderer {
+impl TestImageComputer {
     pub fn new() -> Self {
         Self {
             checkerboard_size: 5.0,
@@ -54,7 +49,7 @@ impl TestImageRenderer {
     }
 }
 
-impl ImagePointComputer for TestImageRenderer {
+impl ImagePointComputer for TestImageComputer {
     type Coord = f64;
     type Data = TestImageData;
 
@@ -67,7 +62,7 @@ impl ImagePointComputer for TestImageRenderer {
     }
 }
 
-impl RendererInfo for TestImageRenderer {
+impl RendererInfo for TestImageComputer {
     type Coord = f64;
 
     fn info(&self, viewport: &Viewport<f64>) -> RendererInfoData {
@@ -94,61 +89,28 @@ impl RendererInfo for TestImageRenderer {
     }
 }
 
-#[component]
-pub fn TestImageView() -> impl IntoView {
-    let renderer = PixelRenderer::new(TestImageRenderer::new());
-    let canvas_with_info = InteractiveCanvas(renderer);
-
-    // UI visibility
-    let ui_visibility = use_ui_visibility();
-
-    // Clone reset callback for use in closure
-    let reset_fn = canvas_with_info.reset_viewport;
-    let on_home_click = move || {
-        (reset_fn)();
-    };
-
-    // Fullscreen callback
-    let on_fullscreen_click = move || {
-        toggle_fullscreen();
-    };
-
-    view! {
-        <div class="w-full h-full">
-            {canvas_with_info.view}
-        </div>
-        <UI
-            info=canvas_with_info.info
-            is_visible=ui_visibility.is_visible
-            set_is_hovering=ui_visibility.set_is_hovering
-            on_home_click=on_home_click
-            on_fullscreen_click=on_fullscreen_click
-        />
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_renderer_natural_bounds() {
-        let renderer = TestImageRenderer::new();
-        let bounds = renderer.natural_bounds();
+        let computer = TestImageComputer::new();
+        let bounds = computer.natural_bounds();
         assert_eq!(*bounds.min.x(), -50.0);
         assert_eq!(*bounds.max.x(), 50.0);
     }
 
     #[test]
     fn test_checkerboard_pattern_at_origin() {
-        let renderer = TestImageRenderer::new();
+        let computer = TestImageComputer::new();
 
         // Point at (-2.5, -2.5) in square (-1, -1), sum=-2 (even) -> light
-        let data1 = renderer.compute_point_data(-2.5, -2.5);
+        let data1 = computer.compute_point_data(-2.5, -2.5);
         // Point at (2.5, 2.5) in square (0, 0), sum=0 (even) -> light
-        let data2 = renderer.compute_point_data(2.5, 2.5);
+        let data2 = computer.compute_point_data(2.5, 2.5);
         // Point at (2.5, -2.5) in square (0, -1), sum=-1 (odd) -> dark
-        let data3 = renderer.compute_point_data(2.5, -2.5);
+        let data3 = computer.compute_point_data(2.5, -2.5);
 
         assert_eq!(data1.checkerboard, data2.checkerboard); // Both light
         assert_ne!(data1.checkerboard, data3.checkerboard); // data1 light, data3 dark
@@ -156,26 +118,26 @@ mod tests {
 
     #[test]
     fn test_circle_at_radius_10() {
-        let renderer = TestImageRenderer::new();
+        let computer = TestImageComputer::new();
 
         // Point exactly on circle (radius 10)
-        let data_on = renderer.compute_point_data(10.0, 0.0);
+        let data_on = computer.compute_point_data(10.0, 0.0);
         assert!(data_on.circle_distance < 0.1); // On circle
 
         // Point between circles
-        let data_off = renderer.compute_point_data(15.0, 0.0);
+        let data_off = computer.compute_point_data(15.0, 0.0);
         assert!(data_off.circle_distance > 0.1); // Not on circle
     }
 
     #[test]
     fn test_origin_is_corner_of_four_squares() {
-        let renderer = TestImageRenderer::new();
+        let computer = TestImageComputer::new();
 
         // (0,0) is corner, so nearby points in different quadrants have different checkerboard
-        let q1 = renderer.compute_point_data(1.0, 1.0);
-        let q2 = renderer.compute_point_data(-1.0, 1.0);
-        let q3 = renderer.compute_point_data(-1.0, -1.0);
-        let q4 = renderer.compute_point_data(1.0, -1.0);
+        let q1 = computer.compute_point_data(1.0, 1.0);
+        let q2 = computer.compute_point_data(-1.0, 1.0);
+        let q3 = computer.compute_point_data(-1.0, -1.0);
+        let q4 = computer.compute_point_data(1.0, -1.0);
 
         // Opposite quadrants should have same checkerboard
         assert_eq!(q1.checkerboard, q3.checkerboard);

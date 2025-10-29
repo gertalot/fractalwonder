@@ -1,23 +1,11 @@
-use crate::components::test_image::TestImageView;
 use leptos::*;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum RendererType {
-    TestImage,
-}
 
 #[component]
 pub fn App() -> impl IntoView {
-    // Currently fixed to TestImage
-    let current_renderer = RendererType::TestImage;
-
+    // TODO: Implement new architecture with TestImageComputer
     view! {
       <div class="relative w-screen h-screen overflow-hidden bg-black">
-        {match current_renderer {
-          RendererType::TestImage => {
-            view! { <TestImageView /> }.into_view()
-          }
-        }}
+        <p class="text-white p-4">"New architecture under construction"</p>
       </div>
     }
 }
