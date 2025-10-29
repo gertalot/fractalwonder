@@ -1,3 +1,4 @@
+pub mod app_data;
 pub mod canvas_utils;
 pub mod pixel_rect;
 pub mod pixel_renderer;
@@ -9,6 +10,7 @@ pub mod tiled_renderer;
 pub mod transforms;
 pub mod viewport;
 
+pub use app_data::{AppData, TestImageData};
 pub use canvas_utils::render_with_viewport;
 pub use pixel_rect::PixelRect;
 pub use pixel_renderer::PixelRenderer;
