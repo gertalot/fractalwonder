@@ -1,3 +1,5 @@
+use crate::rendering::computers::mandelbrot::MandelbrotData;
+
 /// Unified data type for all renderer implementations
 ///
 /// Each renderer wraps its specific data type in this enum to enable
@@ -5,7 +7,7 @@
 #[derive(Clone, Debug)]
 pub enum AppData {
     TestImageData(TestImageData),
-    // Future: MandelbrotData(MandelbrotData), etc.
+    MandelbrotData(MandelbrotData),
 }
 
 /// Data computed by TestImageRenderer
