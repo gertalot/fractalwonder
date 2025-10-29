@@ -1,4 +1,5 @@
 pub mod app_data;
+pub mod app_data_renderer;
 pub mod canvas_utils;
 pub mod colorizers;
 pub mod computers;
@@ -14,6 +15,7 @@ pub mod transforms;
 pub mod viewport;
 
 pub use app_data::{AppData, TestImageData};
+pub use app_data_renderer::AppDataRenderer;
 pub use canvas_utils::render_with_viewport;
 pub use colorizers::{test_image_colorizer, Colorizer};
 pub use computers::TestImageComputer;
