@@ -6,13 +6,13 @@ pub type Colorizer<D> = fn(&D) -> (u8, u8, u8, u8);
 /// Colorize TestImageData
 pub fn test_image_colorizer(data: &AppData) -> (u8, u8, u8, u8) {
     match data {
-        AppData::TestImage(d) => colorize_test_image(d),
+        AppData::TestImage(d) => test_image_data_to_rgba(d),
         #[allow(unreachable_patterns)]
         _ => (0, 0, 0, 255), // Black for wrong type
     }
 }
 
-fn colorize_test_image(data: &TestImageData) -> (u8, u8, u8, u8) {
+fn test_image_data_to_rgba(data: &TestImageData) -> (u8, u8, u8, u8) {
     // Circle distance < 0.1 means on a circle -> red
     if data.circle_distance < 0.1 {
         return (255, 0, 0, 255); // Red circle
