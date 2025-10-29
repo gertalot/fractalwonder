@@ -1,6 +1,6 @@
 use crate::rendering::points::{Point, Rect};
 
-/// Trait for computing color values at points in image space
+/// Trait for computing data values at points in image space
 ///
 /// This is the lowest-level rendering abstraction - pure computation with no loops.
 /// Typically wrapped by PixelRenderer which adds the pixel iteration logic.
@@ -8,17 +8,20 @@ pub trait ImagePointComputer {
     /// Coordinate type for image space
     type Coord;
 
+    /// Data type output (NOT colors - will be colorized later)
+    type Data: Clone;
+
     /// Natural bounds of the image in image-space coordinates
     fn natural_bounds(&self) -> Rect<Self::Coord>;
 
-    /// Compute RGBA color for a single point in image space
+    /// Compute data for a single point in image space
     ///
     /// # Arguments
     /// * `coord` - Point in image-space coordinates
     ///
     /// # Returns
-    /// (R, G, B, A) tuple, each 0-255
-    fn compute(&self, coord: Point<Self::Coord>) -> (u8, u8, u8, u8);
+    /// Computation data (not RGBA - colorizer converts to colors)
+    fn compute(&self, coord: Point<Self::Coord>) -> Self::Data;
 }
 
 #[cfg(test)]
@@ -32,12 +35,13 @@ mod tests {
 
     impl ImagePointComputer for SolidColorCompute {
         type Coord = f64;
+        type Data = (u8, u8, u8, u8); // For tests, Data = RGBA
 
         fn natural_bounds(&self) -> Rect<f64> {
             Rect::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0))
         }
 
-        fn compute(&self, _coord: Point<f64>) -> (u8, u8, u8, u8) {
+        fn compute(&self, _coord: Point<f64>) -> Self::Data {
             self.color
         }
     }
