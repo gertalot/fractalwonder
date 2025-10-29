@@ -34,6 +34,7 @@ where
         + std::ops::Div<f64, Output = C::Coord>,
 {
     type Coord = C::Coord;
+    type Data = C::Data; // Pass through Data from computer
 
     fn natural_bounds(&self) -> Rect<Self::Coord> {
         self.computer.natural_bounds()
@@ -44,8 +45,8 @@ where
         viewport: &Viewport<Self::Coord>,
         pixel_rect: PixelRect,
         canvas_size: (u32, u32),
-    ) -> Vec<u8> {
-        let mut pixels = vec![0u8; (pixel_rect.width * pixel_rect.height * 4) as usize];
+    ) -> Vec<Self::Data> {
+        let mut data = Vec::with_capacity((pixel_rect.width * pixel_rect.height) as usize);
 
         // Calculate visible bounds from viewport once
         let natural_bounds = self.computer.natural_bounds();
@@ -67,19 +68,13 @@ where
                     canvas_size.1,
                 );
 
-                // Compute color
-                let (r, g, b, a) = self.computer.compute(image_coord);
-
-                // Write to output
-                let idx = ((local_y * pixel_rect.width + local_x) * 4) as usize;
-                pixels[idx] = r;
-                pixels[idx + 1] = g;
-                pixels[idx + 2] = b;
-                pixels[idx + 3] = a;
+                // Compute data (not color!)
+                let point_data = self.computer.compute(image_coord);
+                data.push(point_data);
             }
         }
 
-        pixels
+        data
     }
 }
 
@@ -103,12 +98,13 @@ mod tests {
 
     impl ImagePointComputer for TestCompute {
         type Coord = f64;
+        type Data = (u8, u8, u8, u8); // For test, Data = RGBA
 
         fn natural_bounds(&self) -> Rect<f64> {
             Rect::new(Point::new(-10.0, -10.0), Point::new(10.0, 10.0))
         }
 
-        fn compute(&self, coord: Point<f64>) -> (u8, u8, u8, u8) {
+        fn compute(&self, coord: Point<f64>) -> Self::Data {
             // Red if x > 0, blue otherwise
             if *coord.x() > 0.0 {
                 (255, 0, 0, 255)
@@ -123,12 +119,12 @@ mod tests {
         let renderer = PixelRenderer::new(TestCompute);
         let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
         let pixel_rect = PixelRect::full_canvas(10, 10);
-        let pixels = renderer.render(&viewport, pixel_rect, (10, 10));
+        let data = renderer.render(&viewport, pixel_rect, (10, 10));
 
-        assert_eq!(pixels.len(), 10 * 10 * 4);
+        assert_eq!(data.len(), 10 * 10);
 
         // First pixel (top-left, x < 0) should be blue
-        assert_eq!(&pixels[0..4], &[0, 0, 255, 255]);
+        assert_eq!(data[0], (0, 0, 255, 255));
     }
 
     #[test]
@@ -137,8 +133,8 @@ mod tests {
         let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
         // Render just a 5x5 tile starting at (2, 2)
         let pixel_rect = PixelRect::new(2, 2, 5, 5);
-        let pixels = renderer.render(&viewport, pixel_rect, (10, 10));
+        let data = renderer.render(&viewport, pixel_rect, (10, 10));
 
-        assert_eq!(pixels.len(), 5 * 5 * 4);
+        assert_eq!(data.len(), 5 * 5);
     }
 }
