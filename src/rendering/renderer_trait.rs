@@ -7,10 +7,13 @@ pub trait Renderer {
     /// Coordinate type for image space (f64, rug::Float, etc.)
     type Coord;
 
+    /// Data type output (NOT colors - will be colorized later)
+    type Data: Clone;
+
     /// Natural bounds of the image in image-space coordinates
     fn natural_bounds(&self) -> Rect<Self::Coord>;
 
-    /// Render pixels for a given viewport and pixel rectangle
+    /// Render data for pixels in a given viewport and pixel rectangle
     ///
     /// # Arguments
     /// * `viewport` - What image coordinates the full canvas shows
@@ -18,11 +21,11 @@ pub trait Renderer {
     /// * `canvas_size` - Full canvas dimensions (width, height)
     ///
     /// # Returns
-    /// RGBA pixel data for the specified pixel_rect (length = width * height * 4)
+    /// Data for the specified pixel_rect (length = width * height)
     fn render(
         &self,
         viewport: &Viewport<Self::Coord>,
         pixel_rect: PixelRect,
         canvas_size: (u32, u32),
-    ) -> Vec<u8>;
+    ) -> Vec<Self::Data>;
 }
