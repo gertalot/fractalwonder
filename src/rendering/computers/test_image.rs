@@ -13,6 +13,12 @@ pub struct TestImageComputer {
     circle_line_thickness: f64,
 }
 
+impl Default for TestImageComputer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TestImageComputer {
     pub fn new() -> Self {
         Self {
@@ -29,11 +35,12 @@ impl TestImageComputer {
         let ring_distance = (distance - nearest_ring * self.circle_radius_step).abs();
 
         // On circle if within line thickness and not at origin
-        let circle_distance = if ring_distance < self.circle_line_thickness / 2.0 && nearest_ring > 0.0 {
-            ring_distance
-        } else {
-            ring_distance + 1.0 // Definitely not on circle
-        };
+        let circle_distance =
+            if ring_distance < self.circle_line_thickness / 2.0 && nearest_ring > 0.0 {
+                ring_distance
+            } else {
+                ring_distance + 1.0 // Definitely not on circle
+            };
 
         // Also treat vertical green line as a circle for now
         if x.abs() < self.circle_line_thickness {

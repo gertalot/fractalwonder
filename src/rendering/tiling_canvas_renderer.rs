@@ -1,8 +1,5 @@
 use crate::rendering::{
-    points::Rect,
-    renderer_trait::Renderer,
-    viewport::Viewport,
-    Colorizer, PixelRect,
+    points::Rect, renderer_trait::Renderer, viewport::Viewport, Colorizer, PixelRect,
 };
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::JsCast;
@@ -73,8 +70,7 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
         let mut cache = self.cached_state.lock().unwrap();
 
         // Decision: compute vs recolorize
-        if cache.viewport.as_ref() == Some(viewport) && cache.canvas_size == Some((width, height))
-        {
+        if cache.viewport.as_ref() == Some(viewport) && cache.canvas_size == Some((width, height)) {
             // Same viewport/size → recolorize from cache
             self.recolorize_from_cache(&cache, canvas);
         } else {
@@ -100,9 +96,7 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
         // Progressive tiled rendering
         for tile_rect in compute_tiles(width, height, self.tile_size) {
             // Compute tile data
-            let tile_data = self
-                .renderer
-                .render(viewport, tile_rect, (width, height));
+            let tile_data = self.renderer.render(viewport, tile_rect, (width, height));
 
             // Store in cache
             cache.data.extend(tile_data.iter().cloned());

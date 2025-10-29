@@ -1,4 +1,4 @@
-use crate::rendering::{renderer_trait::Renderer, viewport::Viewport, PixelRect};
+use crate::rendering::{renderer_trait::Renderer, viewport::Viewport, Colorizer, PixelRect};
 use wasm_bindgen::{Clamped, JsCast};
 use web_sys::{CanvasRenderingContext2d, ContextAttributes2d, HtmlCanvasElement, ImageData};
 
@@ -6,6 +6,7 @@ pub fn render_with_viewport<R>(
     canvas: &HtmlCanvasElement,
     renderer: &R,
     viewport: &Viewport<R::Coord>,
+    colorizer: Colorizer<R::Data>,
 ) where
     R: Renderer,
     R::Coord: Clone,
@@ -13,7 +14,16 @@ pub fn render_with_viewport<R>(
     let width = canvas.width();
     let height = canvas.height();
     let pixel_rect = PixelRect::full_canvas(width, height);
-    let pixels = renderer.render(viewport, pixel_rect, (width, height));
+    let data = renderer.render(viewport, pixel_rect, (width, height));
+
+    // Convert data to RGBA pixels
+    let pixels: Vec<u8> = data
+        .iter()
+        .flat_map(|d| {
+            let (r, g, b, a) = colorizer(d);
+            [r, g, b, a]
+        })
+        .collect();
 
     // Put pixels on canvas
     let attrs = ContextAttributes2d::new();
@@ -39,6 +49,12 @@ mod tests {
     use super::*;
     use crate::rendering::{points::Point, points::Rect};
 
+    // Mock data for testing
+    #[derive(Clone, Debug, PartialEq)]
+    struct MockData {
+        color: (u8, u8, u8, u8),
+    }
+
     // Mock renderer for testing
     struct MockRenderer {
         color: (u8, u8, u8, u8),
@@ -46,6 +62,7 @@ mod tests {
 
     impl Renderer for MockRenderer {
         type Coord = f64;
+        type Data = MockData;
 
         fn natural_bounds(&self) -> Rect<f64> {
             Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0))
@@ -56,49 +73,43 @@ mod tests {
             _viewport: &Viewport<f64>,
             pixel_rect: PixelRect,
             _canvas_size: (u32, u32),
-        ) -> Vec<u8> {
-            let mut pixels = vec![0u8; (pixel_rect.width * pixel_rect.height * 4) as usize];
-            for i in 0..(pixel_rect.width * pixel_rect.height) as usize {
-                pixels[i * 4] = self.color.0;
-                pixels[i * 4 + 1] = self.color.1;
-                pixels[i * 4 + 2] = self.color.2;
-                pixels[i * 4 + 3] = self.color.3;
-            }
-            pixels
+        ) -> Vec<MockData> {
+            vec![MockData { color: self.color }; (pixel_rect.width * pixel_rect.height) as usize]
         }
     }
 
+    #[allow(dead_code)]
+    fn mock_colorizer(data: &MockData) -> (u8, u8, u8, u8) {
+        data.color
+    }
+
     #[test]
-    fn test_mock_renderer_produces_correct_pixel_count() {
+    fn test_mock_renderer_produces_correct_data_count() {
         let renderer = MockRenderer {
             color: (255, 0, 0, 255),
         };
         let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
         let pixel_rect = PixelRect::full_canvas(100, 100);
-        let pixels = renderer.render(&viewport, pixel_rect, (100, 100));
-        assert_eq!(pixels.len(), 100 * 100 * 4);
+        let data = renderer.render(&viewport, pixel_rect, (100, 100));
+        assert_eq!(data.len(), 100 * 100);
     }
 
     #[test]
-    fn test_mock_renderer_fills_with_color() {
+    fn test_mock_renderer_fills_with_correct_data() {
         let renderer = MockRenderer {
             color: (128, 64, 32, 255),
         };
         let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
         let pixel_rect = PixelRect::full_canvas(10, 10);
-        let pixels = renderer.render(&viewport, pixel_rect, (10, 10));
+        let data = renderer.render(&viewport, pixel_rect, (10, 10));
 
-        // Check first pixel
-        assert_eq!(pixels[0], 128);
-        assert_eq!(pixels[1], 64);
-        assert_eq!(pixels[2], 32);
-        assert_eq!(pixels[3], 255);
+        // Check first data point
+        assert_eq!(data[0].color, (128, 64, 32, 255));
 
-        // Check last pixel
-        let last_idx = (10 * 10 - 1) * 4;
-        assert_eq!(pixels[last_idx], 128);
-        assert_eq!(pixels[last_idx + 1], 64);
-        assert_eq!(pixels[last_idx + 2], 32);
-        assert_eq!(pixels[last_idx + 3], 255);
+        // Check last data point
+        assert_eq!(data[99].color, (128, 64, 32, 255));
+
+        // Verify all data points are consistent
+        assert!(data.iter().all(|d| d.color == (128, 64, 32, 255)));
     }
 }

@@ -1,5 +1,5 @@
 use crate::hooks::use_canvas_interaction::use_canvas_interaction;
-use crate::rendering::{points::Rect, viewport::Viewport, TilingCanvasRenderer, Renderer};
+use crate::rendering::{points::Rect, viewport::Viewport, Renderer, TilingCanvasRenderer};
 use leptos::*;
 use wasm_bindgen::JsCast;
 
@@ -30,45 +30,33 @@ where
         if let Some(canvas_el) = canvas_ref.get() {
             let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
 
-            let start = web_sys::window()
-                .unwrap()
-                .performance()
-                .unwrap()
-                .now();
+            let start = web_sys::window().unwrap().performance().unwrap().now();
 
             canvas_renderer.with(|cr| cr.render(&vp, canvas));
 
-            let elapsed = web_sys::window()
-                .unwrap()
-                .performance()
-                .unwrap()
-                .now()
-                - start;
+            let elapsed = web_sys::window().unwrap().performance().unwrap().now() - start;
             set_render_time_ms.set(Some(elapsed));
         }
     });
 
     // Canvas interaction hook - callback updates viewport
-    let interaction = use_canvas_interaction(
-        canvas_ref,
-        move |transform_result| {
-            if let Some(canvas_el) = canvas_ref.get() {
-                let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
-                let width = canvas.width();
-                let height = canvas.height();
+    let interaction = use_canvas_interaction(canvas_ref, move |transform_result| {
+        if let Some(canvas_el) = canvas_ref.get() {
+            let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
+            let width = canvas.width();
+            let height = canvas.height();
 
-                set_viewport.update(|vp| {
-                    *vp = crate::rendering::apply_pixel_transform_to_viewport(
-                        vp,
-                        &natural_bounds,
-                        &transform_result,
-                        width,
-                        height,
-                    );
-                });
-            }
-        },
-    );
+            set_viewport.update(|vp| {
+                *vp = crate::rendering::apply_pixel_transform_to_viewport(
+                    vp,
+                    &natural_bounds,
+                    &transform_result,
+                    width,
+                    height,
+                );
+            });
+        }
+    });
 
     view! {
         <canvas

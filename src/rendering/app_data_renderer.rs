@@ -66,8 +66,7 @@ where
 mod tests {
     use super::*;
     use crate::rendering::{
-        app_data::TestImageData, point_compute::ImagePointComputer, points::Point,
-        PixelRenderer,
+        app_data::TestImageData, point_compute::ImagePointComputer, points::Point, PixelRenderer,
     };
 
     struct DummyComputer;
