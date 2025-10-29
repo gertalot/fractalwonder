@@ -3,7 +3,7 @@ use crate::components::ui::UI;
 use crate::hooks::fullscreen::toggle_fullscreen;
 use crate::hooks::ui_visibility::use_ui_visibility;
 use crate::rendering::{
-    renderer_info::RendererInfo, test_image_colorizer, AppData, AppDataRenderer, Colorizer,
+    renderer_info::RendererInfo, test_image_default_colorizer, AppData, AppDataRenderer, Colorizer,
     PixelRenderer, Renderer, TestImageComputer, TilingCanvasRenderer, Viewport,
 };
 use leptos::*;
@@ -17,7 +17,7 @@ pub fn App() -> impl IntoView {
     let pixel_renderer = PixelRenderer::new(test_computer.clone());
     let app_renderer = AppDataRenderer::new(pixel_renderer, |d| AppData::TestImageData(*d));
 
-    let (colorizer, _set_colorizer) = create_signal(test_image_colorizer as Colorizer<AppData>);
+    let (colorizer, _set_colorizer) = create_signal(test_image_default_colorizer as Colorizer<AppData>);
 
     let natural_bounds = app_renderer.natural_bounds();
     let natural_bounds_for_home = natural_bounds.clone();
