@@ -7,7 +7,7 @@ use crate::rendering::{
     points::{Point, Rect},
     renderer_info::{RendererInfo, RendererInfoData},
     viewport::Viewport,
-    PixelRenderer,
+    PixelRenderer, TestImageData,
 };
 use leptos::*;
 
@@ -27,19 +27,22 @@ impl TestImageRenderer {
         }
     }
 
-    fn compute_point_color(&self, x: f64, y: f64) -> (u8, u8, u8, u8) {
-        // Draw bright green vertical line through the center (x=0)
-        if x.abs() < self.circle_line_thickness {
-            return (0, 255, 0, 255); // Bright green
-        }
-
-        // Check if on circle first (circles drawn on top)
+    fn compute_point_data(&self, x: f64, y: f64) -> TestImageData {
+        // Calculate circle distance
         let distance = (x * x + y * y).sqrt();
         let nearest_ring = (distance / self.circle_radius_step).round();
         let ring_distance = (distance - nearest_ring * self.circle_radius_step).abs();
 
-        if ring_distance < self.circle_line_thickness / 2.0 && nearest_ring > 0.0 {
-            return (255, 0, 0, 255); // Red circle
+        // On circle if within line thickness and not at origin
+        let circle_distance = if ring_distance < self.circle_line_thickness / 2.0 && nearest_ring > 0.0 {
+            ring_distance
+        } else {
+            ring_distance + 1.0 // Definitely not on circle
+        };
+
+        // Also treat vertical green line as a circle for now
+        if x.abs() < self.circle_line_thickness {
+            return TestImageData::new(false, 0.0); // Mark as on circle
         }
 
         // Checkerboard: (0,0) is corner of four squares
@@ -47,23 +50,20 @@ impl TestImageRenderer {
         let square_y = (y / self.checkerboard_size).floor() as i32;
         let is_light = (square_x + square_y) % 2 == 0;
 
-        if is_light {
-            (255, 255, 255, 255) // White
-        } else {
-            (204, 204, 204, 255) // Light grey
-        }
+        TestImageData::new(is_light, circle_distance)
     }
 }
 
 impl ImagePointComputer for TestImageRenderer {
     type Coord = f64;
+    type Data = TestImageData;
 
     fn natural_bounds(&self) -> Rect<f64> {
         Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0))
     }
 
-    fn compute(&self, coord: Point<f64>) -> (u8, u8, u8, u8) {
-        self.compute_point_color(*coord.x(), *coord.y())
+    fn compute(&self, coord: Point<f64>) -> TestImageData {
+        self.compute_point_data(*coord.x(), *coord.y())
     }
 }
 
@@ -143,15 +143,15 @@ mod tests {
     fn test_checkerboard_pattern_at_origin() {
         let renderer = TestImageRenderer::new();
 
-        // Point at (-2.5, -2.5) in square (-1, -1), sum=-2 (even) -> white
-        let color1 = renderer.compute_point_color(-2.5, -2.5);
-        // Point at (2.5, 2.5) in square (0, 0), sum=0 (even) -> white
-        let color2 = renderer.compute_point_color(2.5, 2.5);
-        // Point at (2.5, -2.5) in square (0, -1), sum=-1 (odd) -> grey
-        let color3 = renderer.compute_point_color(2.5, -2.5);
+        // Point at (-2.5, -2.5) in square (-1, -1), sum=-2 (even) -> light
+        let data1 = renderer.compute_point_data(-2.5, -2.5);
+        // Point at (2.5, 2.5) in square (0, 0), sum=0 (even) -> light
+        let data2 = renderer.compute_point_data(2.5, 2.5);
+        // Point at (2.5, -2.5) in square (0, -1), sum=-1 (odd) -> dark
+        let data3 = renderer.compute_point_data(2.5, -2.5);
 
-        assert_eq!(color1, color2); // Both white (even sum)
-        assert_ne!(color1, color3); // color1 white, color3 grey
+        assert_eq!(data1.checkerboard, data2.checkerboard); // Both light
+        assert_ne!(data1.checkerboard, data3.checkerboard); // data1 light, data3 dark
     }
 
     #[test]
@@ -159,27 +159,27 @@ mod tests {
         let renderer = TestImageRenderer::new();
 
         // Point exactly on circle (radius 10)
-        let color_on = renderer.compute_point_color(10.0, 0.0);
-        assert_eq!(color_on, (255, 0, 0, 255)); // Red
+        let data_on = renderer.compute_point_data(10.0, 0.0);
+        assert!(data_on.circle_distance < 0.1); // On circle
 
         // Point between circles
-        let color_off = renderer.compute_point_color(15.0, 0.0);
-        assert_ne!(color_off, (255, 0, 0, 255)); // Not red
+        let data_off = renderer.compute_point_data(15.0, 0.0);
+        assert!(data_off.circle_distance > 0.1); // Not on circle
     }
 
     #[test]
     fn test_origin_is_corner_of_four_squares() {
         let renderer = TestImageRenderer::new();
 
-        // (0,0) is corner, so nearby points in different quadrants have different colors
-        let q1 = renderer.compute_point_color(1.0, 1.0);
-        let q2 = renderer.compute_point_color(-1.0, 1.0);
-        let q3 = renderer.compute_point_color(-1.0, -1.0);
-        let q4 = renderer.compute_point_color(1.0, -1.0);
+        // (0,0) is corner, so nearby points in different quadrants have different checkerboard
+        let q1 = renderer.compute_point_data(1.0, 1.0);
+        let q2 = renderer.compute_point_data(-1.0, 1.0);
+        let q3 = renderer.compute_point_data(-1.0, -1.0);
+        let q4 = renderer.compute_point_data(1.0, -1.0);
 
-        // Opposite quadrants should have same color
-        assert_eq!(q1, q3);
-        assert_eq!(q2, q4);
-        assert_ne!(q1, q2);
+        // Opposite quadrants should have same checkerboard
+        assert_eq!(q1.checkerboard, q3.checkerboard);
+        assert_eq!(q2.checkerboard, q4.checkerboard);
+        assert_ne!(q1.checkerboard, q2.checkerboard);
     }
 }
