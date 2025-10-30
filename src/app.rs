@@ -42,9 +42,7 @@ pub fn App() -> impl IntoView {
     ));
 
     // ========== Natural bounds - reactive to renderer changes ==========
-    let natural_bounds = create_memo(move |_| {
-        canvas_renderer.with(|cr| cr.natural_bounds())
-    });
+    let natural_bounds = create_memo(move |_| canvas_renderer.with(|cr| cr.natural_bounds()));
 
     // ========== RendererInfo for UI display ==========
     let initial_info = (initial_config.create_info_provider)().info(&viewport.get_untracked());
@@ -104,7 +102,7 @@ pub fn App() -> impl IntoView {
         set_viewport.set_untracked(state.viewport.clone());
 
         // Save immediately
-        let states = renderer_states.get();
+        let states = renderer_states.get_untracked();
         AppState {
             selected_renderer_id: new_renderer_id.clone(),
             renderer_states: states,
@@ -136,7 +134,7 @@ pub fn App() -> impl IntoView {
             }
         });
 
-        let states = renderer_states.get();
+        let states = renderer_states.get_untracked();
         AppState {
             selected_renderer_id: renderer_id,
             renderer_states: states,
@@ -171,7 +169,7 @@ pub fn App() -> impl IntoView {
             }
         });
 
-        let states = renderer_states.get();
+        let states = renderer_states.get_untracked();
         AppState {
             selected_renderer_id: renderer_id,
             renderer_states: states,

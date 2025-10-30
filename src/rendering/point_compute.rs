@@ -1,4 +1,5 @@
 use crate::rendering::points::{Point, Rect};
+use crate::rendering::viewport::Viewport;
 
 /// Trait for computing data values at points in image space
 ///
@@ -18,10 +19,11 @@ pub trait ImagePointComputer {
     ///
     /// # Arguments
     /// * `coord` - Point in image-space coordinates
+    /// * `viewport` - Current viewport (for zoom-dependent computations)
     ///
     /// # Returns
     /// Computation data (not RGBA - colorizer converts to colors)
-    fn compute(&self, coord: Point<Self::Coord>) -> Self::Data;
+    fn compute(&self, coord: Point<Self::Coord>, viewport: &Viewport<Self::Coord>) -> Self::Data;
 }
 
 #[cfg(test)]
@@ -41,7 +43,7 @@ mod tests {
             Rect::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0))
         }
 
-        fn compute(&self, _coord: Point<f64>) -> Self::Data {
+        fn compute(&self, _coord: Point<f64>, _viewport: &Viewport<f64>) -> Self::Data {
             self.color
         }
     }
@@ -51,7 +53,8 @@ mod tests {
         let computer = SolidColorCompute {
             color: (255, 0, 0, 255),
         };
-        let result = computer.compute(Point::new(50.0, 50.0));
+        let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+        let result = computer.compute(Point::new(50.0, 50.0), &viewport);
         assert_eq!(result, (255, 0, 0, 255));
     }
 }

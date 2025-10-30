@@ -69,7 +69,7 @@ where
                 );
 
                 // Compute data (not color!)
-                let point_data = self.computer.compute(image_coord);
+                let point_data = self.computer.compute(image_coord, viewport);
                 data.push(point_data);
             }
         }
@@ -104,7 +104,7 @@ mod tests {
             Rect::new(Point::new(-10.0, -10.0), Point::new(10.0, 10.0))
         }
 
-        fn compute(&self, coord: Point<f64>) -> Self::Data {
+        fn compute(&self, coord: Point<f64>, _viewport: &Viewport<f64>) -> Self::Data {
             // Red if x > 0, blue otherwise
             if *coord.x() > 0.0 {
                 (255, 0, 0, 255)

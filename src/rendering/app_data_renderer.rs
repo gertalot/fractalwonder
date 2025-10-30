@@ -79,7 +79,7 @@ mod tests {
             Rect::new(Point::new(0.0, 0.0), Point::new(10.0, 10.0))
         }
 
-        fn compute(&self, _coord: Point<f64>) -> TestImageData {
+        fn compute(&self, _coord: Point<f64>, _viewport: &Viewport<f64>) -> TestImageData {
             TestImageData::new(true, 5.0)
         }
     }

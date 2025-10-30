@@ -64,7 +64,7 @@ impl ImagePointComputer for TestImageComputer {
         Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0))
     }
 
-    fn compute(&self, coord: Point<f64>) -> TestImageData {
+    fn compute(&self, coord: Point<f64>, _viewport: &Viewport<f64>) -> TestImageData {
         self.compute_point_data(*coord.x(), *coord.y())
     }
 }

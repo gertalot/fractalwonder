@@ -92,7 +92,7 @@ mod tests {
             Rect::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0))
         }
 
-        fn compute(&self, _coord: Point<f64>) -> ColorData {
+        fn compute(&self, _coord: Point<f64>, _viewport: &Viewport<f64>) -> ColorData {
             ColorData { color: self.color }
         }
     }
