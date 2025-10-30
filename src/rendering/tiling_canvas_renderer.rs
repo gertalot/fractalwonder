@@ -1,5 +1,5 @@
 use crate::rendering::{
-    points::Rect, renderer_trait::Renderer, viewport::Viewport, Colorizer, PixelRect,
+    points::Rect, renderer_trait::Renderer, viewport::Viewport, AppData, Colorizer, PixelRect,
 };
 use std::sync::{
     atomic::{AtomicU32, Ordering},
@@ -9,14 +9,14 @@ use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
 /// Cached rendering state
-struct CachedState<R: Renderer> {
-    viewport: Option<Viewport<R::Coord>>,
+struct CachedState {
+    viewport: Option<Viewport<f64>>,
     canvas_size: Option<(u32, u32)>,
-    data: Vec<R::Data>,
+    data: Vec<AppData>,
     render_id: AtomicU32,
 }
 
-impl<R: Renderer> Default for CachedState<R> {
+impl Default for CachedState {
     fn default() -> Self {
         Self {
             viewport: None,
@@ -28,15 +28,19 @@ impl<R: Renderer> Default for CachedState<R> {
 }
 
 /// Canvas renderer with tiling, progressive rendering, and caching
-pub struct TilingCanvasRenderer<R: Renderer> {
-    renderer: R,
-    colorizer: Colorizer<R::Data>,
+pub struct TilingCanvasRenderer {
+    renderer: Box<dyn Renderer<Coord = f64, Data = AppData>>,
+    colorizer: Colorizer<AppData>,
     tile_size: u32,
-    cached_state: Arc<Mutex<CachedState<R>>>,
+    cached_state: Arc<Mutex<CachedState>>,
 }
 
-impl<R: Renderer> TilingCanvasRenderer<R> {
-    pub fn new(renderer: R, colorizer: Colorizer<R::Data>, tile_size: u32) -> Self {
+impl TilingCanvasRenderer {
+    pub fn new(
+        renderer: Box<dyn Renderer<Coord = f64, Data = AppData>>,
+        colorizer: Colorizer<AppData>,
+        tile_size: u32,
+    ) -> Self {
         Self {
             renderer,
             colorizer,
@@ -45,23 +49,24 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
         }
     }
 
-    /// Create new renderer with different colorizer, preserving cached data
-    pub fn with_colorizer(&self, colorizer: Colorizer<R::Data>) -> Self
-    where
-        R: Clone,
-    {
-        Self {
-            renderer: self.renderer.clone(),
-            colorizer,
-            tile_size: self.tile_size,
-            cached_state: Arc::clone(&self.cached_state), // Shared cache!
-        }
+    pub fn set_renderer(&mut self, renderer: Box<dyn Renderer<Coord = f64, Data = AppData>>) {
+        self.renderer = renderer;
+        self.clear_cache();
     }
 
-    pub fn natural_bounds(&self) -> Rect<R::Coord>
-    where
-        R::Coord: Clone,
-    {
+    pub fn set_colorizer(&mut self, colorizer: Colorizer<AppData>) {
+        self.colorizer = colorizer;
+        // Cache preserved!
+    }
+
+    fn clear_cache(&mut self) {
+        let mut cache = self.cached_state.lock().unwrap();
+        cache.viewport = None;
+        cache.canvas_size = None;
+        cache.data.clear();
+    }
+
+    pub fn natural_bounds(&self) -> Rect<f64> {
         self.renderer.natural_bounds()
     }
 
@@ -72,10 +77,7 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
     }
 
     /// Main render entry point
-    pub fn render(&self, viewport: &Viewport<R::Coord>, canvas: &HtmlCanvasElement)
-    where
-        R::Coord: Clone + PartialEq,
-    {
+    pub fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement) {
         let width = canvas.width();
         let height = canvas.height();
         let mut cache = self.cached_state.lock().unwrap();
@@ -96,13 +98,11 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
 
     fn render_with_computation(
         &self,
-        viewport: &Viewport<R::Coord>,
+        viewport: &Viewport<f64>,
         canvas: &HtmlCanvasElement,
-        cache: &mut CachedState<R>,
+        cache: &mut CachedState,
         render_id: u32,
-    ) where
-        R::Coord: Clone,
-    {
+    ) {
         let width = canvas.width();
         let height = canvas.height();
 
@@ -173,7 +173,7 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
 
     fn colorize_and_display_tile(
         &self,
-        data: &[R::Data],
+        data: &[AppData],
         rect: PixelRect,
         canvas: &HtmlCanvasElement,
     ) {

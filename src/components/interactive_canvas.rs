@@ -4,22 +4,13 @@ use leptos::*;
 use wasm_bindgen::JsCast;
 
 #[component]
-pub fn InteractiveCanvas<R>(
-    canvas_renderer: RwSignal<TilingCanvasRenderer<R>>,
-    viewport: ReadSignal<Viewport<R::Coord>>,
-    set_viewport: WriteSignal<Viewport<R::Coord>>,
+pub fn InteractiveCanvas(
+    canvas_renderer: RwSignal<TilingCanvasRenderer>,
+    viewport: ReadSignal<Viewport<f64>>,
+    set_viewport: WriteSignal<Viewport<f64>>,
     set_render_time_ms: WriteSignal<Option<f64>>,
-    natural_bounds: Rect<R::Coord>,
-) -> impl IntoView
-where
-    R: Renderer + Clone + 'static,
-    R::Coord: Clone + PartialEq + 'static,
-    R::Coord: std::ops::Sub<Output = R::Coord>
-        + std::ops::Add<Output = R::Coord>
-        + std::ops::Mul<f64, Output = R::Coord>
-        + std::ops::Div<f64, Output = R::Coord>
-        + From<f64>,
-{
+    natural_bounds: Rect<f64>,
+) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
     // Canvas interaction hook - callback updates viewport
