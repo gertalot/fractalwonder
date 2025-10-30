@@ -27,14 +27,14 @@ Fractal Wonder is a high-performance, browser-based Mandelbrot set explorer capa
 
 - NEVER claim to be "using a skill" without FIRST using the Read tool to read the skill file
 - ALWAYS use the `Skill` tool to use the skill BEFORE announcing you're using it
-- Violating this rule is completely unacceptable
+- ALWAYS check if a skill is available that could be relevant to your task, and if so, use it.
 
 **Development tools**
 
-- assume `trunk serve` is already running on <http://localhost:8080>
+- assume `trunk serve` is **ALREADY** running on the host on <http://localhost:8080>.
+  **DO NOT START IT IN THE CONTAINER**
 - use `context7` MCP and `WebSearch` to ensure you have up-to-date information
 - use `chrome-devtools` MCP for browser testing/interactions
-- use superpowers skills from `~/.claude/plugins/cache/superpowers`
 
 **Code Style:**
 

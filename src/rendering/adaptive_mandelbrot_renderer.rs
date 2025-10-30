@@ -1,6 +1,7 @@
 use crate::rendering::{
-    computers::MandelbrotComputer, renderer_info::{RendererInfo, RendererInfoData}, AppData,
-    AppDataRenderer, BigFloat, PixelRect, PixelRenderer, Point, PrecisionCalculator, Rect,
+    computers::MandelbrotComputer,
+    renderer_info::{RendererInfo, RendererInfoData},
+    AppData, AppDataRenderer, BigFloat, PixelRect, PixelRenderer, Point, PrecisionCalculator, Rect,
     Renderer, ToF64, Viewport,
 };
 
@@ -84,19 +85,17 @@ impl RendererInfo for AdaptiveMandelbrotRenderer {
             // Use f64 renderer info
             let viewport_f64 = self.convert_viewport_to_f64(viewport);
             let mut info_data = MandelbrotComputer::<f64>::new().info(&viewport_f64);
-            info_data.custom_params.push((
-                "Precision".to_string(),
-                "f64 (fast)".to_string(),
-            ));
+            info_data
+                .custom_params
+                .push(("Precision".to_string(), "f64 (fast)".to_string()));
             info_data
         } else {
             // Use BigFloat renderer info
             let mut info_data = MandelbrotComputer::<BigFloat>::new().info(viewport);
             let precision_bits = PrecisionCalculator::calculate_precision_bits(viewport.zoom);
-            info_data.custom_params.push((
-                "Precision".to_string(),
-                format!("{} bits", precision_bits),
-            ));
+            info_data
+                .custom_params
+                .push(("Precision".to_string(), format!("{} bits", precision_bits)));
             info_data
         }
     }
@@ -110,7 +109,10 @@ mod tests {
     fn test_uses_f64_at_low_zoom() {
         let renderer = AdaptiveMandelbrotRenderer::new(1e10);
         let viewport = Viewport::new(
-            Point::new(BigFloat::with_precision(0.0, 128), BigFloat::with_precision(0.0, 128)),
+            Point::new(
+                BigFloat::with_precision(0.0, 128),
+                BigFloat::with_precision(0.0, 128),
+            ),
             1.0, // Low zoom
         );
 

@@ -14,7 +14,6 @@ pub mod precision;
 pub mod render_config;
 pub mod renderer_info;
 pub mod renderer_trait;
-pub mod tiled_renderer;
 pub mod tiling_canvas_renderer;
 pub mod transforms;
 pub mod viewport;
@@ -35,7 +34,6 @@ pub use precision::PrecisionCalculator;
 pub use render_config::{get_color_scheme, get_config, ColorScheme, RenderConfig, RENDER_CONFIGS};
 pub use renderer_info::RendererInfo;
 pub use renderer_trait::Renderer;
-pub use tiled_renderer::TiledRenderer;
 pub use tiling_canvas_renderer::TilingCanvasRenderer;
 pub use transforms::{
     apply_pixel_transform_to_viewport, calculate_aspect_ratio, calculate_visible_bounds,

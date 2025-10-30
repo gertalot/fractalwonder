@@ -84,7 +84,8 @@ fn create_mandelbrot_canvas_renderer(
     // - zoom < 1e10: fast f64 arithmetic
     // - zoom >= 1e10: arbitrary precision BigFloat
     let adaptive_renderer = AdaptiveMandelbrotRenderer::new(1e10);
-    let renderer: Box<dyn Renderer<Scalar = BigFloat, Data = AppData>> = Box::new(adaptive_renderer);
+    let renderer: Box<dyn Renderer<Scalar = BigFloat, Data = AppData>> =
+        Box::new(adaptive_renderer);
     TilingCanvasRenderer::new(renderer, colorizer, 128)
 }
 
