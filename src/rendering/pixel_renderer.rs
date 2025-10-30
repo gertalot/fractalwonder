@@ -27,22 +27,22 @@ impl<C: ImagePointComputer> PixelRenderer<C> {
 impl<C> Renderer for PixelRenderer<C>
 where
     C: ImagePointComputer,
-    C::Coord: Clone
-        + std::ops::Sub<Output = C::Coord>
-        + std::ops::Add<Output = C::Coord>
-        + std::ops::Mul<f64, Output = C::Coord>
-        + std::ops::Div<f64, Output = C::Coord>,
+    C::Scalar: Clone
+        + std::ops::Sub<Output = C::Scalar>
+        + std::ops::Add<Output = C::Scalar>
+        + std::ops::Mul<f64, Output = C::Scalar>
+        + std::ops::Div<f64, Output = C::Scalar>,
 {
-    type Coord = C::Coord;
+    type Scalar = C::Scalar;
     type Data = C::Data; // Pass through Data from computer
 
-    fn natural_bounds(&self) -> Rect<Self::Coord> {
+    fn natural_bounds(&self) -> Rect<Self::Scalar> {
         self.computer.natural_bounds()
     }
 
     fn render(
         &self,
-        viewport: &Viewport<Self::Coord>,
+        viewport: &Viewport<Self::Scalar>,
         pixel_rect: PixelRect,
         canvas_size: (u32, u32),
     ) -> Vec<Self::Data> {
@@ -80,11 +80,11 @@ where
 
 impl<C> RendererInfo for PixelRenderer<C>
 where
-    C: ImagePointComputer + RendererInfo<Coord = <C as ImagePointComputer>::Coord>,
+    C: ImagePointComputer + RendererInfo<Scalar = <C as ImagePointComputer>::Scalar>,
 {
-    type Coord = <C as ImagePointComputer>::Coord;
+    type Scalar = <C as ImagePointComputer>::Scalar;
 
-    fn info(&self, viewport: &Viewport<Self::Coord>) -> RendererInfoData {
+    fn info(&self, viewport: &Viewport<Self::Scalar>) -> RendererInfoData {
         self.computer.info(viewport)
     }
 }
@@ -97,7 +97,7 @@ mod tests {
     struct TestCompute;
 
     impl ImagePointComputer for TestCompute {
-        type Coord = f64;
+        type Scalar = f64;
         type Data = (u8, u8, u8, u8); // For test, Data = RGBA
 
         fn natural_bounds(&self) -> Rect<f64> {

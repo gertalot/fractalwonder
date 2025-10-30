@@ -44,23 +44,23 @@ impl<T> Point<T> {
         }
     }
 
-    pub fn mul_scalar(&self, scalar: f64) -> Self
+    pub fn mul_scalar(&self, scalar: &T) -> Self
     where
-        T: Mul<f64, Output = T> + Clone,
+        T: Mul<Output = T> + Clone,
     {
         Self {
-            x: self.x.clone() * scalar,
-            y: self.y.clone() * scalar,
+            x: self.x.clone() * scalar.clone(),
+            y: self.y.clone() * scalar.clone(),
         }
     }
 
-    pub fn div_scalar(&self, scalar: f64) -> Self
+    pub fn div_scalar(&self, scalar: &T) -> Self
     where
-        T: Div<f64, Output = T> + Clone,
+        T: Div<Output = T> + Clone,
     {
         Self {
-            x: self.x.clone() / scalar,
-            y: self.y.clone() / scalar,
+            x: self.x.clone() / scalar.clone(),
+            y: self.y.clone() / scalar.clone(),
         }
     }
 }
@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn test_point_mul_scalar() {
         let p = Point::new(2.0, 3.0);
-        let scaled = p.mul_scalar(2.5);
+        let scaled = p.mul_scalar(&2.5);
         assert_eq!(*scaled.x(), 5.0);
         assert_eq!(*scaled.y(), 7.5);
     }
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn test_point_div_scalar() {
         let p = Point::new(10.0, 20.0);
-        let divided = p.div_scalar(2.0);
+        let divided = p.div_scalar(&2.0);
         assert_eq!(*divided.x(), 5.0);
         assert_eq!(*divided.y(), 10.0);
     }
@@ -175,8 +175,8 @@ mod tests {
     #[test]
     fn test_point_precision_maintained() {
         let point = Point::new(1.0, 2.0);
-        let scaled = point.mul_scalar(3.0);
-        let divided = scaled.div_scalar(3.0);
+        let scaled = point.mul_scalar(&3.0);
+        let divided = scaled.div_scalar(&3.0);
         assert_eq!(*divided.x(), 1.0);
         assert_eq!(*divided.y(), 2.0);
     }

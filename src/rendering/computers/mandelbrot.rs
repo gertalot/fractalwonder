@@ -1,3 +1,4 @@
+use crate::rendering::numeric::ImageFloat;
 use crate::rendering::point_compute::ImagePointComputer;
 use crate::rendering::points::{Point, Rect};
 use crate::rendering::renderer_info::{RendererInfo, RendererInfoData};
@@ -25,45 +26,60 @@ fn calculate_max_iterations(zoom: f64) -> u32 {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct MandelbrotComputer {}
+pub struct MandelbrotComputer<T = f64> {
+    _phantom: std::marker::PhantomData<T>,
+}
 
-impl MandelbrotComputer {
+impl<T> MandelbrotComputer<T> {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            _phantom: std::marker::PhantomData,
+        }
     }
 }
 
-impl ImagePointComputer for MandelbrotComputer {
-    type Coord = f64;
+impl<T> ImagePointComputer for MandelbrotComputer<T>
+where
+    T: ImageFloat + From<f64>,
+{
+    type Scalar = T;
     type Data = MandelbrotData;
 
-    fn natural_bounds(&self) -> Rect<f64> {
+    fn natural_bounds(&self) -> Rect<T> {
         // Standard Mandelbrot viewing window: centered at origin, spans [-2.5, 1.0] x [-1.25, 1.25]
-        Rect::new(Point::new(-2.5, -1.25), Point::new(1.0, 1.25))
+        Rect::new(
+            Point::new(T::from_f64(-2.5), T::from_f64(-1.25)),
+            Point::new(T::from_f64(1.0), T::from_f64(1.25)),
+        )
     }
 
-    fn compute(&self, point: Point<f64>, viewport: &Viewport<f64>) -> MandelbrotData {
-        let cx = *point.x();
-        let cy = *point.y();
+    fn compute(&self, point: Point<T>, viewport: &Viewport<T>) -> MandelbrotData {
+        let cx = point.x().clone();
+        let cy = point.y().clone();
 
         let max_iterations = calculate_max_iterations(viewport.zoom);
 
-        let mut zx = 0.0;
-        let mut zy = 0.0;
+        let mut zx = T::from_f64(0.0);
+        let mut zy = T::from_f64(0.0);
+
+        let escape_radius_sq = T::from_f64(4.0);
 
         for i in 0..max_iterations {
-            let zx_sq = zx * zx;
-            let zy_sq = zy * zy;
+            let zx_sq = ImageFloat::mul(&zx, &zx);
+            let zy_sq = ImageFloat::mul(&zy, &zy);
 
-            if zx_sq + zy_sq > 4.0 {
+            let magnitude_sq = ImageFloat::add(&zx_sq, &zy_sq);
+            if ImageFloat::gt(&magnitude_sq, &escape_radius_sq) {
                 return MandelbrotData {
                     iterations: i,
                     escaped: true,
                 };
             }
 
-            let new_zx = zx_sq - zy_sq + cx;
-            let new_zy = 2.0 * zx * zy + cy;
+            let new_zx = ImageFloat::add(&ImageFloat::sub(&zx_sq, &zy_sq), &cx);
+            let two = T::from_f64(2.0);
+            let temp = ImageFloat::mul(&zx, &zy);
+            let new_zy = ImageFloat::add(&ImageFloat::mul(&temp, &two), &cy);
 
             zx = new_zx;
             zy = new_zy;
@@ -76,14 +92,21 @@ impl ImagePointComputer for MandelbrotComputer {
     }
 }
 
-impl RendererInfo for MandelbrotComputer {
-    type Coord = f64;
+impl<T> RendererInfo for MandelbrotComputer<T>
+where
+    T: ImageFloat + From<f64>,
+{
+    type Scalar = T;
 
-    fn info(&self, viewport: &Viewport<f64>) -> RendererInfoData {
+    fn info(&self, viewport: &Viewport<T>) -> RendererInfoData {
         let max_iterations = calculate_max_iterations(viewport.zoom);
         RendererInfoData {
-            name: "Mandelbrot".to_string(),
-            center_display: format!("{:.6}, {:.6}", viewport.center.x(), viewport.center.y()),
+            name: "Mandelbrot (Arbitrary Precision)".to_string(),
+            center_display: format!(
+                "{:.6}, {:.6}",
+                viewport.center.x().to_f64(),
+                viewport.center.y().to_f64()
+            ),
             zoom_display: format!("{:.2e}", viewport.zoom),
             custom_params: vec![("Max Iterations".to_string(), max_iterations.to_string())],
             render_time_ms: None,
@@ -94,6 +117,7 @@ impl RendererInfo for MandelbrotComputer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rendering::BigFloat;
 
     #[test]
     fn test_mandelbrot_point_in_set() {
@@ -113,5 +137,48 @@ mod tests {
         let result = computer.compute(point, &viewport);
         assert!(result.escaped);
         assert!(result.iterations < calculate_max_iterations(1.0));
+    }
+
+    #[test]
+    fn test_mandelbrot_with_bigfloat() {
+        // Test that Mandelbrot works with arbitrary precision
+        let computer: MandelbrotComputer<BigFloat> = MandelbrotComputer::new();
+        let point = Point::new(BigFloat::from_f64(0.0), BigFloat::from_f64(0.0));
+        let viewport = Viewport::new(
+            Point::new(BigFloat::from_f64(0.0), BigFloat::from_f64(0.0)),
+            1.0,
+        );
+        let result = computer.compute(point, &viewport);
+        assert!(!result.escaped);
+        assert_eq!(result.iterations, calculate_max_iterations(1.0));
+    }
+
+    #[test]
+    fn test_mandelbrot_bigfloat_outside_set() {
+        let computer: MandelbrotComputer<BigFloat> = MandelbrotComputer::new();
+        let point = Point::new(BigFloat::from_f64(2.0), BigFloat::from_f64(2.0));
+        let viewport = Viewport::new(
+            Point::new(BigFloat::from_f64(0.0), BigFloat::from_f64(0.0)),
+            1.0,
+        );
+        let result = computer.compute(point, &viewport);
+        assert!(result.escaped);
+        assert!(result.iterations < calculate_max_iterations(1.0));
+    }
+
+    #[test]
+    fn test_mandelbrot_bigfloat_boundary_point() {
+        // Test a point on the boundary of the Mandelbrot set
+        // Point (-0.75, 0.1) is close to the main cardioid
+        let computer: MandelbrotComputer<BigFloat> = MandelbrotComputer::new();
+        let point = Point::new(BigFloat::from_f64(-0.75), BigFloat::from_f64(0.1));
+        let viewport = Viewport::new(
+            Point::new(BigFloat::from_f64(0.0), BigFloat::from_f64(0.0)),
+            1.0,
+        );
+        let result = computer.compute(point, &viewport);
+
+        // This point should escape
+        assert!(result.escaped);
     }
 }

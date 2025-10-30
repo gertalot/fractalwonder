@@ -3,11 +3,11 @@ use crate::rendering::viewport::Viewport;
 /// Optional trait for renderers to expose displayable information to the UI.
 /// Combines viewport state with renderer-specific parameters.
 pub trait RendererInfo {
-    type Coord;
+    type Scalar;
 
     /// Returns current display information including viewport and custom parameters.
     /// Performance metrics (render_time_ms) are filled by InteractiveCanvas.
-    fn info(&self, viewport: &Viewport<Self::Coord>) -> RendererInfoData;
+    fn info(&self, viewport: &Viewport<Self::Scalar>) -> RendererInfoData;
 }
 
 /// Display information for UI overlay

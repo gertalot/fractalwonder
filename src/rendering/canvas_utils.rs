@@ -5,11 +5,11 @@ use web_sys::{CanvasRenderingContext2d, ContextAttributes2d, HtmlCanvasElement, 
 pub fn render_with_viewport<R>(
     canvas: &HtmlCanvasElement,
     renderer: &R,
-    viewport: &Viewport<R::Coord>,
+    viewport: &Viewport<R::Scalar>,
     colorizer: Colorizer<R::Data>,
 ) where
     R: Renderer,
-    R::Coord: Clone,
+    R::Scalar: Clone,
 {
     let width = canvas.width();
     let height = canvas.height();
@@ -61,7 +61,7 @@ mod tests {
     }
 
     impl Renderer for MockRenderer {
-        type Coord = f64;
+        type Scalar = f64;
         type Data = MockData;
 
         fn natural_bounds(&self) -> Rect<f64> {

@@ -30,7 +30,7 @@ impl Default for CachedState {
 
 /// Canvas renderer with tiling, progressive rendering, and caching
 pub struct TilingCanvasRenderer {
-    renderer: Box<dyn Renderer<Coord = f64, Data = AppData>>,
+    renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>>,
     colorizer: Colorizer<AppData>,
     tile_size: u32,
     cached_state: Arc<Mutex<CachedState>>,
@@ -38,7 +38,7 @@ pub struct TilingCanvasRenderer {
 
 impl TilingCanvasRenderer {
     pub fn new(
-        renderer: Box<dyn Renderer<Coord = f64, Data = AppData>>,
+        renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>>,
         colorizer: Colorizer<AppData>,
         tile_size: u32,
     ) -> Self {
@@ -50,7 +50,7 @@ impl TilingCanvasRenderer {
         }
     }
 
-    pub fn set_renderer(&mut self, renderer: Box<dyn Renderer<Coord = f64, Data = AppData>>) {
+    pub fn set_renderer(&mut self, renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>>) {
         self.renderer = renderer;
         self.clear_cache();
     }
@@ -264,7 +264,7 @@ impl TilingCanvasRenderer {
 }
 
 impl CanvasRenderer for TilingCanvasRenderer {
-    fn set_renderer(&mut self, renderer: Box<dyn Renderer<Coord = f64, Data = AppData>>) {
+    fn set_renderer(&mut self, renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>>) {
         self.set_renderer(renderer);
     }
 

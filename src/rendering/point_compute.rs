@@ -6,14 +6,14 @@ use crate::rendering::viewport::Viewport;
 /// This is the lowest-level rendering abstraction - pure computation with no loops.
 /// Typically wrapped by PixelRenderer which adds the pixel iteration logic.
 pub trait ImagePointComputer {
-    /// Coordinate type for image space
-    type Coord;
+    /// Scalar numeric type for image-space coordinates (f64, BigFloat, etc.)
+    type Scalar;
 
     /// Data type output (NOT colors - will be colorized later)
     type Data: Clone;
 
     /// Natural bounds of the image in image-space coordinates
-    fn natural_bounds(&self) -> Rect<Self::Coord>;
+    fn natural_bounds(&self) -> Rect<Self::Scalar>;
 
     /// Compute data for a single point in image space
     ///
@@ -23,7 +23,7 @@ pub trait ImagePointComputer {
     ///
     /// # Returns
     /// Computation data (not RGBA - colorizer converts to colors)
-    fn compute(&self, coord: Point<Self::Coord>, viewport: &Viewport<Self::Coord>) -> Self::Data;
+    fn compute(&self, coord: Point<Self::Scalar>, viewport: &Viewport<Self::Scalar>) -> Self::Data;
 }
 
 #[cfg(test)]
@@ -36,7 +36,7 @@ mod tests {
     }
 
     impl ImagePointComputer for SolidColorCompute {
-        type Coord = f64;
+        type Scalar = f64;
         type Data = (u8, u8, u8, u8); // For tests, Data = RGBA
 
         fn natural_bounds(&self) -> Rect<f64> {

@@ -10,7 +10,7 @@ use web_sys::HtmlCanvasElement;
 /// - Future: SimpleCanvasRenderer, OffscreenCanvasRenderer, etc.
 pub trait CanvasRenderer {
     /// Swap the renderer at runtime (invalidates cache)
-    fn set_renderer(&mut self, renderer: Box<dyn Renderer<Coord = f64, Data = AppData>>);
+    fn set_renderer(&mut self, renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>>);
 
     /// Swap the colorizer at runtime (preserves cache if implementation supports it)
     fn set_colorizer(&mut self, colorizer: Colorizer<AppData>);

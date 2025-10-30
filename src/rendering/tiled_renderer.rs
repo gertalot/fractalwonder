@@ -19,18 +19,18 @@ impl<R: Renderer> TiledRenderer<R> {
 impl<R> Renderer for TiledRenderer<R>
 where
     R: Renderer,
-    R::Coord: Clone,
+    R::Scalar: Clone,
 {
-    type Coord = R::Coord;
+    type Scalar = R::Scalar;
     type Data = R::Data;
 
-    fn natural_bounds(&self) -> Rect<Self::Coord> {
+    fn natural_bounds(&self) -> Rect<Self::Scalar> {
         self.inner.natural_bounds()
     }
 
     fn render(
         &self,
-        viewport: &Viewport<Self::Coord>,
+        viewport: &Viewport<Self::Scalar>,
         pixel_rect: PixelRect,
         canvas_size: (u32, u32),
     ) -> Vec<Self::Data> {
@@ -85,7 +85,7 @@ mod tests {
     }
 
     impl ImagePointComputer for SolidColorCompute {
-        type Coord = f64;
+        type Scalar = f64;
         type Data = ColorData;
 
         fn natural_bounds(&self) -> Rect<f64> {

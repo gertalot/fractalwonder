@@ -57,7 +57,7 @@ impl TestImageComputer {
 }
 
 impl ImagePointComputer for TestImageComputer {
-    type Coord = f64;
+    type Scalar = f64;
     type Data = TestImageData;
 
     fn natural_bounds(&self) -> Rect<f64> {
@@ -70,7 +70,7 @@ impl ImagePointComputer for TestImageComputer {
 }
 
 impl RendererInfo for TestImageComputer {
-    type Coord = f64;
+    type Scalar = f64;
 
     fn info(&self, viewport: &Viewport<f64>) -> RendererInfoData {
         RendererInfoData {

@@ -41,19 +41,19 @@ where
 impl<R, F> Renderer for AppDataRenderer<R, F>
 where
     R: Renderer,
-    R::Coord: Clone,
+    R::Scalar: Clone,
     F: Fn(&R::Data) -> AppData + Clone,
 {
-    type Coord = R::Coord;
+    type Scalar = R::Scalar;
     type Data = AppData;
 
-    fn natural_bounds(&self) -> Rect<Self::Coord> {
+    fn natural_bounds(&self) -> Rect<Self::Scalar> {
         self.renderer.natural_bounds()
     }
 
     fn render(
         &self,
-        viewport: &Viewport<Self::Coord>,
+        viewport: &Viewport<Self::Scalar>,
         pixel_rect: PixelRect,
         canvas_size: (u32, u32),
     ) -> Vec<AppData> {
@@ -72,7 +72,7 @@ mod tests {
     struct DummyComputer;
 
     impl ImagePointComputer for DummyComputer {
-        type Coord = f64;
+        type Scalar = f64;
         type Data = TestImageData;
 
         fn natural_bounds(&self) -> Rect<f64> {

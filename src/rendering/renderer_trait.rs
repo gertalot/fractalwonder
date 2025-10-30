@@ -4,14 +4,14 @@ use crate::rendering::{points::Rect, viewport::Viewport, PixelRect};
 ///
 /// Implementations can be composed (e.g., TiledRenderer wrapping PixelRenderer)
 pub trait Renderer {
-    /// Coordinate type for image space (f64, rug::Float, etc.)
-    type Coord;
+    /// Scalar numeric type for image-space coordinates (f64, BigFloat, etc.)
+    type Scalar;
 
     /// Data type output (NOT colors - will be colorized later)
     type Data: Clone;
 
     /// Natural bounds of the image in image-space coordinates
-    fn natural_bounds(&self) -> Rect<Self::Coord>;
+    fn natural_bounds(&self) -> Rect<Self::Scalar>;
 
     /// Render data for pixels in a given viewport and pixel rectangle
     ///
@@ -24,7 +24,7 @@ pub trait Renderer {
     /// Data for the specified pixel_rect (length = width * height)
     fn render(
         &self,
-        viewport: &Viewport<Self::Coord>,
+        viewport: &Viewport<Self::Scalar>,
         pixel_rect: PixelRect,
         canvas_size: (u32, u32),
     ) -> Vec<Self::Data>;

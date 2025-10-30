@@ -16,6 +16,8 @@ js-sys = "0.3"
 wasm-bindgen-futures = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+dashu = "0.4"
+dashu-float = "0.4"
 
 [dependencies.web-sys]
 version = "0.3"
