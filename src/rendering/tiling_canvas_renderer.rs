@@ -10,14 +10,14 @@ use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
 /// Cached rendering state
-struct CachedState {
-    viewport: Option<Viewport<f64>>,
+struct CachedState<S, D: Clone> {
+    viewport: Option<Viewport<S>>,
     canvas_size: Option<(u32, u32)>,
-    data: Vec<AppData>,
+    data: Vec<D>,
     render_id: AtomicU32,
 }
 
-impl Default for CachedState {
+impl<S, D: Clone> Default for CachedState<S, D> {
     fn default() -> Self {
         Self {
             viewport: None,
@@ -29,17 +29,17 @@ impl Default for CachedState {
 }
 
 /// Canvas renderer with tiling, progressive rendering, and caching
-pub struct TilingCanvasRenderer {
-    renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>>,
-    colorizer: Colorizer<AppData>,
+pub struct TilingCanvasRenderer<S, D: Clone> {
+    renderer: Box<dyn Renderer<Scalar = S, Data = D>>,
+    colorizer: Colorizer<D>,
     tile_size: u32,
-    cached_state: Arc<Mutex<CachedState>>,
+    cached_state: Arc<Mutex<CachedState<S, D>>>,
 }
 
-impl TilingCanvasRenderer {
+impl<S: Clone + PartialEq, D: Clone + Default> TilingCanvasRenderer<S, D> {
     pub fn new(
-        renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>>,
-        colorizer: Colorizer<AppData>,
+        renderer: Box<dyn Renderer<Scalar = S, Data = D>>,
+        colorizer: Colorizer<D>,
         tile_size: u32,
     ) -> Self {
         Self {
@@ -50,12 +50,12 @@ impl TilingCanvasRenderer {
         }
     }
 
-    pub fn set_renderer(&mut self, renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>>) {
+    pub fn set_renderer(&mut self, renderer: Box<dyn Renderer<Scalar = S, Data = D>>) {
         self.renderer = renderer;
         self.clear_cache();
     }
 
-    pub fn set_colorizer(&mut self, colorizer: Colorizer<AppData>) {
+    pub fn set_colorizer(&mut self, colorizer: Colorizer<D>) {
         self.colorizer = colorizer;
         // Cache preserved!
     }
@@ -67,7 +67,7 @@ impl TilingCanvasRenderer {
         cache.data.clear();
     }
 
-    pub fn natural_bounds(&self) -> Rect<f64> {
+    pub fn natural_bounds(&self) -> Rect<S> {
         self.renderer.natural_bounds()
     }
 
@@ -78,7 +78,7 @@ impl TilingCanvasRenderer {
     }
 
     /// Main render entry point
-    pub fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement) {
+    pub fn render(&self, viewport: &Viewport<S>, canvas: &HtmlCanvasElement) {
         let width = canvas.width();
         let height = canvas.height();
         let mut cache = self.cached_state.lock().unwrap();
@@ -112,9 +112,9 @@ impl TilingCanvasRenderer {
 
     fn render_with_computation(
         &self,
-        viewport: &Viewport<f64>,
+        viewport: &Viewport<S>,
         canvas: &HtmlCanvasElement,
-        cache: &mut CachedState,
+        cache: &mut CachedState<S, D>,
         render_id: u32,
     ) {
         let width = canvas.width();
@@ -124,7 +124,7 @@ impl TilingCanvasRenderer {
         cache.data.clear();
         cache
             .data
-            .resize((width * height) as usize, AppData::default());
+            .resize((width * height) as usize, D::default());
 
         // Progressive tiled rendering
         for tile_rect in compute_tiles(width, height, self.tile_size) {
@@ -200,7 +200,7 @@ impl TilingCanvasRenderer {
 
     fn colorize_and_display_tile(
         &self,
-        data: &[AppData],
+        data: &[D],
         rect: PixelRect,
         canvas: &HtmlCanvasElement,
     ) {
@@ -263,20 +263,23 @@ impl TilingCanvasRenderer {
     }
 }
 
-impl CanvasRenderer for TilingCanvasRenderer {
-    fn set_renderer(&mut self, renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>>) {
+impl<S: Clone + PartialEq, D: Clone + Default> CanvasRenderer for TilingCanvasRenderer<S, D> {
+    type Scalar = S;
+    type Data = D;
+
+    fn set_renderer(&mut self, renderer: Box<dyn Renderer<Scalar = S, Data = D>>) {
         self.set_renderer(renderer);
     }
 
-    fn set_colorizer(&mut self, colorizer: Colorizer<AppData>) {
+    fn set_colorizer(&mut self, colorizer: Colorizer<D>) {
         self.set_colorizer(colorizer);
     }
 
-    fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement) {
+    fn render(&self, viewport: &Viewport<S>, canvas: &HtmlCanvasElement) {
         self.render(viewport, canvas);
     }
 
-    fn natural_bounds(&self) -> Rect<f64> {
+    fn natural_bounds(&self) -> Rect<S> {
         self.natural_bounds()
     }
 
