@@ -56,6 +56,7 @@ mod tests {
     }
 
     // Mock renderer for testing
+    #[derive(Clone)]
     struct MockRenderer {
         color: (u8, u8, u8, u8),
     }

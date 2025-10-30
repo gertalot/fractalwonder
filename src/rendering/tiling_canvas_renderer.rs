@@ -1,6 +1,6 @@
 use crate::rendering::{
     canvas_renderer::CanvasRenderer, points::Rect, renderer_trait::Renderer, viewport::Viewport,
-    AppData, Colorizer, PixelRect,
+    Colorizer, PixelRect,
 };
 use std::sync::{
     atomic::{AtomicU32, Ordering},
@@ -34,6 +34,17 @@ pub struct TilingCanvasRenderer<S, D: Clone> {
     colorizer: Colorizer<D>,
     tile_size: u32,
     cached_state: Arc<Mutex<CachedState<S, D>>>,
+}
+
+impl<S, D: Clone> Clone for TilingCanvasRenderer<S, D> {
+    fn clone(&self) -> Self {
+        Self {
+            renderer: dyn_clone::clone_box(&*self.renderer),
+            colorizer: self.colorizer,
+            tile_size: self.tile_size,
+            cached_state: Arc::clone(&self.cached_state),
+        }
+    }
 }
 
 impl<S: Clone + PartialEq, D: Clone + Default> TilingCanvasRenderer<S, D> {
@@ -122,9 +133,7 @@ impl<S: Clone + PartialEq, D: Clone + Default> TilingCanvasRenderer<S, D> {
 
         // Pre-allocate cache in raster order (row-by-row)
         cache.data.clear();
-        cache
-            .data
-            .resize((width * height) as usize, D::default());
+        cache.data.resize((width * height) as usize, D::default());
 
         // Progressive tiled rendering
         for tile_rect in compute_tiles(width, height, self.tile_size) {
@@ -198,12 +207,7 @@ impl<S: Clone + PartialEq, D: Clone + Default> TilingCanvasRenderer<S, D> {
         self.colorize_and_display_tile(&cache.data, full_rect, canvas);
     }
 
-    fn colorize_and_display_tile(
-        &self,
-        data: &[D],
-        rect: PixelRect,
-        canvas: &HtmlCanvasElement,
-    ) {
+    fn colorize_and_display_tile(&self, data: &[D], rect: PixelRect, canvas: &HtmlCanvasElement) {
         // Verify data length matches rect dimensions
         let expected_pixels = (rect.width * rect.height) as usize;
         if data.len() != expected_pixels {

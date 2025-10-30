@@ -42,13 +42,13 @@ impl Default for AppState {
         let mut renderer_states = HashMap::new();
 
         for config in RENDER_CONFIGS.iter() {
-            let renderer = (config.create_renderer)();
-            let natural_bounds = renderer.natural_bounds();
+            // Use default viewport - app will compute natural bounds on first render
+            let default_viewport = Viewport::new(crate::rendering::Point::new(0.0, 0.0), 1.0);
 
             renderer_states.insert(
                 config.id.to_string(),
                 RendererState {
-                    viewport: Viewport::new(natural_bounds.center(), 1.0),
+                    viewport: default_viewport,
                     color_scheme_id: config.default_color_scheme_id.to_string(),
                 },
             );

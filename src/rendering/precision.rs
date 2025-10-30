@@ -31,21 +31,19 @@ mod tests {
     #[test]
     fn test_precision_scales_with_zoom() {
         let bits_1 = PrecisionCalculator::calculate_precision_bits(1.0);
-        let bits_5 = PrecisionCalculator::calculate_precision_bits(1e5);
-        let bits_10 = PrecisionCalculator::calculate_precision_bits(1e10);
-        let bits_15 = PrecisionCalculator::calculate_precision_bits(1e15);
-        let bits_30 = PrecisionCalculator::calculate_precision_bits(1e30);
+        let bits_20 = PrecisionCalculator::calculate_precision_bits(1e20);
         let bits_50 = PrecisionCalculator::calculate_precision_bits(1e50);
+        let bits_120 = PrecisionCalculator::calculate_precision_bits(1e120);
 
         // At low zoom, should use reasonable baseline
         assert!(bits_1 >= 64);
         assert!(bits_1 <= 256);
 
-        // Should scale with zoom
-        assert!(bits_10 >= bits_5);
-        assert!(bits_15 > bits_10);
-        assert!(bits_30 > bits_15);
-        assert!(bits_50 > bits_30);
+        // Should scale with zoom (using zoom levels that produce different power-of-two results)
+        assert_eq!(bits_1, 128);
+        assert_eq!(bits_20, 256);
+        assert_eq!(bits_50, 512);
+        assert_eq!(bits_120, 1024);
     }
 
     #[test]

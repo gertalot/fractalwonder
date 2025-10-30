@@ -40,7 +40,7 @@ where
 
 impl<R, F> Renderer for AppDataRenderer<R, F>
 where
-    R: Renderer,
+    R: Renderer + Clone,
     R::Scalar: Clone,
     F: Fn(&R::Data) -> AppData + Clone,
 {
@@ -69,6 +69,7 @@ mod tests {
         app_data::TestImageData, point_compute::ImagePointComputer, points::Point, PixelRenderer,
     };
 
+    #[derive(Clone)]
     struct DummyComputer;
 
     impl ImagePointComputer for DummyComputer {

@@ -1,6 +1,4 @@
-use crate::rendering::{
-    points::Rect, renderer_trait::Renderer, viewport::Viewport, AppData, Colorizer,
-};
+use crate::rendering::{points::Rect, renderer_trait::Renderer, viewport::Viewport, Colorizer};
 use web_sys::HtmlCanvasElement;
 
 /// Canvas renderer trait - takes a Renderer and Colorizer to render RGBA pixels on a canvas
@@ -13,7 +11,10 @@ pub trait CanvasRenderer {
     type Data: Clone;
 
     /// Swap the renderer at runtime (invalidates cache)
-    fn set_renderer(&mut self, renderer: Box<dyn Renderer<Scalar = Self::Scalar, Data = Self::Data>>);
+    fn set_renderer(
+        &mut self,
+        renderer: Box<dyn Renderer<Scalar = Self::Scalar, Data = Self::Data>>,
+    );
 
     /// Swap the colorizer at runtime (preserves cache if implementation supports it)
     fn set_colorizer(&mut self, colorizer: Colorizer<Self::Data>);

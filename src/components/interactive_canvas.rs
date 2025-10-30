@@ -1,11 +1,17 @@
 use crate::hooks::use_canvas_interaction::use_canvas_interaction;
-use crate::rendering::{points::Rect, viewport::Viewport, CanvasRenderer};
+use crate::rendering::{points::Rect, viewport::Viewport};
 use leptos::*;
 use wasm_bindgen::JsCast;
+use web_sys::HtmlCanvasElement;
+
+pub trait CanvasRendererTrait {
+    fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement);
+    fn cancel_render(&self);
+}
 
 #[component]
-pub fn InteractiveCanvas(
-    canvas_renderer: RwSignal<Box<dyn CanvasRenderer>>,
+pub fn InteractiveCanvas<CR: 'static + CanvasRendererTrait + Clone>(
+    canvas_renderer: RwSignal<CR>,
     viewport: ReadSignal<Viewport<f64>>,
     set_viewport: WriteSignal<Viewport<f64>>,
     set_render_time_ms: WriteSignal<Option<f64>>,

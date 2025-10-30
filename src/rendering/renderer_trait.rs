@@ -3,7 +3,7 @@ use crate::rendering::{points::Rect, viewport::Viewport, PixelRect};
 /// Core trait for rendering pixel data given viewport and pixel-space dimensions
 ///
 /// Implementations can be composed (e.g., TiledRenderer wrapping PixelRenderer)
-pub trait Renderer {
+pub trait Renderer: dyn_clone::DynClone {
     /// Scalar numeric type for image-space coordinates (f64, BigFloat, etc.)
     type Scalar;
 
@@ -29,3 +29,5 @@ pub trait Renderer {
         canvas_size: (u32, u32),
     ) -> Vec<Self::Data>;
 }
+
+dyn_clone::clone_trait_object!(<S, D> Renderer<Scalar = S, Data = D>);

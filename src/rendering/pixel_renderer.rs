@@ -26,7 +26,7 @@ impl<C: ImagePointComputer> PixelRenderer<C> {
 
 impl<C> Renderer for PixelRenderer<C>
 where
-    C: ImagePointComputer,
+    C: ImagePointComputer + Clone,
     C::Scalar: Clone
         + std::ops::Sub<Output = C::Scalar>
         + std::ops::Add<Output = C::Scalar>
@@ -94,6 +94,7 @@ mod tests {
     use super::*;
     use crate::rendering::points::Point;
 
+    #[derive(Clone)]
     struct TestCompute;
 
     impl ImagePointComputer for TestCompute {

@@ -18,7 +18,7 @@ impl<R: Renderer> TiledRenderer<R> {
 
 impl<R> Renderer for TiledRenderer<R>
 where
-    R: Renderer,
+    R: Renderer + Clone,
     R::Scalar: Clone,
 {
     type Scalar = R::Scalar;

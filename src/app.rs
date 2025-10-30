@@ -1,13 +1,101 @@
-use crate::components::interactive_canvas::InteractiveCanvas;
+use crate::components::interactive_canvas::{CanvasRendererTrait, InteractiveCanvas};
 use crate::components::ui::UI;
 use crate::hooks::fullscreen::toggle_fullscreen;
 use crate::hooks::ui_visibility::use_ui_visibility;
 use crate::rendering::{
-    get_color_scheme, get_config, CanvasRenderer, TilingCanvasRenderer, Viewport, RENDER_CONFIGS,
+    get_color_scheme, get_config, AppData, AppDataRenderer, BigFloat, Colorizer,
+    MandelbrotComputer, PixelRenderer, Point, PrecisionCalculator, Rect, Renderer,
+    TestImageComputer, TilingCanvasRenderer, ToF64, Viewport, RENDER_CONFIGS,
 };
 use crate::state::AppState;
 use leptos::*;
 use std::time::Duration;
+use web_sys::HtmlCanvasElement;
+
+#[derive(Clone)]
+enum CanvasRendererHolder {
+    F64(TilingCanvasRenderer<f64, AppData>),
+    BigFloat(TilingCanvasRenderer<BigFloat, AppData>),
+}
+
+impl CanvasRendererHolder {
+    fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement) {
+        match self {
+            CanvasRendererHolder::F64(r) => r.render(viewport, canvas),
+            CanvasRendererHolder::BigFloat(r) => {
+                // Convert f64 viewport to BigFloat viewport
+                let precision_bits = PrecisionCalculator::calculate_precision_bits(viewport.zoom);
+                let viewport_big = Viewport::new(
+                    Point::new(
+                        BigFloat::with_precision(*viewport.center.x(), precision_bits),
+                        BigFloat::with_precision(*viewport.center.y(), precision_bits),
+                    ),
+                    viewport.zoom,
+                );
+                r.render(&viewport_big, canvas)
+            }
+        }
+    }
+
+    fn natural_bounds(&self) -> Rect<f64> {
+        match self {
+            CanvasRendererHolder::F64(r) => r.natural_bounds(),
+            CanvasRendererHolder::BigFloat(r) => {
+                let bounds = r.natural_bounds();
+                Rect::new(
+                    Point::new(bounds.min.x().to_f64(), bounds.min.y().to_f64()),
+                    Point::new(bounds.max.x().to_f64(), bounds.max.y().to_f64()),
+                )
+            }
+        }
+    }
+
+    fn set_colorizer(&mut self, colorizer: Colorizer<AppData>) {
+        match self {
+            CanvasRendererHolder::F64(r) => r.set_colorizer(colorizer),
+            CanvasRendererHolder::BigFloat(r) => r.set_colorizer(colorizer),
+        }
+    }
+
+    fn cancel_render(&self) {
+        match self {
+            CanvasRendererHolder::F64(r) => r.cancel_render(),
+            CanvasRendererHolder::BigFloat(r) => r.cancel_render(),
+        }
+    }
+}
+
+impl CanvasRendererTrait for CanvasRendererHolder {
+    fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement) {
+        self.render(viewport, canvas)
+    }
+
+    fn cancel_render(&self) {
+        self.cancel_render()
+    }
+}
+
+fn create_mandelbrot_canvas_renderer(
+    _zoom: f64,
+    colorizer: Colorizer<AppData>,
+) -> TilingCanvasRenderer<BigFloat, AppData> {
+    let computer = MandelbrotComputer::<BigFloat>::new();
+    let pixel_renderer = PixelRenderer::new(computer);
+    let app_renderer = AppDataRenderer::new(pixel_renderer, |d| AppData::MandelbrotData(*d));
+    let renderer: Box<dyn Renderer<Scalar = BigFloat, Data = AppData>> = Box::new(app_renderer);
+    TilingCanvasRenderer::new(renderer, colorizer, 128)
+}
+
+fn create_test_image_canvas_renderer(
+    _zoom: f64,
+    colorizer: Colorizer<AppData>,
+) -> TilingCanvasRenderer<f64, AppData> {
+    let computer = TestImageComputer::new();
+    let pixel_renderer = PixelRenderer::new(computer);
+    let app_renderer = AppDataRenderer::new(pixel_renderer, |d| AppData::TestImageData(*d));
+    let renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>> = Box::new(app_renderer);
+    TilingCanvasRenderer::new(renderer, colorizer, 128)
+}
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -28,18 +116,27 @@ pub fn App() -> impl IntoView {
     let (renderer_states, set_renderer_states) = create_signal(initial_state.renderer_states);
 
     // ========== Create initial renderer ==========
-    let initial_renderer = (initial_config.create_renderer)();
     let initial_colorizer =
         get_color_scheme(initial_config, &initial_renderer_state.color_scheme_id)
             .unwrap()
             .colorizer;
 
+    let initial_canvas_renderer = match initial_state.selected_renderer_id.as_str() {
+        "mandelbrot" => CanvasRendererHolder::BigFloat(create_mandelbrot_canvas_renderer(
+            initial_renderer_state.viewport.zoom,
+            initial_colorizer,
+        )),
+        "test_image" => CanvasRendererHolder::F64(create_test_image_canvas_renderer(
+            initial_renderer_state.viewport.zoom,
+            initial_colorizer,
+        )),
+        _ => panic!("Unknown renderer: {}", initial_state.selected_renderer_id),
+    };
+
     let (viewport, set_viewport) = create_signal(initial_renderer_state.viewport.clone());
 
     // ========== Canvas renderer with cache ==========
-    let canvas_renderer: RwSignal<Box<dyn CanvasRenderer>> = create_rw_signal(Box::new(
-        TilingCanvasRenderer::new(initial_renderer, initial_colorizer, 128),
-    ));
+    let canvas_renderer: RwSignal<CanvasRendererHolder> = create_rw_signal(initial_canvas_renderer);
 
     // ========== Natural bounds - reactive to renderer changes ==========
     let natural_bounds = create_memo(move |_| canvas_renderer.with(|cr| cr.natural_bounds()));
@@ -84,19 +181,26 @@ pub fn App() -> impl IntoView {
         let states = renderer_states.get_untracked();
         let state = states.get(&new_renderer_id).unwrap();
 
-        // Create new renderer
-        let new_renderer = (config.create_renderer)();
-
         // Find colorizer for restored color scheme
         let colorizer = get_color_scheme(config, &state.color_scheme_id)
             .unwrap()
             .colorizer;
 
-        // Update canvas renderer (invalidates cache)
-        canvas_renderer.update(|cr| {
-            cr.set_renderer(new_renderer);
-            cr.set_colorizer(colorizer);
-        });
+        // Create new canvas renderer
+        let new_canvas_renderer = match new_renderer_id.as_str() {
+            "mandelbrot" => CanvasRendererHolder::BigFloat(create_mandelbrot_canvas_renderer(
+                state.viewport.zoom,
+                colorizer,
+            )),
+            "test_image" => CanvasRendererHolder::F64(create_test_image_canvas_renderer(
+                state.viewport.zoom,
+                colorizer,
+            )),
+            _ => panic!("Unknown renderer: {}", new_renderer_id),
+        };
+
+        // Swap renderer
+        canvas_renderer.set(new_canvas_renderer);
 
         // Restore viewport (untracked to avoid circular effects)
         set_viewport.set_untracked(state.viewport.clone());
