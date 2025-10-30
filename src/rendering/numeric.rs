@@ -2,42 +2,12 @@ use dashu_float::FBig;
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Sub};
 
-/// Trait for numeric types that can be used as coordinates in image space.
-/// This includes both standard floating point (f64) and arbitrary precision types.
-pub trait ImageFloat:
-    Clone
-    + Debug
-    + PartialOrd
-    + Add<Output = Self>
-    + Sub<Output = Self>
-    + Mul<Output = Self>
-    + Div<Output = Self>
-    + Mul<f64, Output = Self>
-    + Div<f64, Output = Self>
-{
-    /// Create from an f64 value
-    fn from_f64(val: f64) -> Self;
-
-    /// Create from an i32 value
-    fn from_i32(val: i32) -> Self;
-
-    /// Convert to f64 (may lose precision)
+/// Trait for converting numeric types to f64 for display purposes.
+/// This is the ONLY non-standard trait we need - everything else uses
+/// standard Rust operators (Add, Sub, Mul, Div, From<f64>, PartialOrd).
+pub trait ToF64 {
+    /// Convert to f64 (may lose precision for arbitrary precision types)
     fn to_f64(&self) -> f64;
-
-    /// Multiply by another value of the same type
-    fn mul(&self, other: &Self) -> Self;
-
-    /// Add another value of the same type
-    fn add(&self, other: &Self) -> Self;
-
-    /// Subtract another value of the same type
-    fn sub(&self, other: &Self) -> Self;
-
-    /// Divide by another value of the same type
-    fn div(&self, other: &Self) -> Self;
-
-    /// Check if greater than another value
-    fn gt(&self, other: &Self) -> bool;
 }
 
 /// Arbitrary precision floating point number type for deep zoom calculations.
@@ -64,6 +34,11 @@ impl BigFloat {
             value,
             precision_bits,
         }
+    }
+
+    /// Create from f64 with default precision (256 bits)
+    pub fn from_f64(val: f64) -> Self {
+        Self::with_precision(val, 256)
     }
 
     /// Get the precision in bits
@@ -147,77 +122,15 @@ impl From<f64> for BigFloat {
     }
 }
 
-impl ImageFloat for BigFloat {
-    fn from_f64(val: f64) -> Self {
-        // Default to 256 bits of precision (about 77 decimal digits)
-        Self::with_precision(val, 256)
-    }
-
-    fn from_i32(val: i32) -> Self {
-        Self::from_f64(val as f64)
-    }
-
+impl ToF64 for BigFloat {
     fn to_f64(&self) -> f64 {
         self.value.to_f64().value()
     }
-
-    fn mul(&self, other: &Self) -> Self {
-        let precision = self.precision_bits.max(other.precision_bits);
-        BigFloat::from_fbig(&self.value * &other.value, precision)
-    }
-
-    fn add(&self, other: &Self) -> Self {
-        let precision = self.precision_bits.max(other.precision_bits);
-        BigFloat::from_fbig(&self.value + &other.value, precision)
-    }
-
-    fn sub(&self, other: &Self) -> Self {
-        let precision = self.precision_bits.max(other.precision_bits);
-        BigFloat::from_fbig(&self.value - &other.value, precision)
-    }
-
-    fn div(&self, other: &Self) -> Self {
-        let precision = self.precision_bits.max(other.precision_bits);
-        BigFloat::from_fbig(&self.value / &other.value, precision)
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        self.value > other.value
-    }
 }
 
-/// Implementation for standard f64
-impl ImageFloat for f64 {
-    fn from_f64(val: f64) -> Self {
-        val
-    }
-
-    fn from_i32(val: i32) -> Self {
-        val as f64
-    }
-
+impl ToF64 for f64 {
     fn to_f64(&self) -> f64 {
         *self
-    }
-
-    fn mul(&self, other: &Self) -> Self {
-        self * other
-    }
-
-    fn add(&self, other: &Self) -> Self {
-        self + other
-    }
-
-    fn sub(&self, other: &Self) -> Self {
-        self - other
-    }
-
-    fn div(&self, other: &Self) -> Self {
-        self / other
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        self > other
     }
 }
 
@@ -226,21 +139,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_f64_image_float() {
-        let a = f64::from_f64(2.5);
-        let b = f64::from_f64(1.5);
-
-        assert_eq!(ImageFloat::add(&a, &b), 4.0);
-        assert_eq!(ImageFloat::sub(&a, &b), 1.0);
-        assert_eq!(ImageFloat::mul(&a, &b), 3.75);
-        assert_eq!(ImageFloat::div(&a, &b), 2.5 / 1.5);
-        assert!(ImageFloat::gt(&a, &b));
-    }
-
-    #[test]
-    fn test_f64_from_i32() {
-        let val = f64::from_i32(42);
-        assert_eq!(val, 42.0);
+    fn test_f64_to_f64() {
+        let val: f64 = 42.5;
+        assert_eq!(val.to_f64(), 42.5);
     }
 
     #[test]
@@ -255,16 +156,16 @@ mod tests {
         let a = BigFloat::from_f64(2.5);
         let b = BigFloat::from_f64(1.5);
 
-        let sum = ImageFloat::add(&a, &b);
+        let sum = a.clone() + b.clone();
         assert!((sum.to_f64() - 4.0).abs() < 1e-10);
 
-        let diff = ImageFloat::sub(&a, &b);
+        let diff = a.clone() - b.clone();
         assert!((diff.to_f64() - 1.0).abs() < 1e-10);
 
-        let prod = ImageFloat::mul(&a, &b);
+        let prod = a.clone() * b.clone();
         assert!((prod.to_f64() - 3.75).abs() < 1e-10);
 
-        let quot = ImageFloat::div(&a, &b);
+        let quot = a / b;
         assert!((quot.to_f64() - (2.5 / 1.5)).abs() < 1e-10);
     }
 
@@ -273,8 +174,8 @@ mod tests {
         let a = BigFloat::from_f64(2.5);
         let b = BigFloat::from_f64(1.5);
 
-        assert!(ImageFloat::gt(&a, &b));
-        assert!(!ImageFloat::gt(&b, &a));
+        assert!(a > b);
+        assert!(b < a);
     }
 
     #[test]
@@ -295,10 +196,21 @@ mod tests {
         let c = BigFloat::with_precision(0.3, 256);
 
         // This is a classic example where f64 can have rounding errors
-        let sum = ImageFloat::add(&ImageFloat::add(&a, &b), &c);
+        let sum = (a + b) + c;
 
         // The result should be very close to 0.6
         // With high precision, we should get better accuracy than f64
         assert!((sum.to_f64() - 0.6).abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_to_f64_trait() {
+        // Test that f64 converts to itself
+        let val_f64: f64 = 42.5;
+        assert_eq!(val_f64.to_f64(), 42.5);
+
+        // Test that BigFloat converts to f64
+        let val_big = BigFloat::with_precision(42.5, 128);
+        assert!((val_big.to_f64() - 42.5).abs() < 1e-10);
     }
 }

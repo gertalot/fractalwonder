@@ -23,7 +23,7 @@ pub use canvas_renderer::CanvasRenderer;
 pub use canvas_utils::render_with_viewport;
 pub use colorizers::{test_image_default_colorizer, Colorizer};
 pub use computers::{MandelbrotComputer, TestImageComputer};
-pub use numeric::{BigFloat, ImageFloat};
+pub use numeric::{BigFloat, ToF64};
 pub use pixel_rect::PixelRect;
 pub use pixel_renderer::PixelRenderer;
 pub use point_compute::ImagePointComputer;

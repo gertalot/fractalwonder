@@ -1,4 +1,4 @@
-use crate::rendering::numeric::ImageFloat;
+use crate::rendering::numeric::ToF64;
 use crate::rendering::point_compute::ImagePointComputer;
 use crate::rendering::points::{Point, Rect};
 use crate::rendering::renderer_info::{RendererInfo, RendererInfoData};
@@ -40,7 +40,14 @@ impl<T> MandelbrotComputer<T> {
 
 impl<T> ImagePointComputer for MandelbrotComputer<T>
 where
-    T: ImageFloat + From<f64>,
+    T: Clone
+        + From<f64>
+        + ToF64
+        + std::ops::Add<Output = T>
+        + std::ops::Sub<Output = T>
+        + std::ops::Mul<Output = T>
+        + std::ops::Div<Output = T>
+        + PartialOrd,
 {
     type Scalar = T;
     type Data = MandelbrotData;
@@ -48,8 +55,8 @@ where
     fn natural_bounds(&self) -> Rect<T> {
         // Standard Mandelbrot viewing window: centered at origin, spans [-2.5, 1.0] x [-1.25, 1.25]
         Rect::new(
-            Point::new(T::from_f64(-2.5), T::from_f64(-1.25)),
-            Point::new(T::from_f64(1.0), T::from_f64(1.25)),
+            Point::new(T::from(-2.5), T::from(-1.25)),
+            Point::new(T::from(1.0), T::from(1.25)),
         )
     }
 
@@ -59,27 +66,26 @@ where
 
         let max_iterations = calculate_max_iterations(viewport.zoom);
 
-        let mut zx = T::from_f64(0.0);
-        let mut zy = T::from_f64(0.0);
+        let mut zx = T::from(0.0);
+        let mut zy = T::from(0.0);
 
-        let escape_radius_sq = T::from_f64(4.0);
+        let escape_radius_sq = T::from(4.0);
+        let two = T::from(2.0);
 
         for i in 0..max_iterations {
-            let zx_sq = ImageFloat::mul(&zx, &zx);
-            let zy_sq = ImageFloat::mul(&zy, &zy);
+            let zx_sq = zx.clone() * zx.clone();
+            let zy_sq = zy.clone() * zy.clone();
 
-            let magnitude_sq = ImageFloat::add(&zx_sq, &zy_sq);
-            if ImageFloat::gt(&magnitude_sq, &escape_radius_sq) {
+            let magnitude_sq = zx_sq.clone() + zy_sq.clone();
+            if magnitude_sq > escape_radius_sq {
                 return MandelbrotData {
                     iterations: i,
                     escaped: true,
                 };
             }
 
-            let new_zx = ImageFloat::add(&ImageFloat::sub(&zx_sq, &zy_sq), &cx);
-            let two = T::from_f64(2.0);
-            let temp = ImageFloat::mul(&zx, &zy);
-            let new_zy = ImageFloat::add(&ImageFloat::mul(&temp, &two), &cy);
+            let new_zx = zx_sq - zy_sq + cx.clone();
+            let new_zy = two.clone() * zx.clone() * zy.clone() + cy.clone();
 
             zx = new_zx;
             zy = new_zy;
@@ -94,7 +100,7 @@ where
 
 impl<T> RendererInfo for MandelbrotComputer<T>
 where
-    T: ImageFloat + From<f64>,
+    T: Clone + From<f64> + ToF64,
 {
     type Scalar = T;
 
