@@ -34,13 +34,17 @@ pub fn App() -> impl IntoView {
             .unwrap()
             .colorizer;
 
-    let natural_bounds = initial_renderer.natural_bounds();
     let (viewport, set_viewport) = create_signal(initial_renderer_state.viewport.clone());
 
     // ========== Canvas renderer with cache ==========
     let canvas_renderer: RwSignal<Box<dyn CanvasRenderer>> = create_rw_signal(Box::new(
         TilingCanvasRenderer::new(initial_renderer, initial_colorizer, 128),
     ));
+
+    // ========== Natural bounds - reactive to renderer changes ==========
+    let natural_bounds = create_memo(move |_| {
+        canvas_renderer.with(|cr| cr.natural_bounds())
+    });
 
     // ========== RendererInfo for UI display ==========
     let initial_info = (initial_config.create_info_provider)().info(&viewport.get_untracked());
@@ -180,11 +184,8 @@ pub fn App() -> impl IntoView {
     let ui_visibility = use_ui_visibility();
 
     let on_home_click = move || {
-        let renderer_id = selected_renderer_id.get();
-        let config = get_config(&renderer_id).unwrap();
-        let renderer = (config.create_renderer)();
-        let natural_bounds = renderer.natural_bounds();
-        set_viewport.set(Viewport::new(natural_bounds.center(), 1.0));
+        let bounds = natural_bounds.get();
+        set_viewport.set(Viewport::new(bounds.center(), 1.0));
     };
 
     let on_fullscreen_click = move || {
@@ -198,7 +199,7 @@ pub fn App() -> impl IntoView {
                 viewport=viewport
                 set_viewport=set_viewport
                 set_render_time_ms=set_render_time_ms
-                natural_bounds=natural_bounds
+                natural_bounds=natural_bounds.into()
             />
             <UI
                 info=renderer_info

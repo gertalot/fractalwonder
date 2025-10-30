@@ -9,7 +9,7 @@ pub fn InteractiveCanvas(
     viewport: ReadSignal<Viewport<f64>>,
     set_viewport: WriteSignal<Viewport<f64>>,
     set_render_time_ms: WriteSignal<Option<f64>>,
-    natural_bounds: Rect<f64>,
+    natural_bounds: Signal<Rect<f64>>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
@@ -23,7 +23,7 @@ pub fn InteractiveCanvas(
             set_viewport.update(|vp| {
                 *vp = crate::rendering::apply_pixel_transform_to_viewport(
                     vp,
-                    &natural_bounds,
+                    &natural_bounds.get_untracked(),
                     &transform_result,
                     width,
                     height,
