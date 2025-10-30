@@ -89,10 +89,23 @@ impl TilingCanvasRenderer {
         // Decision: compute vs recolorize
         if cache.viewport.as_ref() == Some(viewport) && cache.canvas_size == Some((width, height)) {
             // Same viewport/size → recolorize from cache
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "RECOLORIZE from cache (render_id: {}, cached pixels: {})",
+                current_render_id,
+                cache.data.len()
+            )));
             drop(cache); // Release lock before rendering
             self.recolorize_from_cache(current_render_id, canvas);
         } else {
             // Viewport/size changed → recompute
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "RECOMPUTE (render_id: {}, viewport_match: {}, size_match: {})",
+                current_render_id,
+                cache.viewport.as_ref() == Some(viewport),
+                cache.canvas_size == Some((width, height))
+            )));
             self.render_with_computation(viewport, canvas, &mut cache, current_render_id);
         }
     }
@@ -107,8 +120,11 @@ impl TilingCanvasRenderer {
         let width = canvas.width();
         let height = canvas.height();
 
+        // Pre-allocate cache in raster order (row-by-row)
         cache.data.clear();
-        cache.data.reserve((width * height) as usize);
+        cache
+            .data
+            .resize((width * height) as usize, AppData::default());
 
         // Progressive tiled rendering
         for tile_rect in compute_tiles(width, height, self.tile_size) {
@@ -125,8 +141,17 @@ impl TilingCanvasRenderer {
             // Compute tile data
             let tile_data = self.renderer.render(viewport, tile_rect, (width, height));
 
-            // Store in cache
-            cache.data.extend(tile_data.iter().cloned());
+            // Store tile data in cache at correct raster positions
+            let mut tile_idx = 0;
+            for local_y in 0..tile_rect.height {
+                let canvas_y = tile_rect.y + local_y;
+                for local_x in 0..tile_rect.width {
+                    let canvas_x = tile_rect.x + local_x;
+                    let cache_idx = (canvas_y * width + canvas_x) as usize;
+                    cache.data[cache_idx] = tile_data[tile_idx].clone();
+                    tile_idx += 1;
+                }
+            }
 
             // Colorize and display tile immediately (progressive!)
             self.colorize_and_display_tile(&tile_data, tile_rect, canvas);
@@ -169,6 +194,7 @@ impl TilingCanvasRenderer {
             return;
         }
 
+        // Cache is in raster order, so we can recolorize the entire canvas at once
         self.colorize_and_display_tile(&cache.data, full_rect, canvas);
     }
 

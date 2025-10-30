@@ -62,7 +62,8 @@ pub fn App() -> impl IntoView {
     create_effect(move |_| {
         let renderer_id = selected_renderer_id.get();
         let config = get_config(&renderer_id).unwrap();
-        let states = renderer_states.get();
+        // CRITICAL: Use get_untracked() to avoid re-running when color_scheme_id changes
+        let states = renderer_states.get_untracked();
         let state = states.get(&renderer_id).unwrap();
 
         // Create new renderer

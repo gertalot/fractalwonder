@@ -10,6 +10,16 @@ pub enum AppData {
     MandelbrotData(MandelbrotData),
 }
 
+impl Default for AppData {
+    fn default() -> Self {
+        // Default to black pixel (0 iterations, not escaped)
+        AppData::MandelbrotData(MandelbrotData {
+            iterations: 0,
+            escaped: false,
+        })
+    }
+}
+
 /// Data computed by TestImageRenderer
 #[derive(Clone, Copy, Debug)]
 pub struct TestImageData {
