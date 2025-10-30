@@ -1,7 +1,7 @@
 use crate::hooks::use_canvas_interaction::use_canvas_interaction;
 use crate::rendering::{points::Rect, viewport::Viewport, Renderer, TilingCanvasRenderer};
 use leptos::*;
-use wasm_bindgen::{closure::Closure, JsCast};
+use wasm_bindgen::JsCast;
 
 #[component]
 pub fn InteractiveCanvas<R>(
@@ -41,6 +41,13 @@ where
         }
     });
 
+    // Cancel any in-progress render when user starts interacting
+    create_effect(move |_| {
+        if interaction.is_interacting.get() {
+            canvas_renderer.with(|cr| cr.cancel_render());
+        }
+    });
+
     // Initialize canvas dimensions on mount
     create_effect(move |_| {
         if let Some(canvas_el) = canvas_ref.get() {
@@ -50,46 +57,6 @@ where
             let new_height = window.inner_height().unwrap().as_f64().unwrap() as u32;
             canvas.set_width(new_width);
             canvas.set_height(new_height);
-        }
-    });
-
-    // Handle window resize
-    create_effect({
-        let canvas_ref_clone = canvas_ref;
-        let on_canvas_resize = interaction.on_canvas_resize.clone();
-        move |_| {
-            if let Some(canvas_el) = canvas_ref_clone.get() {
-                let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
-                let canvas_clone = canvas.clone();
-                let on_resize = on_canvas_resize.clone();
-
-                let resize_handler = Closure::wrap(Box::new(move || {
-                    let window = web_sys::window().expect("should have window");
-                    let new_width = window.inner_width().unwrap().as_f64().unwrap() as u32;
-                    let new_height = window.inner_height().unwrap().as_f64().unwrap() as u32;
-
-                    let old_width = canvas_clone.width();
-                    let old_height = canvas_clone.height();
-
-                    if old_width != new_width || old_height != new_height {
-                        (on_resize)(new_width, new_height);
-                        canvas_clone.set_width(new_width);
-                        canvas_clone.set_height(new_height);
-                        // Trigger re-render by notifying use_canvas_interaction
-                        // The on_resize callback already handles this
-                    }
-                }) as Box<dyn Fn() + 'static>);
-
-                web_sys::window()
-                    .expect("should have window")
-                    .add_event_listener_with_callback(
-                        "resize",
-                        resize_handler.as_ref().unchecked_ref(),
-                    )
-                    .expect("should add resize listener");
-
-                resize_handler.forget();
-            }
         }
     });
 
@@ -111,13 +78,6 @@ where
     });
 
     view! {
-        <canvas
-            node_ref=canvas_ref
-            class="w-full h-full"
-            on:wheel=move |e| (interaction.on_wheel)(e)
-            on:pointerdown=move |e| (interaction.on_pointer_down)(e)
-            on:pointermove=move |e| (interaction.on_pointer_move)(e)
-            on:pointerup=move |e| (interaction.on_pointer_up)(e)
-        />
+        <canvas node_ref=canvas_ref class="w-full h-full" />
     }
 }

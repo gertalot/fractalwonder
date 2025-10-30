@@ -8,6 +8,8 @@ use web_sys::{CanvasRenderingContext2d, ContextAttributes2d, HtmlCanvasElement, 
 
 const INTERACTION_TIMEOUT_MS: i32 = 1500;
 const ZOOM_SENSITIVITY: f64 = 0.0005;
+const PINCH_ZOOM_SENSITIVITY: f64 = 0.01; // Much higher sensitivity for pinch gestures
+const DOUBLE_CLICK_ZOOM_FACTOR: f64 = 2.0; // 2x zoom in/out on double-click
 
 /// Transformation result returned when user interaction ends (after 1.5s of inactivity)
 ///
@@ -30,20 +32,10 @@ pub struct TransformResult {
 
 /// Handle returned by the canvas interaction hook
 ///
-/// Provides event handlers to attach to canvas element and reactive interaction state.
+/// Provides reactive interaction state. All event listeners are set up internally.
 pub struct InteractionHandle {
     /// Reactive signal indicating whether user is currently interacting
     pub is_interacting: Signal<bool>,
-    /// Event handler for pointerdown events
-    pub on_pointer_down: Rc<dyn Fn(web_sys::PointerEvent)>,
-    /// Event handler for pointermove events
-    pub on_pointer_move: Rc<dyn Fn(web_sys::PointerEvent)>,
-    /// Event handler for pointerup events
-    pub on_pointer_up: Rc<dyn Fn(web_sys::PointerEvent)>,
-    /// Event handler for wheel events (zoom)
-    pub on_wheel: Rc<dyn Fn(web_sys::WheelEvent)>,
-    /// Event handler for canvas resize events
-    pub on_canvas_resize: Rc<dyn Fn(u32, u32)>,
 }
 
 /// Builds a 2D affine transformation matrix from offset, zoom, and optional zoom center
@@ -175,13 +167,7 @@ fn render_preview(
 ///     );
 ///
 ///     view! {
-///         <canvas
-///             node_ref=canvas_ref
-///             on:pointerdown=move |ev| (handle.on_pointer_down)(ev)
-///             on:pointermove=move |ev| (handle.on_pointer_move)(ev)
-///             on:pointerup=move |ev| (handle.on_pointer_up)(ev)
-///             on:wheel=move |ev| (handle.on_wheel)(ev)
-///         />
+///         <canvas node_ref=canvas_ref class="w-full h-full" />
 ///     }
 /// }
 /// ```
@@ -193,7 +179,7 @@ fn render_preview(
 ///
 /// # Returns
 ///
-/// `InteractionHandle` with event handlers and interaction state signal
+/// `InteractionHandle` with interaction state signal. All event listeners are attached internally.
 pub fn use_canvas_interaction<F>(
     canvas_ref: NodeRef<leptos::html::Canvas>,
     on_interaction_end: F,
@@ -455,8 +441,14 @@ where
         let old_base = base_offset.get_value();
 
         // Calculate zoom factor from wheel delta
+        // Pinch gestures (ctrlKey=true) need much higher sensitivity
         let delta = ev.delta_y();
-        let zoom_multiplier = (-delta * ZOOM_SENSITIVITY).exp();
+        let sensitivity = if ev.ctrl_key() {
+            PINCH_ZOOM_SENSITIVITY
+        } else {
+            ZOOM_SENSITIVITY
+        };
+        let zoom_multiplier = (-delta * sensitivity).exp();
         let new_zoom = old_zoom * zoom_multiplier;
 
         // Get pointer position relative to canvas
@@ -521,6 +513,58 @@ where
         restart_timeout_clone2.with_value(|f| f());
     };
 
+    // Double-click handler for discrete zoom in/out
+    let restart_timeout_dblclick = store_value(restart_timeout);
+    let on_double_click = move |ev: web_sys::MouseEvent| {
+        ev.prevent_default();
+
+        // Start interaction if not already started
+        if initial_image_data.get_value().is_none() {
+            start_interaction();
+        }
+
+        is_zooming.set(true);
+
+        // Get current zoom and offset state (for preview)
+        let old_zoom = accumulated_zoom.get_value();
+        let old_base = base_offset.get_value();
+
+        // Determine zoom direction: alt/option = zoom out, normal = zoom in
+        let zoom_multiplier = if ev.alt_key() {
+            1.0 / DOUBLE_CLICK_ZOOM_FACTOR // Zoom out
+        } else {
+            DOUBLE_CLICK_ZOOM_FACTOR // Zoom in
+        };
+        let new_zoom = old_zoom * zoom_multiplier;
+
+        // Get pointer position relative to canvas
+        let canvas_ref = canvas_ref_stored.get_value();
+        if let Some(canvas) = canvas_ref.get_untracked() {
+            let rect = canvas.get_bounding_client_rect();
+            let mouse_x = ev.client_x() as f64 - rect.left();
+            let mouse_y = ev.client_y() as f64 - rect.top();
+
+            // Add scale transformation to sequence
+            transform_sequence.update_value(|seq| {
+                seq.push(Transform::Scale {
+                    factor: zoom_multiplier,
+                    center_x: mouse_x,
+                    center_y: mouse_y,
+                });
+            });
+
+            // Update preview state (for real-time rendering)
+            let new_offset_x = old_base.0 * zoom_multiplier + mouse_x * (1.0 - zoom_multiplier);
+            let new_offset_y = old_base.1 * zoom_multiplier + mouse_y * (1.0 - zoom_multiplier);
+
+            base_offset.set_value((new_offset_x, new_offset_y));
+            accumulated_zoom.set_value(new_zoom);
+        }
+
+        // Restart timeout after double-click
+        restart_timeout_dblclick.with_value(|f| f());
+    };
+
     // Canvas resize handler
     let restart_timeout_clone3 = store_value(restart_timeout);
     let on_canvas_resize = move |_new_width: u32, _new_height: u32| {
@@ -541,13 +585,129 @@ where
         restart_timeout_clone3.with_value(|f| f());
     };
 
+    // Set up all event listeners when canvas mounts
+    create_effect(move |_| {
+        if let Some(canvas_el) = canvas_ref.get() {
+            let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
+
+            // Pointer events
+            let pointer_down_clone = on_pointer_down.clone();
+            let pointer_down_handler = Closure::wrap(Box::new(move |e: web_sys::PointerEvent| {
+                pointer_down_clone(e);
+            }) as Box<dyn Fn(web_sys::PointerEvent)>);
+
+            canvas
+                .add_event_listener_with_callback(
+                    "pointerdown",
+                    pointer_down_handler.as_ref().unchecked_ref(),
+                )
+                .expect("should add pointerdown listener");
+            pointer_down_handler.forget();
+
+            let pointer_move_clone = on_pointer_move.clone();
+            let pointer_move_handler = Closure::wrap(Box::new(move |e: web_sys::PointerEvent| {
+                pointer_move_clone(e);
+            }) as Box<dyn Fn(web_sys::PointerEvent)>);
+
+            canvas
+                .add_event_listener_with_callback(
+                    "pointermove",
+                    pointer_move_handler.as_ref().unchecked_ref(),
+                )
+                .expect("should add pointermove listener");
+            pointer_move_handler.forget();
+
+            let pointer_up_clone = on_pointer_up.clone();
+            let pointer_up_handler = Closure::wrap(Box::new(move |e: web_sys::PointerEvent| {
+                pointer_up_clone(e);
+            }) as Box<dyn Fn(web_sys::PointerEvent)>);
+
+            canvas
+                .add_event_listener_with_callback(
+                    "pointerup",
+                    pointer_up_handler.as_ref().unchecked_ref(),
+                )
+                .expect("should add pointerup listener");
+            pointer_up_handler.forget();
+
+            // Wheel event with non-passive listener
+            let wheel_clone = on_wheel.clone();
+            let wheel_handler = Closure::wrap(Box::new(move |e: web_sys::WheelEvent| {
+                wheel_clone(e);
+            }) as Box<dyn Fn(web_sys::WheelEvent)>);
+
+            let mut options = web_sys::AddEventListenerOptions::new();
+            options.set_passive(false);
+
+            canvas
+                .add_event_listener_with_callback_and_add_event_listener_options(
+                    "wheel",
+                    wheel_handler.as_ref().unchecked_ref(),
+                    &options,
+                )
+                .expect("should add wheel listener");
+            wheel_handler.forget();
+
+            // Double-click event
+            let dblclick_clone = on_double_click.clone();
+            let dblclick_handler = Closure::wrap(Box::new(move |e: web_sys::MouseEvent| {
+                dblclick_clone(e);
+            }) as Box<dyn Fn(web_sys::MouseEvent)>);
+
+            canvas
+                .add_event_listener_with_callback(
+                    "dblclick",
+                    dblclick_handler.as_ref().unchecked_ref(),
+                )
+                .expect("should add dblclick listener");
+            dblclick_handler.forget();
+
+            // Safari gesture events
+            let gesture_prevent = Closure::wrap(Box::new(move |e: web_sys::Event| {
+                e.prevent_default();
+            }) as Box<dyn Fn(web_sys::Event)>);
+
+            for event_name in &["gesturestart", "gesturechange", "gestureend"] {
+                canvas
+                    .add_event_listener_with_callback(
+                        event_name,
+                        gesture_prevent.as_ref().unchecked_ref(),
+                    )
+                    .ok();
+            }
+            gesture_prevent.forget();
+
+            // Window resize listener
+            let canvas_clone = canvas.clone();
+            let resize_clone = on_canvas_resize.clone();
+            let resize_handler = Closure::wrap(Box::new(move || {
+                let window = web_sys::window().expect("should have window");
+                let new_width = window.inner_width().unwrap().as_f64().unwrap() as u32;
+                let new_height = window.inner_height().unwrap().as_f64().unwrap() as u32;
+
+                let old_width = canvas_clone.width();
+                let old_height = canvas_clone.height();
+
+                if old_width != new_width || old_height != new_height {
+                    resize_clone(new_width, new_height);
+                    canvas_clone.set_width(new_width);
+                    canvas_clone.set_height(new_height);
+                }
+            }) as Box<dyn Fn()>);
+
+            web_sys::window()
+                .expect("should have window")
+                .add_event_listener_with_callback(
+                    "resize",
+                    resize_handler.as_ref().unchecked_ref(),
+                )
+                .expect("should add resize listener");
+            resize_handler.forget();
+        }
+    });
+
     InteractionHandle {
         is_interacting: Signal::derive(move || is_interacting.get()),
-        on_pointer_down: Rc::new(on_pointer_down),
-        on_pointer_move: Rc::new(on_pointer_move),
-        on_pointer_up: Rc::new(on_pointer_up),
-        on_wheel: Rc::new(on_wheel),
-        on_canvas_resize: Rc::new(on_canvas_resize),
     }
 }
 

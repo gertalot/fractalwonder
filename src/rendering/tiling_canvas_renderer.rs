@@ -1,7 +1,10 @@
 use crate::rendering::{
     points::Rect, renderer_trait::Renderer, viewport::Viewport, Colorizer, PixelRect,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc, Mutex,
+};
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
@@ -10,6 +13,7 @@ struct CachedState<R: Renderer> {
     viewport: Option<Viewport<R::Coord>>,
     canvas_size: Option<(u32, u32)>,
     data: Vec<R::Data>,
+    render_id: AtomicU32,
 }
 
 impl<R: Renderer> Default for CachedState<R> {
@@ -18,6 +22,7 @@ impl<R: Renderer> Default for CachedState<R> {
             viewport: None,
             canvas_size: None,
             data: Vec::new(),
+            render_id: AtomicU32::new(0),
         }
     }
 }
@@ -60,6 +65,12 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
         self.renderer.natural_bounds()
     }
 
+    /// Cancel any in-progress render
+    pub fn cancel_render(&self) {
+        let cache = self.cached_state.lock().unwrap();
+        cache.render_id.fetch_add(1, Ordering::SeqCst);
+    }
+
     /// Main render entry point
     pub fn render(&self, viewport: &Viewport<R::Coord>, canvas: &HtmlCanvasElement)
     where
@@ -69,13 +80,17 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
         let height = canvas.height();
         let mut cache = self.cached_state.lock().unwrap();
 
+        // Increment render ID to cancel any in-progress renders
+        let current_render_id = cache.render_id.fetch_add(1, Ordering::SeqCst) + 1;
+
         // Decision: compute vs recolorize
         if cache.viewport.as_ref() == Some(viewport) && cache.canvas_size == Some((width, height)) {
             // Same viewport/size → recolorize from cache
-            self.recolorize_from_cache(&cache, canvas);
+            drop(cache); // Release lock before rendering
+            self.recolorize_from_cache(current_render_id, canvas);
         } else {
             // Viewport/size changed → recompute
-            self.render_with_computation(viewport, canvas, &mut cache);
+            self.render_with_computation(viewport, canvas, &mut cache, current_render_id);
         }
     }
 
@@ -84,6 +99,7 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
         viewport: &Viewport<R::Coord>,
         canvas: &HtmlCanvasElement,
         cache: &mut CachedState<R>,
+        render_id: u32,
     ) where
         R::Coord: Clone,
     {
@@ -95,6 +111,16 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
 
         // Progressive tiled rendering
         for tile_rect in compute_tiles(width, height, self.tile_size) {
+            // Check if this render has been cancelled
+            if cache.render_id.load(Ordering::SeqCst) != render_id {
+                #[cfg(target_arch = "wasm32")]
+                web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                    "Render {} cancelled during tiling",
+                    render_id
+                )));
+                return;
+            }
+
             // Compute tile data
             let tile_data = self.renderer.render(viewport, tile_rect, (width, height));
 
@@ -110,10 +136,37 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
         cache.canvas_size = Some((width, height));
     }
 
-    fn recolorize_from_cache(&self, cache: &CachedState<R>, canvas: &HtmlCanvasElement) {
+    fn recolorize_from_cache(&self, render_id: u32, canvas: &HtmlCanvasElement) {
         let width = canvas.width();
         let height = canvas.height();
         let full_rect = PixelRect::full_canvas(width, height);
+
+        let cache = self.cached_state.lock().unwrap();
+
+        // Check if render was cancelled
+        if cache.render_id.load(Ordering::SeqCst) != render_id {
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "Render {} cancelled during recolorize",
+                render_id
+            )));
+            return;
+        }
+
+        // Verify data dimensions match before rendering
+        let expected_pixels = (width * height) as usize;
+        if cache.data.len() != expected_pixels {
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "DIMENSION MISMATCH: cache has {} pixels but canvas expects {} ({}x{})",
+                cache.data.len(),
+                expected_pixels,
+                width,
+                height
+            )));
+            // Don't render with mismatched dimensions - this would cause garbled output
+            return;
+        }
 
         self.colorize_and_display_tile(&cache.data, full_rect, canvas);
     }
@@ -124,6 +177,22 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
         rect: PixelRect,
         canvas: &HtmlCanvasElement,
     ) {
+        // Verify data length matches rect dimensions
+        let expected_pixels = (rect.width * rect.height) as usize;
+        if data.len() != expected_pixels {
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "TILE DIMENSION MISMATCH: data has {} pixels but rect expects {} ({}x{} at {},{})",
+                data.len(),
+                expected_pixels,
+                rect.width,
+                rect.height,
+                rect.x,
+                rect.y
+            )));
+            return;
+        }
+
         let rgba_bytes: Vec<u8> = data
             .iter()
             .flat_map(|d| {
@@ -131,6 +200,20 @@ impl<R: Renderer> TilingCanvasRenderer<R> {
                 [r, g, b, a]
             })
             .collect();
+
+        // Verify RGBA byte count
+        let expected_bytes = expected_pixels * 4;
+        if rgba_bytes.len() != expected_bytes {
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "RGBA BYTE MISMATCH: got {} bytes but expected {} for {}x{} rect",
+                rgba_bytes.len(),
+                expected_bytes,
+                rect.width,
+                rect.height
+            )));
+            return;
+        }
 
         // Get canvas context and put image data
         let context = canvas
