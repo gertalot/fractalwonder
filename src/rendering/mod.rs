@@ -1,3 +1,4 @@
+pub mod adaptive_mandelbrot_renderer;
 pub mod app_data;
 pub mod app_data_renderer;
 pub mod canvas_renderer;
@@ -18,6 +19,7 @@ pub mod tiling_canvas_renderer;
 pub mod transforms;
 pub mod viewport;
 
+pub use adaptive_mandelbrot_renderer::AdaptiveMandelbrotRenderer;
 pub use app_data::{AppData, TestImageData};
 pub use app_data_renderer::AppDataRenderer;
 pub use canvas_renderer::CanvasRenderer;
@@ -31,6 +33,7 @@ pub use point_compute::ImagePointComputer;
 pub use points::{Point, Rect};
 pub use precision::PrecisionCalculator;
 pub use render_config::{get_color_scheme, get_config, ColorScheme, RenderConfig, RENDER_CONFIGS};
+pub use renderer_info::RendererInfo;
 pub use renderer_trait::Renderer;
 pub use tiled_renderer::TiledRenderer;
 pub use tiling_canvas_renderer::TilingCanvasRenderer;

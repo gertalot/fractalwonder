@@ -3,9 +3,9 @@ use crate::components::ui::UI;
 use crate::hooks::fullscreen::toggle_fullscreen;
 use crate::hooks::ui_visibility::use_ui_visibility;
 use crate::rendering::{
-    get_color_scheme, get_config, AppData, AppDataRenderer, BigFloat, Colorizer,
-    MandelbrotComputer, PixelRenderer, Point, PrecisionCalculator, Rect, Renderer,
-    TestImageComputer, TilingCanvasRenderer, ToF64, Viewport, RENDER_CONFIGS,
+    get_color_scheme, get_config, AdaptiveMandelbrotRenderer, AppData, AppDataRenderer, BigFloat,
+    Colorizer, PixelRenderer, Point, PrecisionCalculator, Rect, Renderer, TestImageComputer,
+    TilingCanvasRenderer, ToF64, Viewport, RENDER_CONFIGS,
 };
 use crate::state::AppState;
 use leptos::*;
@@ -79,10 +79,12 @@ fn create_mandelbrot_canvas_renderer(
     _zoom: f64,
     colorizer: Colorizer<AppData>,
 ) -> TilingCanvasRenderer<BigFloat, AppData> {
-    let computer = MandelbrotComputer::<BigFloat>::new();
-    let pixel_renderer = PixelRenderer::new(computer);
-    let app_renderer = AppDataRenderer::new(pixel_renderer, |d| AppData::MandelbrotData(*d));
-    let renderer: Box<dyn Renderer<Scalar = BigFloat, Data = AppData>> = Box::new(app_renderer);
+    // Use adaptive renderer that switches between f64 and BigFloat based on zoom
+    // Threshold of 1e10 means:
+    // - zoom < 1e10: fast f64 arithmetic
+    // - zoom >= 1e10: arbitrary precision BigFloat
+    let adaptive_renderer = AdaptiveMandelbrotRenderer::new(1e10);
+    let renderer: Box<dyn Renderer<Scalar = BigFloat, Data = AppData>> = Box::new(adaptive_renderer);
     TilingCanvasRenderer::new(renderer, colorizer, 128)
 }
 
