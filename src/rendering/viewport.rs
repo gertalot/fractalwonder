@@ -1,6 +1,7 @@
 use crate::rendering::points::Point;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Viewport<T> {
     pub center: Point<T>,
     pub zoom: f64,

@@ -1,6 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, Div, Mul, Sub};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Point<T> {
     x: T,
     y: T,

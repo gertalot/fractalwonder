@@ -2,6 +2,7 @@ mod app;
 mod components;
 pub mod hooks;
 pub mod rendering;
+pub mod state;
 
 use leptos::*;
 use wasm_bindgen::prelude::*;
