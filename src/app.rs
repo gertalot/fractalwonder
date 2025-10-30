@@ -3,10 +3,9 @@ use crate::components::ui::UI;
 use crate::hooks::fullscreen::toggle_fullscreen;
 use crate::hooks::ui_visibility::use_ui_visibility;
 use crate::rendering::{
-    get_color_scheme, get_config, renderer_info::RendererInfo, CanvasRenderer,
-    TilingCanvasRenderer, Viewport, RENDER_CONFIGS,
+    get_color_scheme, get_config, CanvasRenderer, TilingCanvasRenderer, Viewport, RENDER_CONFIGS,
 };
-use crate::state::{AppState, RendererState};
+use crate::state::AppState;
 use leptos::*;
 use std::time::Duration;
 
@@ -17,23 +16,23 @@ pub fn App() -> impl IntoView {
 
     let (selected_renderer_id, set_selected_renderer_id) =
         create_signal(initial_state.selected_renderer_id.clone());
-    let (renderer_states, set_renderer_states) = create_signal(initial_state.renderer_states);
 
-    // Get initial config
+    // Get initial config and state before moving renderer_states
     let initial_config = get_config(&initial_state.selected_renderer_id).unwrap();
     let initial_renderer_state = initial_state
         .renderer_states
         .get(&initial_state.selected_renderer_id)
-        .unwrap();
+        .unwrap()
+        .clone();
+
+    let (renderer_states, set_renderer_states) = create_signal(initial_state.renderer_states);
 
     // ========== Create initial renderer ==========
     let initial_renderer = (initial_config.create_renderer)();
-    let initial_colorizer = get_color_scheme(
-        initial_config,
-        &initial_renderer_state.color_scheme_id,
-    )
-    .unwrap()
-    .colorizer;
+    let initial_colorizer =
+        get_color_scheme(initial_config, &initial_renderer_state.color_scheme_id)
+            .unwrap()
+            .colorizer;
 
     let natural_bounds = initial_renderer.natural_bounds();
     let (viewport, set_viewport) = create_signal(initial_renderer_state.viewport.clone());
@@ -80,8 +79,8 @@ pub fn App() -> impl IntoView {
             cr.set_colorizer(colorizer);
         });
 
-        // Restore viewport
-        set_viewport.set(state.viewport.clone());
+        // Restore viewport (untracked to avoid circular effects)
+        set_viewport.set_untracked(state.viewport.clone());
 
         // Save immediately
         AppState {
@@ -206,10 +205,10 @@ pub fn App() -> impl IntoView {
                 set_is_hovering=ui_visibility.set_is_hovering
                 on_home_click=on_home_click
                 on_fullscreen_click=on_fullscreen_click
-                render_function_options=render_function_options
+                render_function_options=render_function_options.into()
                 selected_renderer_id=Signal::derive(move || selected_renderer_id.get())
                 on_renderer_select=move |id: String| set_selected_renderer_id.set(id)
-                color_scheme_options=color_scheme_options
+                color_scheme_options=color_scheme_options.into()
                 selected_color_scheme_id=Signal::derive(move || selected_color_scheme_id.get())
                 on_color_scheme_select=on_color_scheme_select
             />

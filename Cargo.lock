@@ -398,6 +398,8 @@ dependencies = [
  "js-sys",
  "leptos",
  "leptos-use",
+ "serde",
+ "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

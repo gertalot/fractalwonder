@@ -25,7 +25,7 @@ impl AppState {
             .flatten()
             .and_then(|storage| storage.get_item(STORAGE_KEY).ok().flatten())
             .and_then(|json| serde_json::from_str(&json).ok())
-            .unwrap_or_else(Self::default)
+            .unwrap_or_default()
     }
 
     pub fn save(&self) {

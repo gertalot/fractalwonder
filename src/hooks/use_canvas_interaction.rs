@@ -1,7 +1,6 @@
 use crate::rendering::transforms::{compose_affine_transformations, Mat3, Transform};
 use leptos::*;
 use leptos_use::use_raf_fn;
-use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, ContextAttributes2d, HtmlCanvasElement, ImageData};
@@ -591,10 +590,11 @@ where
             let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
 
             // Pointer events
-            let pointer_down_clone = on_pointer_down.clone();
+            let pointer_down_clone = on_pointer_down;
             let pointer_down_handler = Closure::wrap(Box::new(move |e: web_sys::PointerEvent| {
                 pointer_down_clone(e);
-            }) as Box<dyn Fn(web_sys::PointerEvent)>);
+            })
+                as Box<dyn Fn(web_sys::PointerEvent)>);
 
             canvas
                 .add_event_listener_with_callback(
@@ -604,10 +604,11 @@ where
                 .expect("should add pointerdown listener");
             pointer_down_handler.forget();
 
-            let pointer_move_clone = on_pointer_move.clone();
+            let pointer_move_clone = on_pointer_move;
             let pointer_move_handler = Closure::wrap(Box::new(move |e: web_sys::PointerEvent| {
                 pointer_move_clone(e);
-            }) as Box<dyn Fn(web_sys::PointerEvent)>);
+            })
+                as Box<dyn Fn(web_sys::PointerEvent)>);
 
             canvas
                 .add_event_listener_with_callback(
@@ -617,10 +618,11 @@ where
                 .expect("should add pointermove listener");
             pointer_move_handler.forget();
 
-            let pointer_up_clone = on_pointer_up.clone();
+            let pointer_up_clone = on_pointer_up;
             let pointer_up_handler = Closure::wrap(Box::new(move |e: web_sys::PointerEvent| {
                 pointer_up_clone(e);
-            }) as Box<dyn Fn(web_sys::PointerEvent)>);
+            })
+                as Box<dyn Fn(web_sys::PointerEvent)>);
 
             canvas
                 .add_event_listener_with_callback(
@@ -631,12 +633,12 @@ where
             pointer_up_handler.forget();
 
             // Wheel event with non-passive listener
-            let wheel_clone = on_wheel.clone();
+            let wheel_clone = on_wheel;
             let wheel_handler = Closure::wrap(Box::new(move |e: web_sys::WheelEvent| {
                 wheel_clone(e);
             }) as Box<dyn Fn(web_sys::WheelEvent)>);
 
-            let mut options = web_sys::AddEventListenerOptions::new();
+            let options = web_sys::AddEventListenerOptions::new();
             options.set_passive(false);
 
             canvas
@@ -649,10 +651,11 @@ where
             wheel_handler.forget();
 
             // Double-click event
-            let dblclick_clone = on_double_click.clone();
+            let dblclick_clone = on_double_click;
             let dblclick_handler = Closure::wrap(Box::new(move |e: web_sys::MouseEvent| {
                 dblclick_clone(e);
-            }) as Box<dyn Fn(web_sys::MouseEvent)>);
+            })
+                as Box<dyn Fn(web_sys::MouseEvent)>);
 
             canvas
                 .add_event_listener_with_callback(
@@ -679,7 +682,7 @@ where
 
             // Window resize listener
             let canvas_clone = canvas.clone();
-            let resize_clone = on_canvas_resize.clone();
+            let resize_clone = on_canvas_resize;
             let resize_handler = Closure::wrap(Box::new(move || {
                 let window = web_sys::window().expect("should have window");
                 let new_width = window.inner_width().unwrap().as_f64().unwrap() as u32;
@@ -697,10 +700,7 @@ where
 
             web_sys::window()
                 .expect("should have window")
-                .add_event_listener_with_callback(
-                    "resize",
-                    resize_handler.as_ref().unchecked_ref(),
-                )
+                .add_event_listener_with_callback("resize", resize_handler.as_ref().unchecked_ref())
                 .expect("should add resize listener");
             resize_handler.forget();
         }

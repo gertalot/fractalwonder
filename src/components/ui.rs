@@ -1,3 +1,4 @@
+use crate::components::dropdown_menu::DropdownMenu;
 use crate::hooks::fullscreen::use_fullscreen;
 use crate::rendering::renderer_info::RendererInfoData;
 use leptos::*;
@@ -149,6 +150,12 @@ pub fn UI(
     set_is_hovering: WriteSignal<bool>,
     on_home_click: impl Fn() + 'static,
     on_fullscreen_click: impl Fn() + 'static,
+    render_function_options: Signal<Vec<(String, String)>>,
+    selected_renderer_id: Signal<String>,
+    on_renderer_select: impl Fn(String) + 'static + Copy,
+    color_scheme_options: Signal<Vec<(String, String)>>,
+    selected_color_scheme_id: Signal<String>,
+    on_color_scheme_select: impl Fn(String) + 'static + Copy,
 ) -> impl IntoView {
     let (is_popover_open, set_is_popover_open) = create_signal(false);
 
@@ -177,10 +184,22 @@ pub fn UI(
         on:mouseleave=move |_| set_is_hovering.set(false)
       >
         <div class="flex items-center justify-between px-4 py-3 bg-black/50 backdrop-blur-sm">
-          // Left section: buttons
+          // Left section: buttons and dropdown menus
           <div class="flex items-center space-x-4">
             <InfoButton is_open=is_popover_open set_is_open=set_is_popover_open />
             <HomeButton on_click=on_home_click />
+            <DropdownMenu
+              label="Function".to_string()
+              options=render_function_options
+              selected_id=selected_renderer_id
+              on_select=on_renderer_select
+            />
+            <DropdownMenu
+              label="Colors".to_string()
+              options=color_scheme_options
+              selected_id=selected_color_scheme_id
+              on_select=on_color_scheme_select
+            />
           </div>
 
           // Center section: info display

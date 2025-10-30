@@ -16,7 +16,15 @@ pub struct MandelbrotComputer {
 
 impl MandelbrotComputer {
     pub fn new() -> Self {
-        Self { max_iterations: 256 }
+        Self::default()
+    }
+}
+
+impl Default for MandelbrotComputer {
+    fn default() -> Self {
+        Self {
+            max_iterations: 256,
+        }
     }
 }
 
@@ -69,9 +77,10 @@ impl RendererInfo for MandelbrotComputer {
             name: "Mandelbrot".to_string(),
             center_display: format!("{:.6}, {:.6}", viewport.center.x(), viewport.center.y()),
             zoom_display: format!("{:.2e}", viewport.zoom),
-            custom_params: vec![
-                ("Max Iterations".to_string(), self.max_iterations.to_string())
-            ],
+            custom_params: vec![(
+                "Max Iterations".to_string(),
+                self.max_iterations.to_string(),
+            )],
             render_time_ms: None,
         }
     }

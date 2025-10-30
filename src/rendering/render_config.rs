@@ -1,12 +1,12 @@
-use crate::rendering::{
-    AppData, AppDataRenderer, Colorizer, MandelbrotComputer, PixelRenderer, Renderer,
-    TestImageComputer,
-};
 use crate::rendering::colorizers::{
     mandelbrot_default_colorizer, mandelbrot_fire_colorizer, mandelbrot_opal_colorizer,
     test_image_default_colorizer, test_image_pastel_colorizer,
 };
 use crate::rendering::renderer_info::RendererInfo;
+use crate::rendering::{
+    AppData, AppDataRenderer, Colorizer, MandelbrotComputer, PixelRenderer, Renderer,
+    TestImageComputer,
+};
 
 pub struct ColorScheme {
     pub id: &'static str,
@@ -19,18 +19,18 @@ pub struct RenderConfig {
     pub display_name: &'static str,
     pub color_schemes: &'static [ColorScheme],
     pub default_color_scheme_id: &'static str,
-    pub create_renderer: fn() -> Box<dyn Renderer<Coord=f64, Data=AppData>>,
-    pub create_info_provider: fn() -> Box<dyn RendererInfo<Coord=f64>>,
+    pub create_renderer: fn() -> Box<dyn Renderer<Coord = f64, Data = AppData>>,
+    pub create_info_provider: fn() -> Box<dyn RendererInfo<Coord = f64>>,
 }
 
-fn create_test_image_renderer() -> Box<dyn Renderer<Coord=f64, Data=AppData>> {
+fn create_test_image_renderer() -> Box<dyn Renderer<Coord = f64, Data = AppData>> {
     let computer = TestImageComputer::new();
     let pixel_renderer = PixelRenderer::new(computer);
     let app_renderer = AppDataRenderer::new(pixel_renderer, |d| AppData::TestImageData(*d));
     Box::new(app_renderer)
 }
 
-fn create_mandelbrot_renderer() -> Box<dyn Renderer<Coord=f64, Data=AppData>> {
+fn create_mandelbrot_renderer() -> Box<dyn Renderer<Coord = f64, Data = AppData>> {
     let computer = MandelbrotComputer::new();
     let pixel_renderer = PixelRenderer::new(computer);
     let app_renderer = AppDataRenderer::new(pixel_renderer, |d| AppData::MandelbrotData(*d));

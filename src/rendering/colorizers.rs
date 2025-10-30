@@ -1,4 +1,5 @@
 use super::app_data::{AppData, TestImageData};
+#[cfg(test)]
 use super::computers::mandelbrot::MandelbrotData;
 
 /// Colorizer function type - converts Data to RGBA
@@ -193,7 +194,7 @@ mod tests {
             iterations: 64,
             escaped: true,
         });
-        let (r, g, b, a) = mandelbrot_fire_colorizer(&data);
+        let (r, _g, b, a) = mandelbrot_fire_colorizer(&data);
         assert_eq!(a, 255); // Always opaque
         assert!(r > b); // Fire has more red than blue
     }
@@ -204,7 +205,7 @@ mod tests {
             iterations: 64,
             escaped: true,
         });
-        let (r, g, b, a) = mandelbrot_opal_colorizer(&data);
+        let (r, _g, b, a) = mandelbrot_opal_colorizer(&data);
         assert_eq!(a, 255); // Always opaque
         assert!(b > r); // Opal has more blue than red
     }

@@ -26,7 +26,7 @@ pub use pixel_rect::PixelRect;
 pub use pixel_renderer::PixelRenderer;
 pub use point_compute::ImagePointComputer;
 pub use points::{Point, Rect};
-pub use render_config::{ColorScheme, RenderConfig, get_color_scheme, get_config, RENDER_CONFIGS};
+pub use render_config::{get_color_scheme, get_config, ColorScheme, RenderConfig, RENDER_CONFIGS};
 pub use renderer_trait::Renderer;
 pub use tiled_renderer::TiledRenderer;
 pub use tiling_canvas_renderer::TilingCanvasRenderer;

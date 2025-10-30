@@ -1,4 +1,6 @@
-use crate::rendering::{points::Rect, renderer_trait::Renderer, viewport::Viewport, AppData, Colorizer};
+use crate::rendering::{
+    points::Rect, renderer_trait::Renderer, viewport::Viewport, AppData, Colorizer,
+};
 use web_sys::HtmlCanvasElement;
 
 /// Canvas renderer trait - takes a Renderer and Colorizer to render RGBA pixels on a canvas
