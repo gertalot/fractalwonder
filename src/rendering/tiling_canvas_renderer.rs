@@ -136,35 +136,66 @@ impl<S: Clone + PartialEq, D: Clone + Default> TilingCanvasRenderer<S, D> {
         cache.data.resize((width * height) as usize, D::default());
 
         // Progressive tiled rendering
-        for tile_rect in compute_tiles(width, height, self.tile_size) {
+        let tiles = compute_tiles(width, height, self.tile_size);
+        let total_tiles = tiles.len();
+
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+            "TILE RENDER START: {} total tiles ({}x{} canvas, {} tile_size)",
+            total_tiles,
+            width,
+            height,
+            self.tile_size
+        )));
+
+        for (tile_idx, tile_rect) in tiles.iter().enumerate() {
             // Check if this render has been cancelled
             if cache.render_id.load(Ordering::SeqCst) != render_id {
                 #[cfg(target_arch = "wasm32")]
                 web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
-                    "Render {} cancelled during tiling",
-                    render_id
+                    "Render {} cancelled during tiling at tile {}/{}",
+                    render_id,
+                    tile_idx + 1,
+                    total_tiles
                 )));
                 return;
             }
 
             // Compute tile data
-            let tile_data = self.renderer.render(viewport, tile_rect, (width, height));
+            let tile_data = self.renderer.render(viewport, *tile_rect, (width, height));
 
             // Store tile data in cache at correct raster positions
-            let mut tile_idx = 0;
+            let mut tile_data_idx = 0;
             for local_y in 0..tile_rect.height {
                 let canvas_y = tile_rect.y + local_y;
                 for local_x in 0..tile_rect.width {
                     let canvas_x = tile_rect.x + local_x;
                     let cache_idx = (canvas_y * width + canvas_x) as usize;
-                    cache.data[cache_idx] = tile_data[tile_idx].clone();
-                    tile_idx += 1;
+                    cache.data[cache_idx] = tile_data[tile_data_idx].clone();
+                    tile_data_idx += 1;
                 }
             }
 
             // Colorize and display tile immediately (progressive!)
-            self.colorize_and_display_tile(&tile_data, tile_rect, canvas);
+            self.colorize_and_display_tile(&tile_data, *tile_rect, canvas);
+
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "TILE COMPLETE: {}/{} - {}x{} at ({}, {})",
+                tile_idx + 1,
+                total_tiles,
+                tile_rect.width,
+                tile_rect.height,
+                tile_rect.x,
+                tile_rect.y
+            )));
         }
+
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+            "TILE RENDER COMPLETE: all {} tiles finished",
+            total_tiles
+        )));
 
         // Update cache metadata
         cache.viewport = Some(viewport.clone());
