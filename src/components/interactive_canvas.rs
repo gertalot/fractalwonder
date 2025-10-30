@@ -15,7 +15,7 @@ pub fn InteractiveCanvas(
 
     // Canvas interaction hook - callback updates viewport
     let interaction = use_canvas_interaction(canvas_ref, move |transform_result| {
-        if let Some(canvas_el) = canvas_ref.get() {
+        if let Some(canvas_el) = canvas_ref.get_untracked() {
             let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
             let width = canvas.width();
             let height = canvas.height();
