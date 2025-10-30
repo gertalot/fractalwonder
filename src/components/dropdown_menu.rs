@@ -8,7 +8,7 @@ pub fn DropdownMenu<F>(
     on_select: F,
 ) -> impl IntoView
 where
-    F: Fn(String) + 'static,
+    F: Fn(String) + 'static + Copy,
 {
     let (is_open, set_is_open) = create_signal(false);
 
@@ -28,8 +28,9 @@ where
                         each=move || options.get()
                         key=|(id, _)| id.clone()
                         children=move |(id, name)| {
-                            let is_selected = move || selected_id.get() == id;
-                            let id_clone = id.clone();
+                            let id_for_selected = id.clone();
+                            let id_for_click = id.clone();
+                            let is_selected = move || selected_id.get() == id_for_selected;
                             view! {
                                 <button
                                     class=move || format!(
@@ -41,7 +42,7 @@ where
                                         }
                                     )
                                     on:click=move |_| {
-                                        on_select(id_clone.clone());
+                                        on_select(id_for_click.clone());
                                         set_is_open.set(false);
                                     }
                                 >
