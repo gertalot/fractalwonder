@@ -1,11 +1,11 @@
 use crate::hooks::use_canvas_interaction::use_canvas_interaction;
-use crate::rendering::{points::Rect, viewport::Viewport, Renderer, TilingCanvasRenderer};
+use crate::rendering::{points::Rect, viewport::Viewport, CanvasRenderer};
 use leptos::*;
 use wasm_bindgen::JsCast;
 
 #[component]
 pub fn InteractiveCanvas(
-    canvas_renderer: RwSignal<TilingCanvasRenderer>,
+    canvas_renderer: RwSignal<Box<dyn CanvasRenderer>>,
     viewport: ReadSignal<Viewport<f64>>,
     set_viewport: WriteSignal<Viewport<f64>>,
     set_render_time_ms: WriteSignal<Option<f64>>,

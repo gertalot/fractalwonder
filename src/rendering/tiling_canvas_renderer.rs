@@ -1,5 +1,6 @@
 use crate::rendering::{
-    points::Rect, renderer_trait::Renderer, viewport::Viewport, AppData, Colorizer, PixelRect,
+    canvas_renderer::CanvasRenderer, points::Rect, renderer_trait::Renderer, viewport::Viewport,
+    AppData, Colorizer, PixelRect,
 };
 use std::sync::{
     atomic::{AtomicU32, Ordering},
@@ -233,6 +234,28 @@ impl TilingCanvasRenderer {
         context
             .put_image_data(&image_data, rect.x as f64, rect.y as f64)
             .unwrap();
+    }
+}
+
+impl CanvasRenderer for TilingCanvasRenderer {
+    fn set_renderer(&mut self, renderer: Box<dyn Renderer<Coord = f64, Data = AppData>>) {
+        self.set_renderer(renderer);
+    }
+
+    fn set_colorizer(&mut self, colorizer: Colorizer<AppData>) {
+        self.set_colorizer(colorizer);
+    }
+
+    fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement) {
+        self.render(viewport, canvas);
+    }
+
+    fn natural_bounds(&self) -> Rect<f64> {
+        self.natural_bounds()
+    }
+
+    fn cancel_render(&self) {
+        self.cancel_render();
     }
 }
 
