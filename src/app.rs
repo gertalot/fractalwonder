@@ -63,12 +63,28 @@ pub fn App() -> impl IntoView {
     });
 
     // ========== Effect: Renderer selection changed ==========
+    let previous_renderer_id = create_rw_signal(initial_state.selected_renderer_id.clone());
+
     create_effect(move |_| {
-        let renderer_id = selected_renderer_id.get();
-        let config = get_config(&renderer_id).unwrap();
+        let new_renderer_id = selected_renderer_id.get();
+        let old_renderer_id = previous_renderer_id.get_untracked();
+
+        // Save current viewport to OLD renderer before switching
+        if new_renderer_id != old_renderer_id {
+            let current_vp = viewport.get_untracked();
+            set_renderer_states.update(|states| {
+                if let Some(state) = states.get_mut(&old_renderer_id) {
+                    state.viewport = current_vp;
+                }
+            });
+        }
+
+        previous_renderer_id.set(new_renderer_id.clone());
+
+        let config = get_config(&new_renderer_id).unwrap();
         // CRITICAL: Use get_untracked() to avoid re-running when color_scheme_id changes
         let states = renderer_states.get_untracked();
-        let state = states.get(&renderer_id).unwrap();
+        let state = states.get(&new_renderer_id).unwrap();
 
         // Create new renderer
         let new_renderer = (config.create_renderer)();
@@ -88,8 +104,9 @@ pub fn App() -> impl IntoView {
         set_viewport.set_untracked(state.viewport.clone());
 
         // Save immediately
+        let states = renderer_states.get();
         AppState {
-            selected_renderer_id: renderer_id.clone(),
+            selected_renderer_id: new_renderer_id.clone(),
             renderer_states: states,
         }
         .save();
