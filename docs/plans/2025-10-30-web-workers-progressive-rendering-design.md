@@ -53,21 +53,32 @@ pub struct WorkerPoolCanvasRenderer<S, D: Clone> {
     renderer_type: RendererType,
     current_render_id: Arc<AtomicU32>,
     in_flight: Arc<Mutex<HashMap<WorkerId, (PixelRect, u32)>>>,
+    workers_ready: Arc<AtomicU32>,  // Track how many workers are ready
 }
 ```
 
 #### Worker Count
 - Spawn `navigator.hardwareConcurrency` workers (one per CPU core)
 - Maximizes parallel computation
-- Each worker is independent, loads full WASM module
+- Each worker is independent, loads full WASM module as ES6 module
+
+#### Worker Module Type: ES6 Modules
+**IMPORTANT:** Workers must be created as ES6 module workers, not classic workers:
+- Use `new Worker(url, { type: 'module' })` in JavaScript
+- Enables `import` statements in worker code
+- Allows dynamic WASM imports without `importScripts`
+- Required for modern WASM loading patterns
 
 #### Worker Lifecycle
 
 1. **Initialization:**
-   - Main thread spawns N workers
-   - Each worker receives `Init` message with `RendererType` (Mandelbrot or TestImage)
+   - Main thread spawns N workers as ES6 modules
+   - Each worker dynamically imports WASM module
+   - Worker receives `Init` message with `RendererType` (Mandelbrot or TestImage)
    - Worker constructs appropriate renderer instance
-   - Worker enters ready state
+   - Worker sends `Ready` response back to main thread
+   - Main thread increments `workers_ready` counter
+   - **Main thread waits until all workers are ready before sending tiles**
 
 2. **Computation Loop:**
    - Worker waits for `ComputeTile` message
@@ -116,16 +127,32 @@ enum WorkerResponse {
 
 ### 2. Work Queue & Load Balancing
 
-#### Queue Strategy: Pull-Based Work Distribution
+#### Queue Strategy: Pull-Based Work Distribution with Readiness Gate
 
 **Algorithm:**
-1. Main thread generates all tiles at render start: `compute_tiles(width, height, tile_size)`
-2. Tiles added to shared queue: `VecDeque<PixelRect>`
-3. Initial dispatch: Send one tile to each worker
-4. On `TileComplete` receipt:
+1. Main thread generates all tiles at render start: `compute_tiles_circular(width, height, tile_size, center)`
+2. Tiles added to shared queue in circular order: `VecDeque<PixelRect>`
+3. **Wait for all workers to signal Ready** before dispatching any tiles
+4. Initial dispatch: Once all workers ready, send one tile to each worker
+5. On `TileComplete` receipt:
    - Process tile (cache, colorize, display)
    - If queue not empty: send next tile to this worker
    - Else: worker becomes idle
+
+**Worker Readiness Protocol:**
+```rust
+fn start_worker_computation(&self, viewport: &Viewport<S>, canvas_size: (u32, u32), render_id: u32) {
+    // Wait for all workers to be ready
+    let expected_workers = self.workers.len();
+    while self.workers_ready.load(Ordering::SeqCst) < expected_workers as u32 {
+        // Could use async/await or callback pattern instead of busy wait
+        // For now, this ensures we don't send tiles before workers can handle them
+    }
+
+    // Now safe to dispatch tiles
+    // ...
+}
+```
 
 **Self-balancing properties:**
 - Fast tiles (solid areas): worker quickly requests more work
@@ -133,7 +160,57 @@ enum WorkerResponse {
 - No worker idles while work remains
 - Automatically adapts to varying tile complexity
 
-**Progressive rendering guarantee:** Each `TileComplete` triggers immediate `colorize() + putImageData()`. User sees tiles appear as soon as any worker completes one, in completion order (not spatial order).
+**Progressive rendering guarantee:** Each `TileComplete` triggers immediate `colorize() + putImageData()`. User sees tiles appear as soon as any worker completes one, starting from center and radiating outward (circular rendering pattern).
+
+#### Circular Tile Ordering
+
+**Goal:** Render tiles starting from the center of the viewport and working outward in a circular/spiral pattern.
+
+**Rationale:**
+- Users typically focus on the center of the viewport
+- Progressive rendering becomes more visually meaningful when central content appears first
+- Provides immediate feedback on the area of interest while periphery fills in
+
+**Algorithm:**
+```rust
+/// Compute tiles in circular order starting from center
+fn compute_tiles_circular(width: u32, height: u32, tile_size: u32) -> Vec<PixelRect> {
+    let center_x = width / 2;
+    let center_y = height / 2;
+
+    // Generate all tiles
+    let mut tiles = Vec::new();
+    for y in (0..height).step_by(tile_size as usize) {
+        for x in (0..width).step_by(tile_size as usize) {
+            let tile_width = tile_size.min(width - x);
+            let tile_height = tile_size.min(height - y);
+            tiles.push(PixelRect::new(x, y, tile_width, tile_height));
+        }
+    }
+
+    // Sort by distance from center (closest first)
+    tiles.sort_by_key(|tile| {
+        let tile_center_x = tile.x + tile.width / 2;
+        let tile_center_y = tile.y + tile.height / 2;
+        let dx = (tile_center_x as i32 - center_x as i32).abs();
+        let dy = (tile_center_y as i32 - center_y as i32).abs();
+        // Use squared distance to avoid sqrt (faster, same ordering)
+        (dx * dx + dy * dy) as u32
+    });
+
+    tiles
+}
+```
+
+**Visual pattern:**
+```
+Render order (1 = first, higher numbers = later):
+[5][4][3][4][5]
+[4][2][1][2][4]
+[3][1][C][1][3]  <- C = center tile (rendered first)
+[4][2][1][2][4]
+[5][4][3][4][5]
+```
 
 ### 3. Data Serialization & Transfer
 
@@ -475,6 +552,18 @@ create_effect(move |_| {
 **Trunk.toml:**
 - Add worker build target
 - Ensure COOP/COEP headers present (already configured)
+- **CRITICAL: Disable file hashing for WASM files** to allow workers to load WASM modules with predictable names
+  ```toml
+  [[hooks]]
+  stage = "post_build"
+  command = "sh"
+  command_arguments = ["-c", "cd dist && for f in *.wasm; do cp $f ${f%-*}.wasm 2>/dev/null || true; done"]
+  ```
+  Or use Trunk's asset configuration to disable hashing:
+  ```toml
+  [build]
+  filehash = false
+  ```
 
 **Cargo.toml:**
 - Add dependencies: `bincode`, `serde` (likely already present)

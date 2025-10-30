@@ -10,6 +10,55 @@
 
 ---
 
+## Task 0: Configure Trunk Build System
+
+**Files:**
+- Modify: `Trunk.toml`
+
+**Goal:** Disable file hashing for WASM files so workers can load them with predictable names.
+
+**Step 1: Update Trunk.toml**
+
+Add to `Trunk.toml`:
+
+```toml
+[build]
+# Disable file hashing to allow workers to load WASM with predictable names
+filehash = false
+```
+
+**Rationale:**
+- Workers need to know the exact WASM filename to import
+- File hashing adds random suffixes (e.g., `fractalwonder_bg-abc123.wasm`)
+- ES6 module imports in workers require static paths
+- Disabling hashing gives predictable names: `fractalwonder_bg.wasm`
+
+**Step 2: Verify configuration**
+
+```bash
+cat Trunk.toml
+```
+
+Expected: `filehash = false` present in `[build]` section
+
+**Step 3: Test build**
+
+```bash
+trunk build
+ls -la dist/*.wasm
+```
+
+Expected: WASM files without hash suffixes
+
+**Step 4: Commit**
+
+```bash
+git add Trunk.toml
+git commit -m "config: disable file hashing for worker WASM loading"
+```
+
+---
+
 ## Task 1: Create Worker Message Types
 
 **Files:**
@@ -117,11 +166,12 @@ git commit -m "feat: add worker message types for Web Worker communication"
 
 ---
 
-## Task 2: Create Worker Entry Point (JavaScript Bootstrap)
+## Task 2: Create Worker Entry Point (ES6 Module Bootstrap)
 
 **Files:**
 - Create: `public/worker.js`
-- Modify: `index.html` (add worker script reference if needed)
+
+**IMPORTANT:** Worker must be an ES6 module to support modern WASM loading patterns.
 
 **Step 1: Create public directory if it doesn't exist**
 
@@ -129,33 +179,40 @@ git commit -m "feat: add worker message types for Web Worker communication"
 mkdir -p public
 ```
 
-**Step 2: Write worker bootstrap script**
+**Step 2: Write worker bootstrap script as ES6 module**
 
 In `public/worker.js`:
 
 ```javascript
-// Worker bootstrap - loads WASM module and starts Rust worker code
-importScripts('./fractalwonder.js');
+// Worker bootstrap - ES6 module for loading WASM
+// This worker will be instantiated with: new Worker('./worker.js', { type: 'module' })
 
-// Initialize WASM
-const { worker_main } = wasm_bindgen;
-
+// Dynamically import the WASM module
 async function init() {
-    // Load WASM module
-    await wasm_bindgen('./fractalwonder_bg.wasm');
+    try {
+        // Import WASM initialization function
+        // Note: File path assumes no file hashing (configured in Trunk.toml)
+        const wasm = await import('./fractalwonder.js');
 
-    // Start Rust worker loop
-    worker_main();
+        // Initialize WASM module
+        await wasm.default('./fractalwonder_bg.wasm');
+
+        // Start Rust worker loop
+        wasm.worker_main();
+
+        console.log('[Worker] Initialized successfully');
+    } catch (err) {
+        console.error('[Worker] Initialization failed:', err);
+        postMessage({
+            Error: {
+                message: `Worker init failed: ${err.message}`
+            }
+        });
+    }
 }
 
-init().catch(err => {
-    console.error('Worker initialization failed:', err);
-    postMessage({
-        Error: {
-            message: `Worker init failed: ${err.message}`
-        }
-    });
-});
+// Start initialization
+init();
 ```
 
 **Step 3: Verify file creation**
@@ -170,7 +227,7 @@ Expected: File exists
 
 ```bash
 git add public/worker.js
-git commit -m "feat: add worker.js bootstrap script for WASM loading"
+git commit -m "feat: add worker.js as ES6 module for WASM loading"
 ```
 
 ---
@@ -523,6 +580,8 @@ pub struct WorkerPoolCanvasRenderer<S, D: Clone> {
     renderer_type: RendererType,
     tile_size: u32,
     natural_bounds: Rect<S>,
+    workers_ready: Arc<AtomicU32>,  // Track number of ready workers
+    expected_workers: usize,         // Total workers to wait for
 }
 
 impl<S: Clone + PartialEq, D: Clone + Default> WorkerPoolCanvasRenderer<S, D> {
@@ -547,6 +606,8 @@ impl<S: Clone + PartialEq, D: Clone + Default> WorkerPoolCanvasRenderer<S, D> {
             renderer_type,
             tile_size,
             natural_bounds,
+            workers_ready: Arc::new(AtomicU32::new(0)),
+            expected_workers: worker_count,
         }
     }
 }
@@ -609,9 +670,19 @@ In `src/rendering/worker_pool_canvas_renderer.rs`, add after the `new` method:
     pub fn spawn_workers(&mut self) -> Result<(), JsValue> {
         let worker_count = get_hardware_concurrency();
 
+        // Reset ready counter
+        self.workers_ready.store(0, Ordering::SeqCst);
+
         for id in 0..worker_count {
-            match Worker::new("./worker.js") {
+            // Create ES6 module worker
+            let mut options = web_sys::WorkerOptions::new();
+            options.type_(web_sys::WorkerType::Module);
+
+            match Worker::new_with_options("./worker.js", &options) {
                 Ok(worker) => {
+                    // Setup message handler BEFORE sending init message
+                    self.setup_worker_handler(&worker, id)?;
+
                     // Send init message
                     let init_msg = WorkerMessage::<S>::Init {
                         renderer_type: self.renderer_type,
@@ -621,12 +692,9 @@ In `src/rendering/worker_pool_canvas_renderer.rs`, add after the `new` method:
                         let _ = worker.post_message(&js_value);
                     }
 
-                    // Setup message handler
-                    self.setup_worker_handler(&worker, id)?;
-
                     self.workers.push(WorkerHandle { worker, id });
 
-                    web_sys::console::log_1(&format!("Worker {} spawned", id).into());
+                    web_sys::console::log_1(&format!("Worker {} spawned (ES6 module)", id).into());
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Failed to spawn worker {}: {:?}", id, e).into());
@@ -642,6 +710,7 @@ In `src/rendering/worker_pool_canvas_renderer.rs`, add after the `new` method:
     fn setup_worker_handler(&self, worker: &Worker, worker_id: usize) -> Result<(), JsValue> {
         let tile_queue = Arc::clone(&self.tile_queue);
         let cached_state = Arc::clone(&self.cached_state);
+        let workers_ready = Arc::clone(&self.workers_ready);
         let colorizer = self.colorizer;
 
         let onmessage = Closure::wrap(Box::new(move |event: MessageEvent| {
@@ -650,8 +719,13 @@ In `src/rendering/worker_pool_canvas_renderer.rs`, add after the `new` method:
             if let Ok(response) = serde_wasm_bindgen::from_value::<WorkerResponse>(data) {
                 match response {
                     WorkerResponse::Ready => {
-                        web_sys::console::log_1(&format!("Worker {} ready", worker_id).into());
-                        // Worker is ready, could send first tile here
+                        let ready_count = workers_ready.fetch_add(1, Ordering::SeqCst) + 1;
+                        web_sys::console::log_1(&format!(
+                            "Worker {} ready ({} total ready)",
+                            worker_id, ready_count
+                        ).into());
+                        // Note: Tiles will be dispatched once ALL workers are ready
+                        // See start_worker_computation for readiness gate
                     }
                     WorkerResponse::TileComplete { render_id, rect, data } => {
                         web_sys::console::log_1(&format!(
@@ -750,15 +824,18 @@ git commit -m "feat: implement worker spawning and message handlers"
 **Files:**
 - Modify: `src/rendering/worker_pool_canvas_renderer.rs`
 
-**Step 1: Add compute_tiles helper function**
+**Step 1: Add circular tile ordering function**
 
 In `src/rendering/worker_pool_canvas_renderer.rs`, add before `get_hardware_concurrency`:
 
 ```rust
-/// Compute tile rectangles (same as TilingCanvasRenderer)
-fn compute_tiles(width: u32, height: u32, tile_size: u32) -> Vec<PixelRect> {
-    let mut tiles = Vec::new();
+/// Compute tile rectangles in circular order starting from center
+fn compute_tiles_circular(width: u32, height: u32, tile_size: u32) -> Vec<PixelRect> {
+    let center_x = width / 2;
+    let center_y = height / 2;
 
+    // Generate all tiles
+    let mut tiles = Vec::new();
     for y in (0..height).step_by(tile_size as usize) {
         for x in (0..width).step_by(tile_size as usize) {
             let tile_width = tile_size.min(width - x);
@@ -766,6 +843,21 @@ fn compute_tiles(width: u32, height: u32, tile_size: u32) -> Vec<PixelRect> {
             tiles.push(PixelRect::new(x, y, tile_width, tile_height));
         }
     }
+
+    // Sort by distance from center (closest first)
+    tiles.sort_by_key(|tile| {
+        let tile_center_x = tile.x + tile.width / 2;
+        let tile_center_y = tile.y + tile.height / 2;
+        let dx = (tile_center_x as i32 - center_x as i32).abs();
+        let dy = (tile_center_y as i32 - center_y as i32).abs();
+        // Use squared distance to avoid sqrt (faster, same ordering)
+        (dx * dx + dy * dy) as u32
+    });
+
+    web_sys::console::log_1(&format!(
+        "Generated {} tiles in circular order (center first)",
+        tiles.len()
+    ).into());
 
     tiles
 }
@@ -812,8 +904,8 @@ In the `impl` block of `WorkerPoolCanvasRenderer`, add:
         canvas_size: (u32, u32),
         render_id: u32,
     ) {
-        // Generate all tiles
-        let tiles = compute_tiles(canvas_size.0, canvas_size.1, self.tile_size);
+        // Generate all tiles in circular order (center first)
+        let tiles = compute_tiles_circular(canvas_size.0, canvas_size.1, self.tile_size);
 
         web_sys::console::log_1(&format!(
             "Starting computation: {} tiles, render_id {}",
@@ -827,6 +919,27 @@ In the `impl` block of `WorkerPoolCanvasRenderer`, add:
             queue.clear();
             queue.extend(tiles.iter().copied());
         }
+
+        // CRITICAL: Wait for all workers to be ready before dispatching tiles
+        web_sys::console::log_1(&format!(
+            "Waiting for {} workers to be ready...",
+            self.expected_workers
+        ).into());
+
+        // Note: In production, use async/await or callback instead of busy wait
+        // For now, check readiness before dispatch
+        let ready_count = self.workers_ready.load(Ordering::SeqCst);
+        if ready_count < self.expected_workers as u32 {
+            web_sys::console::warn_1(&format!(
+                "Only {}/{} workers ready, waiting...",
+                ready_count, self.expected_workers
+            ).into());
+            // In real implementation, defer tile dispatch until all workers ready
+            // Could use a callback or Promise-based approach
+            return;
+        }
+
+        web_sys::console::log_1(&"All workers ready, dispatching tiles".into());
 
         // Send initial batch (one tile per worker)
         for (worker_id, _) in self.workers.iter().enumerate() {
