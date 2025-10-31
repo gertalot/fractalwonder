@@ -12,6 +12,9 @@ use leptos::*;
 use std::time::Duration;
 use web_sys::HtmlCanvasElement;
 
+// Zoom threshold for switching from f64 to BigFloat arithmetic
+const BIGFLOAT_ZOOM_THRESHOLD: f64 = 1e10;
+
 #[derive(Clone)]
 enum CanvasRendererHolder {
     F64(TilingCanvasRenderer<f64, AppData>),
@@ -80,10 +83,9 @@ fn create_mandelbrot_canvas_renderer(
     colorizer: Colorizer<AppData>,
 ) -> TilingCanvasRenderer<BigFloat, AppData> {
     // Use adaptive renderer that switches between f64 and BigFloat based on zoom
-    // Threshold of 1e10 means:
-    // - zoom < 1e10: fast f64 arithmetic
-    // - zoom >= 1e10: arbitrary precision BigFloat
-    let adaptive_renderer = AdaptiveMandelbrotRenderer::new(1e10);
+    // - zoom < BIGFLOAT_ZOOM_THRESHOLD: fast f64 arithmetic
+    // - zoom >= BIGFLOAT_ZOOM_THRESHOLD: arbitrary precision BigFloat
+    let adaptive_renderer = AdaptiveMandelbrotRenderer::new(BIGFLOAT_ZOOM_THRESHOLD);
     let renderer: Box<dyn Renderer<Scalar = BigFloat, Data = AppData>> =
         Box::new(adaptive_renderer);
     TilingCanvasRenderer::new(renderer, colorizer, 128)

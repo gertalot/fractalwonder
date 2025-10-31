@@ -137,26 +137,24 @@ impl<S: Clone + PartialEq, D: Clone + Default> TilingCanvasRenderer<S, D> {
 
         // Progressive tiled rendering
         let tiles = compute_tiles(width, height, self.tile_size);
-        let total_tiles = tiles.len();
+        let _total_tiles = tiles.len();
 
         #[cfg(target_arch = "wasm32")]
         web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
             "TILE RENDER START: {} total tiles ({}x{} canvas, {} tile_size)",
-            total_tiles,
-            width,
-            height,
-            self.tile_size
+            _total_tiles, width, height, self.tile_size
         )));
 
-        for (tile_idx, tile_rect) in tiles.iter().enumerate() {
+        #[allow(clippy::unused_enumerate_index)]
+        for (_tile_idx, tile_rect) in tiles.iter().enumerate() {
             // Check if this render has been cancelled
             if cache.render_id.load(Ordering::SeqCst) != render_id {
                 #[cfg(target_arch = "wasm32")]
                 web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
                     "Render {} cancelled during tiling at tile {}/{}",
                     render_id,
-                    tile_idx + 1,
-                    total_tiles
+                    _tile_idx + 1,
+                    _total_tiles
                 )));
                 return;
             }
@@ -182,8 +180,8 @@ impl<S: Clone + PartialEq, D: Clone + Default> TilingCanvasRenderer<S, D> {
             #[cfg(target_arch = "wasm32")]
             web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
                 "TILE COMPLETE: {}/{} - {}x{} at ({}, {})",
-                tile_idx + 1,
-                total_tiles,
+                _tile_idx + 1,
+                _total_tiles,
                 tile_rect.width,
                 tile_rect.height,
                 tile_rect.x,
@@ -194,7 +192,7 @@ impl<S: Clone + PartialEq, D: Clone + Default> TilingCanvasRenderer<S, D> {
         #[cfg(target_arch = "wasm32")]
         web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
             "TILE RENDER COMPLETE: all {} tiles finished",
-            total_tiles
+            _total_tiles
         )));
 
         // Update cache metadata

@@ -16,13 +16,19 @@ The current `TilingCanvasRenderer` computes all tiles synchronously in a single 
 ## Requirements
 
 ### Functional Requirements
+
 1. **Progressive rendering:** User sees tiles appear one-by-one as they complete
 2. **UI responsiveness:** Main thread remains responsive during computation (< 16ms per frame)
 3. **Maximum CPU utilization:** Use all available CPU cores (`navigator.hardwareConcurrency`)
 4. **Immediate cancellation:** User can zoom/pan mid-render without lag
 5. **Preserve abstractions:** Maintain `CanvasRenderer` trait, pluggable renderers, instant recolorization
+6. **WASM in workers:** Workers can load WASM modules that contain pure computation and do NOT use "hydrate" or need
+   any DOM dependencies (which won't work in workers)
+7. **Simple is better:** prefer simple and straightforward architecture and build process for worker script. If it
+   feels complicated, STOP because we need to reconsider the plan.
 
 ### Non-Functional Requirements
+
 - Memory overhead acceptable (< 100 MB for worker pool)
 - Minimal code duplication between main thread and workers
 - Type-safe across worker boundary
@@ -35,6 +41,7 @@ The current `TilingCanvasRenderer` computes all tiles synchronously in a single 
 **Selected approach:** Create `WorkerPoolCanvasRenderer` that manages a pool of Web Workers. Each worker runs dedicated computation code (only `MandelbrotComputer` or `TestImageComputer` level). Main thread handles UI concerns: queue management, caching, colorization, and canvas rendering.
 
 **Key architectural principle:** Clean separation of concerns
+
 - **Workers:** Pure computation (viewport → pixel data)
 - **Main thread:** UI/coordination (colorization, canvas, cache, queue)
 
@@ -58,12 +65,15 @@ pub struct WorkerPoolCanvasRenderer<S, D: Clone> {
 ```
 
 #### Worker Count
+
 - Spawn `navigator.hardwareConcurrency` workers (one per CPU core)
 - Maximizes parallel computation
 - Each worker is independent, loads full WASM module as ES6 module
 
 #### Worker Module Type: ES6 Modules
+
 **IMPORTANT:** Workers must be created as ES6 module workers, not classic workers:
+
 - Use `new Worker(url, { type: 'module' })` in JavaScript
 - Enables `import` statements in worker code
 - Allows dynamic WASM imports without `importScripts`
@@ -72,6 +82,7 @@ pub struct WorkerPoolCanvasRenderer<S, D: Clone> {
 #### Worker Lifecycle
 
 1. **Initialization:**
+
    - Main thread spawns N workers as ES6 modules
    - Each worker dynamically imports WASM module
    - Worker receives `Init` message with `RendererType` (Mandelbrot or TestImage)
@@ -81,6 +92,7 @@ pub struct WorkerPoolCanvasRenderer<S, D: Clone> {
    - **Main thread waits until all workers are ready before sending tiles**
 
 2. **Computation Loop:**
+
    - Worker waits for `ComputeTile` message
    - Computes tile using renderer
    - Serializes data to bytes
@@ -130,6 +142,7 @@ enum WorkerResponse {
 #### Queue Strategy: Pull-Based Work Distribution with Readiness Gate
 
 **Algorithm:**
+
 1. Main thread generates all tiles at render start: `compute_tiles_circular(width, height, tile_size, center)`
 2. Tiles added to shared queue in circular order: `VecDeque<PixelRect>`
 3. **Wait for all workers to signal Ready** before dispatching any tiles
@@ -140,6 +153,7 @@ enum WorkerResponse {
    - Else: worker becomes idle
 
 **Worker Readiness Protocol:**
+
 ```rust
 fn start_worker_computation(&self, viewport: &Viewport<S>, canvas_size: (u32, u32), render_id: u32) {
     // Wait for all workers to be ready
@@ -155,6 +169,7 @@ fn start_worker_computation(&self, viewport: &Viewport<S>, canvas_size: (u32, u3
 ```
 
 **Self-balancing properties:**
+
 - Fast tiles (solid areas): worker quickly requests more work
 - Slow tiles (fractal details): worker takes longer, others continue
 - No worker idles while work remains
@@ -167,11 +182,13 @@ fn start_worker_computation(&self, viewport: &Viewport<S>, canvas_size: (u32, u3
 **Goal:** Render tiles starting from the center of the viewport and working outward in a circular/spiral pattern.
 
 **Rationale:**
+
 - Users typically focus on the center of the viewport
 - Progressive rendering becomes more visually meaningful when central content appears first
 - Provides immediate feedback on the area of interest while periphery fills in
 
 **Algorithm:**
+
 ```rust
 /// Compute tiles in circular order starting from center
 fn compute_tiles_circular(width: u32, height: u32, tile_size: u32) -> Vec<PixelRect> {
@@ -203,6 +220,7 @@ fn compute_tiles_circular(width: u32, height: u32, tile_size: u32) -> Vec<PixelR
 ```
 
 **Visual pattern:**
+
 ```
 Render order (1 = first, higher numbers = later):
 [5][4][3][4][5]
@@ -215,6 +233,7 @@ Render order (1 = first, higher numbers = later):
 ### 3. Data Serialization & Transfer
 
 #### Challenge
+
 Workers cannot share Rust objects directly. Must serialize across worker boundary.
 
 #### Solution
@@ -236,6 +255,7 @@ let data: Vec<D> = bincode::deserialize(&bytes).unwrap();
 **Transfer optimization:** Use `Transferable` for zero-copy transfer of `ArrayBuffer`. Worker loses access after transfer (acceptable - tile is done).
 
 **Type safety:**
+
 - Both main thread and worker compiled with same Rust types
 - Serialization format guaranteed to match
 - Type mismatch = compile error, not runtime error
@@ -256,6 +276,7 @@ struct CachedState<S, D: Clone> {
 #### Cache Behavior
 
 **During computation:**
+
 ```rust
 fn on_tile_complete(&self, render_id: u32, rect: PixelRect, data: Vec<D>) {
     let mut cache = self.cache.lock().unwrap();
@@ -279,6 +300,7 @@ fn on_tile_complete(&self, render_id: u32, rect: PixelRect, data: Vec<D>) {
 ```
 
 **Recolorization (instant, no workers):**
+
 ```rust
 fn set_colorizer(&mut self, colorizer: Colorizer<D>) {
     self.colorizer = colorizer;
@@ -293,6 +315,7 @@ fn set_colorizer(&mut self, colorizer: Colorizer<D>) {
 ```
 
 **Cache invalidation:**
+
 ```rust
 fn render(&self, viewport: &Viewport<S>, canvas: &HtmlCanvasElement) {
     let mut cache = self.cache.lock().unwrap();
@@ -316,6 +339,7 @@ fn render(&self, viewport: &Viewport<S>, canvas: &HtmlCanvasElement) {
 #### Cancellation Protocol: Render ID
 
 **Mechanism:**
+
 - Every render has unique `render_id` (monotonically increasing `AtomicU32`)
 - When user zooms/pans: increment `render_id`, notify workers
 - Workers check `render_id` before sending results
@@ -340,6 +364,7 @@ fn cancel_render(&self) {
 ```
 
 **Worker side:**
+
 ```rust
 fn worker_loop(renderer: Box<dyn Renderer>) {
     let mut current_render_id = 0;
@@ -368,6 +393,7 @@ fn worker_loop(renderer: Box<dyn Renderer>) {
 #### Responsiveness Guarantees
 
 **Main thread per-tile work:**
+
 - Receive message: ~0.1 ms
 - Deserialize data: ~0.5 ms
 - Colorize 128×128 tile: ~1-2 ms
@@ -375,6 +401,7 @@ fn worker_loop(renderer: Box<dyn Renderer>) {
 - **Total: ~3 ms** (well under 16 ms frame budget)
 
 **User interaction flow:**
+
 1. User zooms/pans
 2. Leptos effect detects viewport change
 3. `cancel_render()` called (< 1 ms)
@@ -387,6 +414,7 @@ fn worker_loop(renderer: Box<dyn Renderer>) {
 #### Pluggability
 
 **Interface preservation:**
+
 ```rust
 impl<S, D> CanvasRenderer for WorkerPoolCanvasRenderer<S, D> {
     type Scalar = S;
@@ -401,6 +429,7 @@ impl<S, D> CanvasRenderer for WorkerPoolCanvasRenderer<S, D> {
 ```
 
 **Usage (identical to current):**
+
 ```rust
 // Swap to Mandelbrot
 canvas_renderer.update(|cr| {
@@ -444,6 +473,7 @@ impl WorkerPoolCanvasRenderer {
 ```
 
 **Worker construction:**
+
 ```rust
 #[wasm_bindgen]
 pub fn worker_main() {
@@ -469,6 +499,7 @@ pub fn worker_main() {
 ### 7. Error Handling
 
 #### Worker Failures
+
 ```rust
 fn setup_worker_error_handler(&self, worker: &Worker, worker_id: usize) {
     let onerror = Closure::wrap(Box::new(move |e: ErrorEvent| {
@@ -483,6 +514,7 @@ fn setup_worker_error_handler(&self, worker: &Worker, worker_id: usize) {
 ```
 
 #### Serialization Failures
+
 ```rust
 // Worker: wrap serialize in Result
 match bincode::serialize(&data) {
@@ -501,11 +533,13 @@ match bincode::deserialize::<D>(&bytes) {
 ```
 
 #### Race Conditions
+
 - Tile completes after cancellation → `render_id` check discards it (expected behavior)
 - Multiple rapid cancellations → `render_id` keeps incrementing, all old work ignored
 - Worker in middle of tile when cancelled → completes tile but doesn't send (wasted work, unavoidable)
 
 #### Browser Compatibility
+
 ```rust
 fn get_hardware_concurrency() -> usize {
     let nav = web_sys::window().unwrap().navigator();
@@ -534,6 +568,7 @@ src/rendering/
 ### Integration Points
 
 **In `app.rs`:**
+
 ```rust
 // Replace TilingCanvasRenderer with WorkerPoolCanvasRenderer
 let canvas_renderer = create_rw_signal(
@@ -550,6 +585,7 @@ create_effect(move |_| {
 ### Build Configuration
 
 **Trunk.toml:**
+
 - Add worker build target
 - Ensure COOP/COEP headers present (already configured)
 - **CRITICAL: Disable file hashing for WASM files** to allow workers to load WASM modules with predictable names
@@ -566,6 +602,7 @@ create_effect(move |_| {
   ```
 
 **Cargo.toml:**
+
 - Add dependencies: `bincode`, `serde` (likely already present)
 
 ## Performance Characteristics
@@ -573,11 +610,13 @@ create_effect(move |_| {
 ### Expected Improvements
 
 **Current (single-threaded):**
+
 - 1 core at 100%
 - UI blocked during computation
 - No progressive rendering visible
 
 **With workers (8-core machine):**
+
 - 8 cores at ~100% each
 - UI responsive (main thread mostly idle)
 - Progressive rendering: tiles appear ~8× faster (assuming load balanced)
@@ -585,6 +624,7 @@ create_effect(move |_| {
 ### Memory Overhead
 
 Per worker:
+
 - WASM module: ~2-5 MB (depends on precision code)
 - Renderer state: minimal (mostly stack)
 - One tile at a time: ~16-64 KB (128×128 × sizeof(D))
@@ -594,11 +634,13 @@ Total for 8 workers: ~40-80 MB (acceptable on modern machines)
 ### Bottlenecks
 
 **Potential:**
+
 - Message passing overhead (mitigated by processing one tile per message)
 - Serialization overhead (bincode is fast, ~1 ms per tile)
 - Main thread colorization (batching possible if needed)
 
 **Unlikely:**
+
 - Worker starvation (work queue prevents this)
 - Cache contention (tiles write to different indices)
 
@@ -614,13 +656,13 @@ Total for 8 workers: ~40-80 MB (acceptable on modern machines)
 
 ## Risks & Mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| Worker spawn/initialization slow | Spawn workers once at app start, reuse across renders |
-| Serialization overhead too high | Profile and optimize; consider alternative serialization if needed |
-| Main thread colorization bottleneck | Batch colorization if needed, or move to workers (complex) |
-| Browser worker limits | Check `hardwareConcurrency`, cap at reasonable max (e.g., 16) |
-| WASM module size too large per worker | Investigate code splitting, but likely acceptable (<5 MB/worker) |
+| Risk                                  | Mitigation                                                         |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| Worker spawn/initialization slow      | Spawn workers once at app start, reuse across renders              |
+| Serialization overhead too high       | Profile and optimize; consider alternative serialization if needed |
+| Main thread colorization bottleneck   | Batch colorization if needed, or move to workers (complex)         |
+| Browser worker limits                 | Check `hardwareConcurrency`, cap at reasonable max (e.g., 16)      |
+| WASM module size too large per worker | Investigate code splitting, but likely acceptable (<5 MB/worker)   |
 
 ## Future Enhancements
 
