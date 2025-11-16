@@ -4,7 +4,7 @@ pub mod canvas_utils;
 pub mod colorizers;
 pub mod tiling_canvas_renderer;
 
-pub use async_progressive_renderer::AsyncProgressiveRenderer;
+pub use async_progressive_renderer::AsyncProgressiveCanvasRenderer;
 pub use canvas_renderer::CanvasRenderer;
 pub use canvas_utils::render_with_viewport;
 pub use colorizers::{

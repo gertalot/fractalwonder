@@ -3,9 +3,9 @@ use crate::components::ui::UI;
 use crate::hooks::fullscreen::toggle_fullscreen;
 use crate::hooks::ui_visibility::use_ui_visibility;
 use crate::rendering::{
-    get_config, AdaptiveMandelbrotRenderer, AppData, AppDataRenderer, AsyncProgressiveRenderer,
-    BigFloat, Colorizer, PixelRenderer, Point, PrecisionCalculator, Rect, Renderer,
-    TestImageComputer, ToF64, Viewport, RENDER_CONFIGS,
+    get_config, AdaptiveMandelbrotRenderer, AppData, AppDataRenderer,
+    AsyncProgressiveCanvasRenderer, BigFloat, Colorizer, PixelRenderer, Point, PrecisionCalculator,
+    Rect, Renderer, TestImageComputer, ToF64, Viewport, RENDER_CONFIGS,
 };
 use crate::state::AppState;
 use leptos::*;
@@ -17,8 +17,8 @@ const BIGFLOAT_ZOOM_THRESHOLD: f64 = 1e10;
 
 #[derive(Clone)]
 enum CanvasRendererHolder {
-    F64(AsyncProgressiveRenderer<f64, AppData>),
-    BigFloat(AsyncProgressiveRenderer<BigFloat, AppData>),
+    F64(AsyncProgressiveCanvasRenderer<f64, AppData>),
+    BigFloat(AsyncProgressiveCanvasRenderer<BigFloat, AppData>),
 }
 
 impl CanvasRendererHolder {
@@ -81,25 +81,25 @@ impl CanvasRendererTrait for CanvasRendererHolder {
 fn create_mandelbrot_canvas_renderer(
     _zoom: f64,
     colorizer: Colorizer<AppData>,
-) -> AsyncProgressiveRenderer<BigFloat, AppData> {
+) -> AsyncProgressiveCanvasRenderer<BigFloat, AppData> {
     // Use adaptive renderer that switches between f64 and BigFloat based on zoom
     // - zoom < BIGFLOAT_ZOOM_THRESHOLD: fast f64 arithmetic
     // - zoom >= BIGFLOAT_ZOOM_THRESHOLD: arbitrary precision BigFloat
     let adaptive_renderer = AdaptiveMandelbrotRenderer::new(BIGFLOAT_ZOOM_THRESHOLD);
     let renderer: Box<dyn Renderer<Scalar = BigFloat, Data = AppData>> =
         Box::new(adaptive_renderer);
-    AsyncProgressiveRenderer::new(renderer, colorizer, 128)
+    AsyncProgressiveCanvasRenderer::new(renderer, colorizer, 128)
 }
 
 fn create_test_image_canvas_renderer(
     _zoom: f64,
     colorizer: Colorizer<AppData>,
-) -> AsyncProgressiveRenderer<f64, AppData> {
+) -> AsyncProgressiveCanvasRenderer<f64, AppData> {
     let computer = TestImageComputer::new();
     let pixel_renderer = PixelRenderer::new(computer);
     let app_renderer = AppDataRenderer::new(pixel_renderer, |d| AppData::TestImageData(*d));
     let renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>> = Box::new(app_renderer);
-    AsyncProgressiveRenderer::new(renderer, colorizer, 128)
+    AsyncProgressiveCanvasRenderer::new(renderer, colorizer, 128)
 }
 
 #[component]

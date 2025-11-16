@@ -44,7 +44,7 @@ impl<S, D: Clone> Default for CachedState<S, D> {
 }
 
 /// Async progressive canvas renderer - yields between tiles
-pub struct AsyncProgressiveRenderer<S, D: Clone> {
+pub struct AsyncProgressiveCanvasRenderer<S, D: Clone> {
     renderer: Box<dyn Renderer<Scalar = S, Data = D>>,
     colorizer: Colorizer<D>,
     tile_size: u32,
@@ -52,7 +52,7 @@ pub struct AsyncProgressiveRenderer<S, D: Clone> {
     current_render: Rc<RefCell<Option<RenderState<S, D>>>>,
 }
 
-impl<S, D: Clone> Clone for AsyncProgressiveRenderer<S, D> {
+impl<S, D: Clone> Clone for AsyncProgressiveCanvasRenderer<S, D> {
     fn clone(&self) -> Self {
         Self {
             renderer: dyn_clone::clone_box(&*self.renderer),
@@ -64,7 +64,7 @@ impl<S, D: Clone> Clone for AsyncProgressiveRenderer<S, D> {
     }
 }
 
-impl<S: Clone + PartialEq, D: Clone + Default + 'static> AsyncProgressiveRenderer<S, D> {
+impl<S: Clone + PartialEq, D: Clone + Default + 'static> AsyncProgressiveCanvasRenderer<S, D> {
     pub fn new(
         renderer: Box<dyn Renderer<Scalar = S, Data = D>>,
         colorizer: Colorizer<D>,
@@ -358,10 +358,11 @@ impl<S: Clone + PartialEq, D: Clone + Default + 'static> AsyncProgressiveRendere
     }
 }
 
-/// Compute tiles for given canvas dimensions and tile size
+/// Compute tiles in spiral order starting from center
 fn compute_tiles(width: u32, height: u32, tile_size: u32) -> Vec<PixelRect> {
     let mut tiles = Vec::new();
 
+    // Generate all tiles with their center positions
     for y_start in (0..height).step_by(tile_size as usize) {
         for x_start in (0..width).step_by(tile_size as usize) {
             let x = x_start;
@@ -373,11 +374,31 @@ fn compute_tiles(width: u32, height: u32, tile_size: u32) -> Vec<PixelRect> {
         }
     }
 
+    // Sort tiles by distance from canvas center (spiral from center outward)
+    let canvas_center_x = width as f64 / 2.0;
+    let canvas_center_y = height as f64 / 2.0;
+
+    tiles.sort_by(|a, b| {
+        let a_center_x = a.x as f64 + a.width as f64 / 2.0;
+        let a_center_y = a.y as f64 + a.height as f64 / 2.0;
+        let a_dist_sq =
+            (a_center_x - canvas_center_x).powi(2) + (a_center_y - canvas_center_y).powi(2);
+
+        let b_center_x = b.x as f64 + b.width as f64 / 2.0;
+        let b_center_y = b.y as f64 + b.height as f64 / 2.0;
+        let b_dist_sq =
+            (b_center_x - canvas_center_x).powi(2) + (b_center_y - canvas_center_y).powi(2);
+
+        a_dist_sq
+            .partial_cmp(&b_dist_sq)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
     tiles
 }
 
 impl<S: Clone + PartialEq + 'static, D: Clone + Default + 'static> CanvasRenderer
-    for AsyncProgressiveRenderer<S, D>
+    for AsyncProgressiveCanvasRenderer<S, D>
 {
     type Scalar = S;
     type Data = D;
@@ -424,7 +445,7 @@ mod tests {
         let app_renderer = AppDataRenderer::new(pixel_renderer, |d| AppData::MandelbrotData(*d));
         let renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>> = Box::new(app_renderer);
 
-        let async_renderer = AsyncProgressiveRenderer::new(renderer, test_colorizer, 256);
+        let async_renderer = AsyncProgressiveCanvasRenderer::new(renderer, test_colorizer, 256);
 
         assert_eq!(async_renderer.tile_size, 256);
     }
@@ -437,7 +458,7 @@ mod tests {
         let app_renderer = AppDataRenderer::new(pixel_renderer, |d| AppData::MandelbrotData(*d));
         let renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>> = Box::new(app_renderer);
 
-        let async_renderer = AsyncProgressiveRenderer::new(renderer, test_colorizer, 256);
+        let async_renderer = AsyncProgressiveCanvasRenderer::new(renderer, test_colorizer, 256);
 
         // Cancel should increment render_id
         let cache = async_renderer.cached_state.lock().unwrap();
