@@ -6,7 +6,6 @@ echo "—————————————— Running cargo fmt ————�
 cargo fmt --all -- --check
 
 echo "—————————————— Running cargo clippy ——————————————"
-cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -W clippy::all
 
 echo "—————————————— Running cargo check ——————————————"
@@ -16,4 +15,4 @@ echo "—————————————— Running cargo test ————
 cargo test --workspace --all-targets --all-features
 
 echo "—————————————— Running wasm-pack test ——————————————"
-wasm-pack test --headless --chrome
+wasm-pack test --headless --chrome fractalwonder-ui
