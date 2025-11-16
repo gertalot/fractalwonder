@@ -7,9 +7,9 @@ This document contains exact copy/paste prompts for creating detailed implementa
 ## Iteration 1: Workspace Restructure
 
 ```
-Use the superpowers:writing-plans skill.
+Ultrathink. Use the superpowers:writing-plans skill.
 
-Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
+Read docs/2025-11-16-new-ideas.md. Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
 
 Create a detailed implementation plan for Iteration 1 (Workspace Restructure).
 ```
@@ -21,9 +21,9 @@ Create a detailed implementation plan for Iteration 1 (Workspace Restructure).
 ## Iteration 2: Progressive Rendering (Single-Threaded)
 
 ```
-Use the superpowers:writing-plans skill.
+Ultrathink. Use the superpowers:writing-plans skill.
 
-Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
+Read docs/2025-11-16-new-ideas.md. Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
 
 Create a detailed implementation plan for Iteration 2 (Progressive Rendering - Single-Threaded).
 ```
@@ -33,9 +33,9 @@ Create a detailed implementation plan for Iteration 2 (Progressive Rendering - S
 ## Iteration 3: wasm-bindgen-rayon Worker Setup
 
 ```
-Use the superpowers:writing-plans skill.
+Ultrathink. Use the superpowers:writing-plans skill.
 
-Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
+Read docs/2025-11-16-new-ideas.md. Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
 
 Create a detailed implementation plan for Iteration 3 (wasm-bindgen-rayon Worker Setup).
 ```
@@ -45,9 +45,9 @@ Create a detailed implementation plan for Iteration 3 (wasm-bindgen-rayon Worker
 ## Iteration 4: Responsive Cancellation
 
 ```
-Use the superpowers:writing-plans skill.
+Ultrathink. Use the superpowers:writing-plans skill.
 
-Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
+Read docs/2025-11-16-new-ideas.md. Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
 
 Create a detailed implementation plan for Iteration 4 (Responsive Cancellation).
 ```
@@ -57,9 +57,9 @@ Create a detailed implementation plan for Iteration 4 (Responsive Cancellation).
 ## Iteration 5: Optimize Tile Scheduling/Sizing
 
 ```
-Use the superpowers:writing-plans skill.
+Ultrathink. Use the superpowers:writing-plans skill.
 
-Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
+Read docs/2025-11-16-new-ideas.md. Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
 
 Create a detailed implementation plan for Iteration 5 (Optimize Tile Scheduling/Sizing).
 ```
@@ -69,9 +69,9 @@ Create a detailed implementation plan for Iteration 5 (Optimize Tile Scheduling/
 ## Iteration 6: Perturbation Theory (Single Reference)
 
 ```
-Use the superpowers:writing-plans skill.
+Ultrathink. Use the superpowers:writing-plans skill.
 
-Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
+Read docs/2025-11-16-new-ideas.md. Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
 
 Create a detailed implementation plan for Iteration 6 (Perturbation Theory - Single Reference).
 ```
@@ -81,9 +81,9 @@ Create a detailed implementation plan for Iteration 6 (Perturbation Theory - Sin
 ## Iteration 7: Adaptive Quadtree (Multiple References)
 
 ```
-Use the superpowers:writing-plans skill.
+Ultrathink. Use the superpowers:writing-plans skill.
 
-Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
+Read docs/2025-11-16-new-ideas.md. Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
 
 Create a detailed implementation plan for Iteration 7 (Adaptive Quadtree - Multiple References).
 ```
