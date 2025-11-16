@@ -18,6 +18,8 @@ struct RenderState<S, D: Clone> {
     remaining_tiles: Vec<PixelRect>,
     computed_data: Vec<D>,
     render_id: u32,
+    total_tiles: usize,
+    start_time: f64,
 }
 
 /// Cached state between renders
@@ -192,10 +194,20 @@ impl<S: Clone + PartialEq, D: Clone + Default + 'static> AsyncProgressiveRendere
             None => {
                 // All tiles complete - finalize render
                 #[cfg(target_arch = "wasm32")]
-                web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
-                    "Render {} complete - all tiles finished",
-                    state.render_id
-                )));
+                {
+                    let elapsed = web_sys::window()
+                        .and_then(|w| w.performance())
+                        .map(|p| p.now() - state.start_time)
+                        .unwrap_or(0.0);
+
+                    web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                        "Render {} complete - {} tiles in {:.2}ms ({:.2}ms/tile avg)",
+                        state.render_id,
+                        state.total_tiles,
+                        elapsed,
+                        elapsed / state.total_tiles as f64
+                    )));
+                }
 
                 // Update cache
                 let mut cache = cached_state.lock().unwrap();
@@ -308,14 +320,22 @@ impl<S: Clone + PartialEq, D: Clone + Default + 'static> AsyncProgressiveRendere
 
         // Compute all tiles up front
         let tiles = compute_tiles(width, height, self.tile_size);
+        let total_tiles = tiles.len();
+
+        // Capture start time for performance tracking
+        #[cfg(target_arch = "wasm32")]
+        let start_time = web_sys::window()
+            .and_then(|w| w.performance())
+            .map(|p| p.now())
+            .unwrap_or(0.0);
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let start_time = 0.0;
 
         #[cfg(target_arch = "wasm32")]
         web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
             "Starting async render: {} tiles ({}x{} canvas, {} tile_size)",
-            tiles.len(),
-            width,
-            height,
-            self.tile_size
+            total_tiles, width, height, self.tile_size
         )));
 
         // Initialize render state
@@ -325,6 +345,8 @@ impl<S: Clone + PartialEq, D: Clone + Default + 'static> AsyncProgressiveRendere
             remaining_tiles: tiles,
             computed_data: vec![D::default(); (width * height) as usize],
             render_id,
+            total_tiles,
+            start_time,
         };
 
         *self.current_render.borrow_mut() = Some(render_state);
