@@ -140,12 +140,9 @@ impl<S: Clone + PartialEq, D: Clone + Default + 'static> AsyncProgressiveRendere
             .expect("Failed to cast to 2D context");
 
         // Create ImageData
-        let image_data = ImageData::new_with_u8_clamped_array_and_sh(
-            Clamped(&pixels),
-            rect.width,
-            rect.height,
-        )
-        .expect("Failed to create ImageData");
+        let image_data =
+            ImageData::new_with_u8_clamped_array_and_sh(Clamped(&pixels), rect.width, rect.height)
+                .expect("Failed to create ImageData");
 
         // Put on canvas at tile position
         context
@@ -153,10 +150,8 @@ impl<S: Clone + PartialEq, D: Clone + Default + 'static> AsyncProgressiveRendere
             .expect("Failed to put image data");
     }
 
-    fn render_next_tile_async(
-        &self,
-        canvas: HtmlCanvasElement,
-    ) where
+    fn render_next_tile_async(&self, canvas: HtmlCanvasElement)
+    where
         S: Clone + 'static,
     {
         // Clone Rc for closure
@@ -304,12 +299,8 @@ impl<S: Clone + PartialEq, D: Clone + Default + 'static> AsyncProgressiveRendere
         }
     }
 
-    fn start_async_render(
-        &self,
-        viewport: Viewport<S>,
-        canvas: HtmlCanvasElement,
-        render_id: u32,
-    ) where
+    fn start_async_render(&self, viewport: Viewport<S>, canvas: HtmlCanvasElement, render_id: u32)
+    where
         S: Clone + 'static,
     {
         let width = canvas.width();
@@ -321,7 +312,10 @@ impl<S: Clone + PartialEq, D: Clone + Default + 'static> AsyncProgressiveRendere
         #[cfg(target_arch = "wasm32")]
         web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
             "Starting async render: {} tiles ({}x{} canvas, {} tile_size)",
-            tiles.len(), width, height, self.tile_size
+            tiles.len(),
+            width,
+            height,
+            self.tile_size
         )));
 
         // Initialize render state
@@ -385,5 +379,74 @@ impl<S: Clone + PartialEq + 'static, D: Clone + Default + 'static> CanvasRendere
 
     fn cancel_render(&self) {
         self.cancel_render();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fractalwonder_compute::{AppDataRenderer, MandelbrotComputer, PixelRenderer};
+    use fractalwonder_core::AppData;
+
+    fn test_colorizer(_data: &AppData) -> (u8, u8, u8, u8) {
+        (255, 0, 0, 255) // Red
+    }
+
+    #[test]
+    fn test_async_renderer_creation() {
+        // Create a simple f64-based renderer wrapped to produce AppData
+        let computer = MandelbrotComputer::<f64>::default();
+        let pixel_renderer = PixelRenderer::new(computer);
+        let app_renderer = AppDataRenderer::new(pixel_renderer, |d| AppData::MandelbrotData(*d));
+        let renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>> = Box::new(app_renderer);
+
+        let async_renderer = AsyncProgressiveRenderer::new(renderer, test_colorizer, 256);
+
+        assert_eq!(async_renderer.tile_size, 256);
+    }
+
+    #[test]
+    fn test_cancel_render() {
+        // Create a simple f64-based renderer wrapped to produce AppData
+        let computer = MandelbrotComputer::<f64>::default();
+        let pixel_renderer = PixelRenderer::new(computer);
+        let app_renderer = AppDataRenderer::new(pixel_renderer, |d| AppData::MandelbrotData(*d));
+        let renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>> = Box::new(app_renderer);
+
+        let async_renderer = AsyncProgressiveRenderer::new(renderer, test_colorizer, 256);
+
+        // Cancel should increment render_id
+        let cache = async_renderer.cached_state.lock().unwrap();
+        let initial_id = cache.render_id.load(Ordering::SeqCst);
+        drop(cache);
+
+        async_renderer.cancel_render();
+
+        let cache = async_renderer.cached_state.lock().unwrap();
+        let new_id = cache.render_id.load(Ordering::SeqCst);
+        assert_eq!(new_id, initial_id + 1);
+    }
+
+    #[test]
+    fn test_compute_tiles() {
+        // 512x512 canvas with 256 tile size → 4 tiles
+        let tiles = compute_tiles(512, 512, 256);
+        assert_eq!(tiles.len(), 4);
+
+        // Verify tile positions
+        assert_eq!(tiles[0], PixelRect::new(0, 0, 256, 256));
+        assert_eq!(tiles[1], PixelRect::new(256, 0, 256, 256));
+        assert_eq!(tiles[2], PixelRect::new(0, 256, 256, 256));
+        assert_eq!(tiles[3], PixelRect::new(256, 256, 256, 256));
+    }
+
+    #[test]
+    fn test_compute_tiles_partial() {
+        // 300x200 with 256 tile size → edge tiles are smaller
+        let tiles = compute_tiles(300, 200, 256);
+        assert_eq!(tiles.len(), 2);
+
+        assert_eq!(tiles[0], PixelRect::new(0, 0, 256, 200));
+        assert_eq!(tiles[1], PixelRect::new(256, 0, 44, 200)); // Width = 300 - 256 = 44
     }
 }
