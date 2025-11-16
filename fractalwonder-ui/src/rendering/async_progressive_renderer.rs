@@ -18,7 +18,9 @@ struct RenderState<S, D: Clone> {
     remaining_tiles: Vec<PixelRect>,
     computed_data: Vec<D>,
     render_id: u32,
+    #[allow(dead_code)] // Used in wasm32 builds for performance logging
     total_tiles: usize,
+    #[allow(dead_code)] // Used in wasm32 builds for performance logging
     start_time: f64,
 }
 
