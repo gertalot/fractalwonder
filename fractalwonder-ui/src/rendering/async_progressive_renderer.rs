@@ -105,6 +105,239 @@ impl<S: Clone + PartialEq, D: Clone + Default + 'static> AsyncProgressiveRendere
         cache.canvas_size = None;
         cache.data.clear();
     }
+
+    fn colorize_and_display_tile(&self, data: &[D], rect: PixelRect, canvas: &HtmlCanvasElement) {
+        use wasm_bindgen::Clamped;
+        use web_sys::{CanvasRenderingContext2d, ImageData};
+
+        // Verify data length
+        let expected_pixels = (rect.width * rect.height) as usize;
+        if data.len() != expected_pixels {
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "Tile data mismatch: {} pixels, expected {}",
+                data.len(),
+                expected_pixels
+            )));
+            return;
+        }
+
+        // Convert data to RGBA pixels
+        let pixels: Vec<u8> = data
+            .iter()
+            .flat_map(|d| {
+                let (r, g, b, a) = (self.colorizer)(d);
+                [r, g, b, a]
+            })
+            .collect();
+
+        // Get 2D context
+        let context = canvas
+            .get_context("2d")
+            .expect("Failed to get 2d context")
+            .expect("2d context is None")
+            .dyn_into::<CanvasRenderingContext2d>()
+            .expect("Failed to cast to 2D context");
+
+        // Create ImageData
+        let image_data = ImageData::new_with_u8_clamped_array_and_sh(
+            Clamped(&pixels),
+            rect.width,
+            rect.height,
+        )
+        .expect("Failed to create ImageData");
+
+        // Put on canvas at tile position
+        context
+            .put_image_data(&image_data, rect.x as f64, rect.y as f64)
+            .expect("Failed to put image data");
+    }
+
+    fn render_next_tile_async(
+        &self,
+        canvas: HtmlCanvasElement,
+    ) where
+        S: Clone + 'static,
+    {
+        // Clone Rc for closure
+        let current_render = Rc::clone(&self.current_render);
+        let cached_state = Arc::clone(&self.cached_state);
+        let renderer = dyn_clone::clone_box(&*self.renderer);
+        let self_clone = self.clone();
+
+        // Get current render state
+        let mut render_state = current_render.borrow_mut();
+        let state = match render_state.as_mut() {
+            Some(s) => s,
+            None => {
+                // No active render
+                return;
+            }
+        };
+
+        // Check if cancelled
+        let cache = cached_state.lock().unwrap();
+        let current_render_id = cache.render_id.load(Ordering::SeqCst);
+        drop(cache);
+
+        if current_render_id != state.render_id {
+            // Render cancelled
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "Render {} cancelled",
+                state.render_id
+            )));
+            *render_state = None;
+            return;
+        }
+
+        // Get next tile
+        let tile_rect = match state.remaining_tiles.pop() {
+            Some(tile) => tile,
+            None => {
+                // All tiles complete - finalize render
+                #[cfg(target_arch = "wasm32")]
+                web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                    "Render {} complete - all tiles finished",
+                    state.render_id
+                )));
+
+                // Update cache
+                let mut cache = cached_state.lock().unwrap();
+                cache.viewport = Some(state.viewport.clone());
+                cache.canvas_size = Some(state.canvas_size);
+                cache.data = state.computed_data.clone();
+
+                *render_state = None;
+                return;
+            }
+        };
+
+        let viewport = state.viewport.clone();
+        let canvas_size = state.canvas_size;
+
+        // Drop mutable borrow before calling renderer
+        drop(render_state);
+
+        // Compute tile (synchronous computation, but async scheduling)
+        let tile_data = renderer.render(&viewport, tile_rect, canvas_size);
+
+        // Store in cache
+        let mut render_state = current_render.borrow_mut();
+        if let Some(state) = render_state.as_mut() {
+            // Store tile data in raster order
+            let width = state.canvas_size.0;
+            let mut tile_data_idx = 0;
+            for local_y in 0..tile_rect.height {
+                let canvas_y = tile_rect.y + local_y;
+                for local_x in 0..tile_rect.width {
+                    let canvas_x = tile_rect.x + local_x;
+                    let cache_idx = (canvas_y * width + canvas_x) as usize;
+                    state.computed_data[cache_idx] = tile_data[tile_data_idx].clone();
+                    tile_data_idx += 1;
+                }
+            }
+        }
+        drop(render_state);
+
+        // Display tile immediately
+        self_clone.colorize_and_display_tile(&tile_data, tile_rect, &canvas);
+
+        // Schedule next tile via requestAnimationFrame
+        let window = web_sys::window().expect("no global window");
+
+        let closure = Closure::once(move || {
+            self_clone.render_next_tile_async(canvas);
+        });
+
+        window
+            .request_animation_frame(closure.as_ref().unchecked_ref())
+            .expect("requestAnimationFrame failed");
+
+        closure.forget(); // Keep closure alive
+    }
+
+    pub fn render(&self, viewport: &Viewport<S>, canvas: &HtmlCanvasElement)
+    where
+        S: Clone + 'static,
+    {
+        let width = canvas.width();
+        let height = canvas.height();
+        let cache = self.cached_state.lock().unwrap();
+
+        // Increment render ID to cancel any in-progress renders
+        let current_render_id = cache.render_id.fetch_add(1, Ordering::SeqCst) + 1;
+
+        // Decision: compute vs recolorize
+        if cache.viewport.as_ref() == Some(viewport) && cache.canvas_size == Some((width, height)) {
+            // Same viewport/size → recolorize from cache (synchronous)
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "RECOLORIZE from cache (render_id: {})",
+                current_render_id
+            )));
+
+            let expected_pixels = (width * height) as usize;
+            if cache.data.len() == expected_pixels {
+                let data = cache.data.clone();
+                drop(cache); // Release lock before rendering
+                let full_rect = PixelRect::full_canvas(width, height);
+                self.colorize_and_display_tile(&data, full_rect, canvas);
+            } else {
+                #[cfg(target_arch = "wasm32")]
+                web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
+                    "Cache size mismatch: {} pixels, expected {}",
+                    cache.data.len(),
+                    expected_pixels
+                )));
+            }
+        } else {
+            // Viewport/size changed → async recompute
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "ASYNC RECOMPUTE (render_id: {})",
+                current_render_id
+            )));
+
+            drop(cache); // Release lock
+            self.start_async_render(viewport.clone(), canvas.clone(), current_render_id);
+        }
+    }
+
+    fn start_async_render(
+        &self,
+        viewport: Viewport<S>,
+        canvas: HtmlCanvasElement,
+        render_id: u32,
+    ) where
+        S: Clone + 'static,
+    {
+        let width = canvas.width();
+        let height = canvas.height();
+
+        // Compute all tiles up front
+        let tiles = compute_tiles(width, height, self.tile_size);
+
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+            "Starting async render: {} tiles ({}x{} canvas, {} tile_size)",
+            tiles.len(), width, height, self.tile_size
+        )));
+
+        // Initialize render state
+        let render_state = RenderState {
+            viewport,
+            canvas_size: (width, height),
+            remaining_tiles: tiles,
+            computed_data: vec![D::default(); (width * height) as usize],
+            render_id,
+        };
+
+        *self.current_render.borrow_mut() = Some(render_state);
+
+        // Kick off first tile
+        self.render_next_tile_async(canvas);
+    }
 }
 
 /// Compute tiles for given canvas dimensions and tile size
@@ -123,4 +356,34 @@ fn compute_tiles(width: u32, height: u32, tile_size: u32) -> Vec<PixelRect> {
     }
 
     tiles
+}
+
+impl<S: Clone + PartialEq + 'static, D: Clone + Default + 'static> CanvasRenderer
+    for AsyncProgressiveRenderer<S, D>
+{
+    type Scalar = S;
+    type Data = D;
+
+    fn set_renderer(
+        &mut self,
+        renderer: Box<dyn Renderer<Scalar = Self::Scalar, Data = Self::Data>>,
+    ) {
+        self.set_renderer(renderer);
+    }
+
+    fn set_colorizer(&mut self, colorizer: Colorizer<Self::Data>) {
+        self.set_colorizer(colorizer);
+    }
+
+    fn render(&self, viewport: &Viewport<Self::Scalar>, canvas: &HtmlCanvasElement) {
+        self.render(viewport, canvas);
+    }
+
+    fn natural_bounds(&self) -> Rect<Self::Scalar> {
+        self.natural_bounds()
+    }
+
+    fn cancel_render(&self) {
+        self.cancel_render();
+    }
 }
