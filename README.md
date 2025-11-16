@@ -528,6 +528,30 @@ The architecture ensures:
 
 ## Project Structure
 
+Fractal Wonder uses a Cargo workspace with three crates:
+
+- **fractalwonder-core**: Shared types and utilities (no DOM dependencies)
+  - Geometric types: `Point`, `Rect`, `Viewport`, `PixelRect`
+  - Numeric types: `BigFloat`, `ToF64`
+  - Coordinate transforms
+  - Data types: `AppData`, `MandelbrotData`, `TestImageData`
+
+- **fractalwonder-compute**: Computation engine (no DOM dependencies)
+  - Renderer trait and implementations
+  - Fractal computers (Mandelbrot, TestImage)
+  - Pixel rendering logic
+  - Designed to run in Web Workers
+
+- **fractalwonder-ui**: UI/presentation layer (has DOM dependencies)
+  - Leptos components and hooks
+  - Canvas rendering utilities
+  - Colorizers
+  - Application state management
+
+Dependency chain: `fractalwonder-ui` → `fractalwonder-compute` → `fractalwonder-core`
+
+This separation enables future Web Worker parallelization for multi-core rendering.
+
 ```txt
 fractalwonder/
 ├── .devcontainer/          # Development container configuration
@@ -535,20 +559,16 @@ fractalwonder/
 │   └── devcontainer.json   # VS Code devcontainer settings
 ├── scripts/
 │   └── claude              # Helper script to run Claude Code in container
-├── src/
-│   ├── lib.rs              # WASM entry point
-│   ├── main.rs             # Empty main (for test compatibility)
-│   ├── app.rs              # Main App component
-│   └── components/         # UI components
-│       ├── mod.rs
-│       ├── canvas.rs       # Full-screen canvas rendering
-│       ├── ui.rs           # Bottom UI bar
-│       └── ui_visibility.rs # Auto-hide/show logic
+├── fractalwonder-core/     # Shared types (no DOM)
+├── fractalwonder-compute/  # Computation engine (no DOM)
+├── fractalwonder-ui/       # UI layer (with DOM)
+├── tests/                  # Integration tests
+├── docs/                   # Documentation
 ├── index.html              # HTML entry point for Trunk
 ├── input.css               # Tailwind CSS source
 ├── tailwind.config.js      # Tailwind configuration
 ├── Trunk.toml              # Trunk build configuration
-├── Cargo.toml              # Rust dependencies
+├── Cargo.toml              # Workspace manifest
 └── README.md               # This file
 ```
 
