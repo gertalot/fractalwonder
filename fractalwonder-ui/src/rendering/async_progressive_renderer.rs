@@ -74,4 +74,53 @@ impl<S: Clone + PartialEq, D: Clone + Default + 'static> AsyncProgressiveRendere
             current_render: Rc::new(RefCell::new(None)),
         }
     }
+
+    pub fn set_renderer(&mut self, renderer: Box<dyn Renderer<Scalar = S, Data = D>>) {
+        self.renderer = renderer;
+        self.clear_cache();
+    }
+
+    pub fn set_colorizer(&mut self, colorizer: Colorizer<D>) {
+        self.colorizer = colorizer;
+        // Cache preserved - no recomputation needed
+    }
+
+    pub fn natural_bounds(&self) -> Rect<S> {
+        self.renderer.natural_bounds()
+    }
+
+    pub fn cancel_render(&self) {
+        // Cancel in-progress async render
+        let cache = self.cached_state.lock().unwrap();
+        cache.render_id.fetch_add(1, Ordering::SeqCst);
+        drop(cache);
+
+        // Clear current render state
+        *self.current_render.borrow_mut() = None;
+    }
+
+    fn clear_cache(&mut self) {
+        let mut cache = self.cached_state.lock().unwrap();
+        cache.viewport = None;
+        cache.canvas_size = None;
+        cache.data.clear();
+    }
+}
+
+/// Compute tiles for given canvas dimensions and tile size
+fn compute_tiles(width: u32, height: u32, tile_size: u32) -> Vec<PixelRect> {
+    let mut tiles = Vec::new();
+
+    for y_start in (0..height).step_by(tile_size as usize) {
+        for x_start in (0..width).step_by(tile_size as usize) {
+            let x = x_start;
+            let y = y_start;
+            let w = tile_size.min(width - x_start);
+            let h = tile_size.min(height - y_start);
+
+            tiles.push(PixelRect::new(x, y, w, h));
+        }
+    }
+
+    tiles
 }
