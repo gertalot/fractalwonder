@@ -1,8 +1,13 @@
 # Web Workers for Progressive Rendering - Design Document
 
 **Date:** 2025-10-30
-**Status:** Approved
+**Last Updated:** 2025-11-16
+**Status:** Refined (Added loading state integration)
 **Goal:** Enable true progressive rendering using Web Workers for parallel tile computation while maintaining UI responsiveness and preserving existing architecture abstractions.
+
+**Changelog:**
+- 2025-11-16: Added callback-based worker readiness protocol with UI loading states to avoid main thread blocking
+- 2025-11-16: Added SharedArrayBuffer architecture for perturbation theory support (hybrid approach with Transferables for tile results)
 
 ## Problem Statement
 
@@ -61,6 +66,12 @@ pub struct WorkerPoolCanvasRenderer<S, D: Clone> {
     current_render_id: Arc<AtomicU32>,
     in_flight: Arc<Mutex<HashMap<WorkerId, (PixelRect, u32)>>>,
     workers_ready: Arc<AtomicU32>,  // Track how many workers are ready
+    on_ready_callback: Option<Box<dyn Fn()>>,  // Callback when all workers ready
+    pending_render: Option<(Viewport<S>, HtmlCanvasElement)>,  // Queued render request
+
+    // Perturbation theory support (SharedArrayBuffer)
+    shared_reference_orbit: Option<SharedArrayBuffer>,  // Shared across all workers
+    reference_orbit_ready: Arc<AtomicBool>,  // Signals when reference orbit is ready
 }
 ```
 
@@ -89,7 +100,8 @@ pub struct WorkerPoolCanvasRenderer<S, D: Clone> {
    - Worker constructs appropriate renderer instance
    - Worker sends `Ready` response back to main thread
    - Main thread increments `workers_ready` counter
-   - **Main thread waits until all workers are ready before sending tiles**
+   - **When all workers ready:** Main thread invokes `on_ready_callback` (signals UI to hide loading indicator)
+   - **If render requested before ready:** Request queued in `pending_render`, executed when workers ready
 
 2. **Computation Loop:**
 
@@ -155,16 +167,40 @@ enum WorkerResponse {
 **Worker Readiness Protocol:**
 
 ```rust
-fn start_worker_computation(&self, viewport: &Viewport<S>, canvas_size: (u32, u32), render_id: u32) {
-    // Wait for all workers to be ready
-    let expected_workers = self.workers.len();
-    while self.workers_ready.load(Ordering::SeqCst) < expected_workers as u32 {
-        // Could use async/await or callback pattern instead of busy wait
-        // For now, this ensures we don't send tiles before workers can handle them
+impl WorkerPoolCanvasRenderer {
+    pub fn on_ready(&mut self, callback: impl Fn() + 'static) {
+        self.on_ready_callback = Some(Box::new(callback));
     }
 
-    // Now safe to dispatch tiles
-    // ...
+    fn handle_worker_ready(&self) {
+        let ready_count = self.workers_ready.fetch_add(1, Ordering::SeqCst) + 1;
+        if ready_count == self.workers.len() as u32 {
+            // All workers ready!
+            if let Some(callback) = &self.on_ready_callback {
+                callback();  // Signal UI to hide loading indicator
+            }
+
+            // Execute any pending render
+            if let Some((viewport, canvas)) = self.pending_render.take() {
+                self.start_worker_computation(&viewport, &canvas);
+            }
+        }
+    }
+
+    pub fn render(&self, viewport: &Viewport<S>, canvas: &HtmlCanvasElement) {
+        if !self.all_workers_ready() {
+            // Workers still initializing - queue this render
+            self.pending_render = Some((viewport.clone(), canvas.clone()));
+            return;
+        }
+
+        // Workers ready - dispatch tiles immediately
+        self.start_worker_computation(viewport, canvas);
+    }
+
+    fn all_workers_ready(&self) -> bool {
+        self.workers_ready.load(Ordering::SeqCst) == self.workers.len() as u32
+    }
 }
 ```
 
@@ -230,15 +266,76 @@ Render order (1 = first, higher numbers = later):
 [5][4][3][4][5]
 ```
 
-### 3. Data Serialization & Transfer
+### 3. Data Serialization & Transfer - Hybrid Approach
 
-#### Challenge
+#### Architecture: SharedArrayBuffer + Transferables
 
-Workers cannot share Rust objects directly. Must serialize across worker boundary.
+**Two types of data flow:**
 
-#### Solution
+1. **Reference orbit (large, shared, read-only)** → SharedArrayBuffer
+2. **Tile results (small, one-way, write-once)** → Transferable postMessage
 
-**Serialization format:** `bincode` (compact binary format)
+#### Reference Orbit Sharing (Perturbation Theory)
+
+**Challenge:** All workers need access to the same reference orbit (~2.5 MB at deep zoom).
+
+**Solution:** SharedArrayBuffer for zero-copy sharing
+
+```rust
+// Main thread: Compute reference orbit into shared buffer
+fn compute_and_share_reference_orbit(&self, viewport: &Viewport<S>) {
+    // Signal not ready
+    self.reference_orbit_ready.store(false, Ordering::SeqCst);
+
+    // Compute reference orbit (BigFloat, expensive)
+    let orbit_data = compute_reference_orbit(viewport);
+
+    // Create SharedArrayBuffer and copy data
+    let shared_buffer = SharedArrayBuffer::new(orbit_data.len() * size_of::<f64>());
+    copy_to_shared_buffer(&orbit_data, &shared_buffer);
+
+    self.shared_reference_orbit = Some(shared_buffer.clone());
+
+    // Share reference with all workers (just the buffer reference, not data!)
+    for worker in &self.workers {
+        worker.post_message(WorkerMessage::SetReferenceOrbit {
+            buffer: shared_buffer.clone(),  // ~8 bytes, not 2.5 MB!
+        });
+    }
+
+    // Signal ready
+    self.reference_orbit_ready.store(true, Ordering::SeqCst);
+}
+
+// Worker: Wait for reference, then compute tiles
+fn on_compute_tile(&self, msg: ComputeTile) {
+    // Wait for reference orbit to be ready
+    while !self.reference_orbit_ready.load(Ordering::Acquire) {
+        // Could use futex or sleep here instead of busy wait
+    }
+
+    // Compute tile using shared reference orbit (reads shared memory)
+    let tile_data = self.renderer.render_with_perturbation(
+        &msg.viewport,
+        msg.rect,
+        &self.shared_reference_orbit,  // Read-only access
+    );
+
+    // Send result via Transferable (as before)
+    send_tile_result(tile_data, msg.rect, msg.render_id);
+}
+```
+
+**Benefits:**
+- Memory: 2.5 MB × 1 (shared) vs 2.5 MB × 8 (copies) = **8× memory savings**
+- Transfer: ~8 bytes (reference) vs 20 MB (data) = **Instant sharing**
+- Read-only: No locks needed, no race conditions
+
+#### Tile Result Transfer (Progressive Rendering)
+
+**Challenge:** Workers send tile results to main thread frequently.
+
+**Solution:** Transferable postMessage for zero-copy one-way transfer
 
 ```rust
 // Worker side
@@ -259,6 +356,16 @@ let data: Vec<D> = bincode::deserialize(&bytes).unwrap();
 - Both main thread and worker compiled with same Rust types
 - Serialization format guaranteed to match
 - Type mismatch = compile error, not runtime error
+
+#### Summary: Hybrid Data Transfer Strategy
+
+| Data Type | Method | Why | Size | Cost |
+|-----------|--------|-----|------|------|
+| Reference orbit | SharedArrayBuffer | Large, shared, read-only | ~2.5 MB | One-time copy, shared across workers |
+| Tile results | Transferable postMessage | Small, one-way, write-once | ~80 KB | Zero-copy ownership transfer |
+| Control messages | Regular postMessage | Tiny, infrequent | <1 KB | Negligible |
+
+**Philosophy:** Use the right tool for each data flow pattern
 
 ### 4. Cache Management & Recolorization
 
@@ -570,16 +677,56 @@ src/rendering/
 **In `app.rs`:**
 
 ```rust
-// Replace TilingCanvasRenderer with WorkerPoolCanvasRenderer
-let canvas_renderer = create_rw_signal(
-    WorkerPoolCanvasRenderer::new(RendererType::Mandelbrot, colorizer, 128)
-);
+// Signal for worker pool readiness
+let (workers_ready, set_workers_ready) = create_signal(false);
 
-// Usage remains identical
-create_effect(move |_| {
-    let viewport = viewport.get();
-    canvas_renderer.get().render(&viewport, canvas_ref.get());
-});
+// Create WorkerPoolCanvasRenderer with readiness callback
+let canvas_renderer = {
+    let mut renderer = WorkerPoolCanvasRenderer::new(
+        RendererType::Mandelbrot,
+        colorizer,
+        128
+    );
+
+    // Register callback to signal UI when workers are ready
+    renderer.on_ready(move || {
+        set_workers_ready.set(true);
+    });
+
+    create_rw_signal(renderer)
+};
+
+// UI: Show loading indicator while workers initialize
+view! {
+    <div class="relative w-screen h-screen">
+        <Show
+            when=move || workers_ready.get()
+            fallback=|| view! {
+                <LoadingSpinner message="Initializing workers..." />
+            }
+        >
+            <InteractiveCanvas
+                canvas_renderer=canvas_renderer
+                viewport=viewport
+                // ... rest of props
+            />
+        </Show>
+    </div>
+}
+
+// Handle renderer swaps with loading state
+let on_renderer_select = move |new_renderer_id: String| {
+    set_workers_ready.set(false);  // Show loading indicator
+
+    canvas_renderer.update(|cr| {
+        cr.set_renderer(new_renderer_type);
+
+        // Re-register callback for new workers
+        cr.on_ready(move || {
+            set_workers_ready.set(true);  // Hide loading indicator
+        });
+    });
+};
 ```
 
 ### Build Configuration
