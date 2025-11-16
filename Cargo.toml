@@ -1,52 +1,37 @@
-[package]
-name = "fractalwonder"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = [
+    "fractalwonder-ui",
+    "fractalwonder-compute",
+    "fractalwonder-core",
+]
+resolver = "2"
 
-[lib]
-crate-type = ["cdylib", "rlib"]
+[workspace.dependencies]
+# Shared core crate
+fractalwonder-core = { path = "./fractalwonder-core" }
+fractalwonder-compute = { path = "./fractalwonder-compute" }
 
-[dependencies]
-leptos = { version = "0.6", features = ["csr"] }
-wasm-bindgen = "0.2"
-console_error_panic_hook = "0.1"
-console_log = "1.0"
-leptos-use = "0.13"
-js-sys = "0.3"
-wasm-bindgen-futures = "0.4"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# Arbitrary precision
 dashu = "0.4"
 dashu-float = "0.4"
+
+# WASM/JS bindings
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Utilities
+console_error_panic_hook = "0.1"
+console_log = "1.0"
 dyn-clone = "1.0.20"
 
-[dependencies.web-sys]
-version = "0.3"
-features = [
-  "Window",
-  "Document",
-  "HtmlCanvasElement",
-  "CanvasRenderingContext2d",
-  "ContextAttributes2d",
-  "ImageData",
-  "MouseEvent",
-  "EventTarget",
-  "CssStyleDeclaration",
-  "Element",
-  "HtmlElement",
-  "PointerEvent",
-  "WheelEvent",
-  "Performance",
-  "console",
-  "AddEventListenerOptions",
-  "Storage",
-]
-
-[dev-dependencies]
+# Testing
 wasm-bindgen-test = "0.3"
 
 [profile.release]
 opt-level = "z"
 lto = true
 codegen-units = 1
-
