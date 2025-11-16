@@ -1,0 +1,10 @@
+[package]
+name = "fractalwonder-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dashu.workspace = true
+dashu-float.workspace = true
+serde.workspace = true
+dyn-clone.workspace = true
