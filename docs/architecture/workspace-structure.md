@@ -54,9 +54,18 @@ fractalwonder-core (shared types, no DOM)
 - `hooks/`: Custom Leptos hooks
 - `state/`: Application state management
 - `rendering/canvas_renderer`: Canvas rendering trait
-- `rendering/tiling_canvas_renderer`: Progressive tiled rendering
+- `rendering/async_progressive_renderer`: Async progressive tiled rendering
 - `rendering/canvas_utils`: Canvas rendering utilities
 - `rendering/colorizers`: Data-to-RGBA color functions
+
+**Progressive Rendering:**
+
+**AsyncProgressiveRenderer** (Iteration 2):
+- Async tile scheduling via `requestAnimationFrame`
+- Main thread yields between tiles
+- UI stays responsive during 30-minute renders
+- Immediate cancellation on viewport change
+- Single-threaded (workers added in Iteration 3)
 
 **Dependencies:** `fractalwonder-compute`, `fractalwonder-core`, `leptos`, `web-sys` (has DOM)
 

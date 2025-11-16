@@ -3,6 +3,14 @@
 A high-performance, browser-based Mandelbrot set explorer capable of rendering at extreme zoom levels (up to 10^100 and
 beyond) with interactive real-time exploration. Built entirely in Rust using Leptos and WebAssembly.
 
+## Features
+
+- **Progressive Rendering**: Tiles appear incrementally during long renders
+- **Responsive UI**: Interact with controls while rendering (pan, zoom, change settings)
+- **Immediate Cancellation**: Pan/zoom instantly stops current render and starts new one
+- **Extreme Precision**: Arbitrary precision support for zoom levels up to 10^100 and beyond
+- **Pure Rust/WASM**: 100% Rust codebase compiled to WebAssembly
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
