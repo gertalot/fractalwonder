@@ -374,7 +374,8 @@ fn compute_tiles(width: u32, height: u32, tile_size: u32) -> Vec<PixelRect> {
         }
     }
 
-    // Sort tiles by distance from canvas center (spiral from center outward)
+    // Sort tiles by distance from canvas center (furthest first)
+    // Since we pop() from the end, furthest-first ordering means center tiles render first
     let canvas_center_x = width as f64 / 2.0;
     let canvas_center_y = height as f64 / 2.0;
 
@@ -389,8 +390,9 @@ fn compute_tiles(width: u32, height: u32, tile_size: u32) -> Vec<PixelRect> {
         let b_dist_sq =
             (b_center_x - canvas_center_x).powi(2) + (b_center_y - canvas_center_y).powi(2);
 
-        a_dist_sq
-            .partial_cmp(&b_dist_sq)
+        // Reverse comparison: furthest first in vec, so pop() gets closest first
+        b_dist_sq
+            .partial_cmp(&a_dist_sq)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
@@ -474,24 +476,33 @@ mod tests {
 
     #[test]
     fn test_compute_tiles() {
-        // 512x512 canvas with 256 tile size → 4 tiles
+        // 512x512 canvas with 256 tile size → 4 tiles (all equidistant from center)
         let tiles = compute_tiles(512, 512, 256);
         assert_eq!(tiles.len(), 4);
 
-        // Verify tile positions
-        assert_eq!(tiles[0], PixelRect::new(0, 0, 256, 256));
-        assert_eq!(tiles[1], PixelRect::new(256, 0, 256, 256));
-        assert_eq!(tiles[2], PixelRect::new(0, 256, 256, 256));
-        assert_eq!(tiles[3], PixelRect::new(256, 256, 256, 256));
+        // Verify all expected tiles are present (order doesn't matter for equidistant tiles)
+        let expected_tiles = vec![
+            PixelRect::new(0, 0, 256, 256),
+            PixelRect::new(256, 0, 256, 256),
+            PixelRect::new(0, 256, 256, 256),
+            PixelRect::new(256, 256, 256, 256),
+        ];
+        for expected in &expected_tiles {
+            assert!(tiles.contains(expected), "Missing tile: {:?}", expected);
+        }
     }
 
     #[test]
     fn test_compute_tiles_partial() {
-        // 300x200 with 256 tile size → edge tiles are smaller
+        // 300x200 with 256 tile size → 2 tiles
+        // Canvas center is (150, 100)
+        // Left tile (0,0,256,200) center: (128, 100) - closer to canvas center
+        // Right tile (256,0,44,200) center: (278, 100) - further from canvas center
         let tiles = compute_tiles(300, 200, 256);
         assert_eq!(tiles.len(), 2);
 
-        assert_eq!(tiles[0], PixelRect::new(0, 0, 256, 200));
-        assert_eq!(tiles[1], PixelRect::new(256, 0, 44, 200)); // Width = 300 - 256 = 44
+        // Since tiles are sorted furthest-first for pop(), right tile comes first
+        assert_eq!(tiles[0], PixelRect::new(256, 0, 44, 200)); // Furthest (at vec start)
+        assert_eq!(tiles[1], PixelRect::new(0, 0, 256, 200)); // Closest (at vec end, popped first)
     }
 }
