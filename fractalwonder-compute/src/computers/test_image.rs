@@ -1,6 +1,6 @@
 use crate::point_compute::ImagePointComputer;
-use fractalwonder_core::{Point, Viewport, TestImageData, Rect};
 use crate::renderer_info::{RendererInfo, RendererInfoData};
+use fractalwonder_core::{Point, Rect, TestImageData, Viewport};
 
 #[derive(Clone)]
 pub struct TestImageComputer {

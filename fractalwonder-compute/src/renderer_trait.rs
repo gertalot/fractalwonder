@@ -1,4 +1,4 @@
-use fractalwonder_core::{Rect, Viewport, PixelRect};
+use fractalwonder_core::{PixelRect, Rect, Viewport};
 
 /// Core trait for rendering pixel data given viewport and pixel-space dimensions
 ///

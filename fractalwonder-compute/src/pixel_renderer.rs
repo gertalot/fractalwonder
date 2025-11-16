@@ -1,7 +1,7 @@
 use crate::point_compute::ImagePointComputer;
 use crate::renderer_info::{RendererInfo, RendererInfoData};
 use crate::renderer_trait::Renderer;
-use fractalwonder_core::{Rect, Viewport, PixelRect, calculate_visible_bounds, pixel_to_image};
+use fractalwonder_core::{calculate_visible_bounds, pixel_to_image, PixelRect, Rect, Viewport};
 
 /// Renderer that wraps an ImagePointComputer, adding pixel iteration logic
 ///

@@ -135,7 +135,7 @@ fn render_preview(
 ///
 /// ```rust,no_run
 /// use leptos::*;
-/// use fractalwonder::hooks::use_canvas_interaction::{use_canvas_interaction, TransformResult};
+/// use fractalwonder_ui::hooks::use_canvas_interaction::{use_canvas_interaction, TransformResult};
 ///
 /// #[component]
 /// pub fn MyCanvas() -> impl IntoView {

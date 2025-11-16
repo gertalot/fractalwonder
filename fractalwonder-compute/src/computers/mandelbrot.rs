@@ -1,6 +1,6 @@
 use crate::point_compute::ImagePointComputer;
-use fractalwonder_core::{Point, Viewport, ToF64, MandelbrotData, Rect};
 use crate::renderer_info::{RendererInfo, RendererInfoData};
+use fractalwonder_core::{MandelbrotData, Point, Rect, ToF64, Viewport};
 
 /// Calculate maximum iterations based on zoom level
 ///

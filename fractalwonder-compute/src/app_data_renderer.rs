@@ -1,5 +1,5 @@
 use crate::renderer_trait::Renderer;
-use fractalwonder_core::{Rect, Viewport, PixelRect, AppData};
+use fractalwonder_core::{AppData, PixelRect, Rect, Viewport};
 
 /// Wrapper that converts a Renderer<Data=D> to Renderer<Data=AppData>
 ///
@@ -64,9 +64,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::point_compute::ImagePointComputer;
     use crate::pixel_renderer::PixelRenderer;
-    use fractalwonder_core::{TestImageData, Point};
+    use crate::point_compute::ImagePointComputer;
+    use fractalwonder_core::{Point, TestImageData};
 
     #[derive(Clone)]
     struct DummyComputer;

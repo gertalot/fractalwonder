@@ -1,6 +1,6 @@
-use fractalwonder_core::{AppData, TestImageData};
 #[cfg(test)]
 use fractalwonder_core::MandelbrotData;
+use fractalwonder_core::{AppData, TestImageData};
 
 /// Colorizer function type - converts Data to RGBA
 pub type Colorizer<D> = fn(&D) -> (u8, u8, u8, u8);

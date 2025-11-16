@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use crate::renderer_info::RendererInfo;
 use crate::computers::{MandelbrotComputer, TestImageComputer};
+use crate::renderer_info::RendererInfo;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct ColorScheme {

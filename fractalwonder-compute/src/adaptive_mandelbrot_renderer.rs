@@ -1,10 +1,10 @@
-use crate::renderer_trait::Renderer;
-use fractalwonder_core::{Point, Rect, Viewport, PixelRect, AppData, BigFloat, ToF64};
-use crate::computers::MandelbrotComputer;
-use crate::renderer_info::{RendererInfo, RendererInfoData};
 use crate::app_data_renderer::AppDataRenderer;
+use crate::computers::MandelbrotComputer;
 use crate::pixel_renderer::PixelRenderer;
 use crate::precision::PrecisionCalculator;
+use crate::renderer_info::{RendererInfo, RendererInfoData};
+use crate::renderer_trait::Renderer;
+use fractalwonder_core::{AppData, BigFloat, PixelRect, Point, Rect, ToF64, Viewport};
 
 /// Adaptive Mandelbrot renderer that switches between f64 and BigFloat based on zoom level.
 ///

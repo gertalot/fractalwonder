@@ -124,7 +124,8 @@ pub fn App() -> impl IntoView {
     let initial_colorizer = crate::rendering::get_colorizer(
         &initial_state.selected_renderer_id,
         &initial_renderer_state.color_scheme_id,
-    );
+    )
+    .expect("Initial renderer/color scheme combination must be valid");
 
     let initial_canvas_renderer = match initial_state.selected_renderer_id.as_str() {
         "mandelbrot" => CanvasRendererHolder::BigFloat(create_mandelbrot_canvas_renderer(
@@ -186,7 +187,8 @@ pub fn App() -> impl IntoView {
         let state = states.get(&new_renderer_id).unwrap();
 
         // Find colorizer for restored color scheme
-        let colorizer = crate::rendering::get_colorizer(&new_renderer_id, &state.color_scheme_id);
+        let colorizer = crate::rendering::get_colorizer(&new_renderer_id, &state.color_scheme_id)
+            .expect("Renderer/color scheme combination must be valid");
 
         // Create new canvas renderer
         let new_canvas_renderer = match new_renderer_id.as_str() {
@@ -261,7 +263,8 @@ pub fn App() -> impl IntoView {
     // ========== Effect: Color scheme changed ==========
     let on_color_scheme_select = move |scheme_id: String| {
         let renderer_id = selected_renderer_id.get();
-        let colorizer = crate::rendering::get_colorizer(&renderer_id, &scheme_id);
+        let colorizer = crate::rendering::get_colorizer(&renderer_id, &scheme_id)
+            .expect("Renderer/color scheme combination must be valid");
 
         canvas_renderer.update(|cr| {
             cr.set_colorizer(colorizer);
