@@ -1,4 +1,5 @@
-use fractalwonder::rendering::*;
+use fractalwonder_core::*;
+use fractalwonder_compute::*;
 
 #[test]
 fn test_mandelbrot_bigfloat_compute() {
