@@ -4,10 +4,7 @@ use crate::hooks::fullscreen::toggle_fullscreen;
 use crate::hooks::ui_visibility::use_ui_visibility;
 use crate::rendering::canvas_renderer::CanvasRenderer;
 use crate::rendering::{
-    get_config, AdaptiveMandelbrotRenderer, AppData, AppDataRenderer,
-    AsyncProgressiveCanvasRenderer, BigFloat, Colorizer, ParallelCanvasRenderer, PixelRenderer,
-    Point, PrecisionCalculator, Rect, Renderer, TestImageComputer, ToF64, Viewport,
-    RENDER_CONFIGS,
+    get_config, AppData, Colorizer, ParallelCanvasRenderer, Viewport, RENDER_CONFIGS,
 };
 use crate::state::AppState;
 use leptos::*;
@@ -15,64 +12,30 @@ use std::time::Duration;
 use wasm_bindgen::JsValue;
 use web_sys::HtmlCanvasElement;
 
-// Zoom threshold for switching from f64 to BigFloat arithmetic
-const BIGFLOAT_ZOOM_THRESHOLD: f64 = 1e10;
-
 #[derive(Clone)]
 enum CanvasRendererHolder {
-    F64(AsyncProgressiveCanvasRenderer<f64, AppData>),
-    BigFloat(AsyncProgressiveCanvasRenderer<BigFloat, AppData>),
     Parallel(ParallelCanvasRenderer),
 }
 
 impl CanvasRendererHolder {
     fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement) {
-        match self {
-            CanvasRendererHolder::F64(r) => r.render(viewport, canvas),
-            CanvasRendererHolder::BigFloat(r) => {
-                // Convert f64 viewport to BigFloat viewport
-                let precision_bits = PrecisionCalculator::calculate_precision_bits(viewport.zoom);
-                let viewport_big = Viewport::new(
-                    Point::new(
-                        BigFloat::with_precision(*viewport.center.x(), precision_bits),
-                        BigFloat::with_precision(*viewport.center.y(), precision_bits),
-                    ),
-                    viewport.zoom,
-                );
-                r.render(&viewport_big, canvas)
-            }
-            CanvasRendererHolder::Parallel(r) => r.render(viewport, canvas),
-        }
+        let CanvasRendererHolder::Parallel(r) = self;
+        r.render(viewport, canvas)
     }
 
-    fn natural_bounds(&self) -> Rect<f64> {
-        match self {
-            CanvasRendererHolder::F64(r) => r.natural_bounds(),
-            CanvasRendererHolder::BigFloat(r) => {
-                let bounds = r.natural_bounds();
-                Rect::new(
-                    Point::new(bounds.min.x().to_f64(), bounds.min.y().to_f64()),
-                    Point::new(bounds.max.x().to_f64(), bounds.max.y().to_f64()),
-                )
-            }
-            CanvasRendererHolder::Parallel(r) => r.natural_bounds(),
-        }
+    fn natural_bounds(&self) -> crate::rendering::Rect<f64> {
+        let CanvasRendererHolder::Parallel(r) = self;
+        r.natural_bounds()
     }
 
     fn set_colorizer(&mut self, colorizer: Colorizer<AppData>) {
-        match self {
-            CanvasRendererHolder::F64(r) => r.set_colorizer(colorizer),
-            CanvasRendererHolder::BigFloat(r) => r.set_colorizer(colorizer),
-            CanvasRendererHolder::Parallel(r) => r.set_colorizer(colorizer),
-        }
+        let CanvasRendererHolder::Parallel(r) = self;
+        r.set_colorizer(colorizer)
     }
 
     fn cancel_render(&self) {
-        match self {
-            CanvasRendererHolder::F64(r) => r.cancel_render(),
-            CanvasRendererHolder::BigFloat(r) => r.cancel_render(),
-            CanvasRendererHolder::Parallel(r) => r.cancel_render(),
-        }
+        let CanvasRendererHolder::Parallel(r) = self;
+        r.cancel_render()
     }
 }
 
@@ -84,30 +47,6 @@ impl CanvasRendererTrait for CanvasRendererHolder {
     fn cancel_render(&self) {
         self.cancel_render()
     }
-}
-
-fn create_mandelbrot_canvas_renderer(
-    _zoom: f64,
-    colorizer: Colorizer<AppData>,
-) -> AsyncProgressiveCanvasRenderer<BigFloat, AppData> {
-    // Use adaptive renderer that switches between f64 and BigFloat based on zoom
-    // - zoom < BIGFLOAT_ZOOM_THRESHOLD: fast f64 arithmetic
-    // - zoom >= BIGFLOAT_ZOOM_THRESHOLD: arbitrary precision BigFloat
-    let adaptive_renderer = AdaptiveMandelbrotRenderer::new(BIGFLOAT_ZOOM_THRESHOLD);
-    let renderer: Box<dyn Renderer<Scalar = BigFloat, Data = AppData>> =
-        Box::new(adaptive_renderer);
-    AsyncProgressiveCanvasRenderer::new(renderer, colorizer, 128)
-}
-
-fn create_test_image_canvas_renderer(
-    _zoom: f64,
-    colorizer: Colorizer<AppData>,
-) -> AsyncProgressiveCanvasRenderer<f64, AppData> {
-    let computer = TestImageComputer::new();
-    let pixel_renderer = PixelRenderer::new(computer);
-    let app_renderer = AppDataRenderer::new(pixel_renderer, |d| AppData::TestImageData(*d));
-    let renderer: Box<dyn Renderer<Scalar = f64, Data = AppData>> = Box::new(app_renderer);
-    AsyncProgressiveCanvasRenderer::new(renderer, colorizer, 128)
 }
 
 fn create_parallel_renderer(colorizer: Colorizer<AppData>) -> Result<ParallelCanvasRenderer, JsValue> {
