@@ -3,6 +3,7 @@ mod components;
 pub mod hooks;
 pub mod rendering;
 pub mod state;
+pub mod workers;
 
 use leptos::*;
 use wasm_bindgen::prelude::*;
