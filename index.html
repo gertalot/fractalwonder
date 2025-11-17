@@ -6,7 +6,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Fractal Wonder</title>
   <link data-trunk rel="tailwind-css" href="input.css" />
-  <link data-trunk rel="rust" data-wasm-opt="z" href="./fractalwonder-ui/Cargo.toml" />
+
+  <!-- Main UI WASM (no-modules target) -->
+  <link data-trunk rel="rust"
+        data-type="main"
+        data-bindgen-target="no-modules"
+        data-wasm-opt="z"
+        href="./fractalwonder-ui/Cargo.toml" />
+
+  <!-- Worker WASM (no-modules target) -->
+  <link data-trunk rel="rust"
+        data-type="worker"
+        data-bindgen-target="no-modules"
+        data-wasm-opt="z"
+        href="./fractalwonder-compute/Cargo.toml" />
 </head>
 
 <body class="m-0 p-0 overflow-hidden">
