@@ -68,7 +68,9 @@ impl MessageWorkerPool {
             let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
                 if let Some(msg_str) = e.data().as_string() {
                     if let Ok(msg) = serde_json::from_str::<WorkerToMain>(&msg_str) {
-                        pool_clone.borrow_mut().handle_worker_message(worker_id, msg);
+                        pool_clone
+                            .borrow_mut()
+                            .handle_worker_message(worker_id, msg);
                     } else {
                         web_sys::console::error_1(&JsValue::from_str(&format!(
                             "Worker {} sent invalid message: {}",
@@ -232,8 +234,7 @@ impl MessageWorkerPool {
 impl Drop for MessageWorkerPool {
     fn drop(&mut self) {
         let msg = MainToWorker::Terminate;
-        let msg_json =
-            serde_json::to_string(&msg).expect("Failed to serialize terminate message");
+        let msg_json = serde_json::to_string(&msg).expect("Failed to serialize terminate message");
 
         for worker in &self.workers {
             worker.post_message(&JsValue::from_str(&msg_json)).ok();
