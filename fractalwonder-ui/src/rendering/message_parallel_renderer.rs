@@ -30,7 +30,7 @@ impl Default for CachedState {
 
 pub struct MessageParallelRenderer {
     worker_pool: Rc<RefCell<MessageWorkerPool>>,
-    colorizer: Colorizer<AppData>,
+    colorizer: Rc<RefCell<Colorizer<AppData>>>,
     tile_size: u32,
     canvas: Rc<RefCell<Option<HtmlCanvasElement>>>,
     cached_state: Arc<Mutex<CachedState>>,
@@ -40,7 +40,8 @@ impl MessageParallelRenderer {
     pub fn new(colorizer: Colorizer<AppData>, tile_size: u32) -> Result<Self, JsValue> {
         let canvas: Rc<RefCell<Option<HtmlCanvasElement>>> = Rc::new(RefCell::new(None));
         let canvas_clone = Rc::clone(&canvas);
-        let colorizer_clone = colorizer;
+        let colorizer = Rc::new(RefCell::new(colorizer));
+        let colorizer_clone = Rc::clone(&colorizer);
         let cached_state = Arc::new(Mutex::new(CachedState::default()));
         let cached_state_clone = Arc::clone(&cached_state);
 
@@ -66,7 +67,8 @@ impl MessageParallelRenderer {
                 drop(cache);
 
                 // Draw tile immediately (progressive rendering)
-                if let Err(e) = draw_tile(canvas, &tile_result, &colorizer_clone) {
+                let colorizer = colorizer_clone.borrow();
+                if let Err(e) = draw_tile(canvas, &tile_result, &colorizer) {
                     web_sys::console::error_1(&e);
                 }
             }
@@ -106,11 +108,12 @@ impl MessageParallelRenderer {
 
         let width = canvas.width();
 
+        let colorizer = self.colorizer.borrow();
         let colors: Vec<u8> = cache
             .data
             .iter()
             .flat_map(|data| {
-                let (r, g, b, a) = (self.colorizer)(data);
+                let (r, g, b, a) = (*colorizer)(data);
                 [r, g, b, a]
             })
             .collect();
@@ -133,7 +136,7 @@ impl Clone for MessageParallelRenderer {
     fn clone(&self) -> Self {
         Self {
             worker_pool: Rc::clone(&self.worker_pool),
-            colorizer: self.colorizer,
+            colorizer: Rc::clone(&self.colorizer),
             tile_size: self.tile_size,
             canvas: Rc::clone(&self.canvas),
             cached_state: Arc::clone(&self.cached_state),
@@ -155,7 +158,7 @@ impl CanvasRenderer for MessageParallelRenderer {
     }
 
     fn set_colorizer(&mut self, colorizer: Colorizer<Self::Data>) {
-        self.colorizer = colorizer;
+        *self.colorizer.borrow_mut() = colorizer;
     }
 
     fn render(&self, viewport: &Viewport<Self::Scalar>, canvas: &HtmlCanvasElement) {
