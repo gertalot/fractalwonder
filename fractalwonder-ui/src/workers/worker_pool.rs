@@ -7,6 +7,7 @@ use web_sys::Worker;
 
 pub struct WorkerPool {
     workers: Vec<Worker>,
+    #[allow(dead_code)]
     shared_buffer: Option<ArrayBuffer>,
     current_render_id: Arc<AtomicU32>,
 }
