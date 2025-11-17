@@ -109,12 +109,6 @@ fn compute_tiles(
     let computer = MandelbrotComputer::<f64>::default();
     let renderer = PixelRenderer::new(computer);
 
-    #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(&JsValue::from_str(&format!(
-        "Worker: Starting render {} with {} tiles",
-        render_id, total_tiles
-    )));
-
     // Work-stealing loop
     loop {
         // Atomically get next tile index
@@ -127,11 +121,6 @@ fn compute_tiles(
         // Check if render was cancelled
         let current_render_id = atomic_load_u32(&shared_buffer, layout.render_id_offset() as u32);
         if current_render_id != render_id {
-            #[cfg(target_arch = "wasm32")]
-            web_sys::console::log_1(&JsValue::from_str(&format!(
-                "Worker: Render {} cancelled",
-                render_id
-            )));
             break; // Cancelled
         }
 
@@ -160,12 +149,6 @@ fn compute_tiles(
             }
         }
     }
-
-    #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(&JsValue::from_str(&format!(
-        "Worker: Render {} complete",
-        render_id
-    )));
 
     Ok(())
 }

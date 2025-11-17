@@ -17,6 +17,7 @@ pub struct ParallelCanvasRenderer {
     tile_size: u32,
     poll_closure: RefCell<Option<Closure<dyn FnMut()>>>,
     current_render_id: RefCell<u32>,
+    extra_frames_after_complete: Rc<RefCell<u32>>,
 }
 
 impl ParallelCanvasRenderer {
@@ -35,6 +36,7 @@ impl ParallelCanvasRenderer {
             tile_size,
             poll_closure: RefCell::new(None),
             current_render_id: RefCell::new(0),
+            extra_frames_after_complete: Rc::new(RefCell::new(0)),
         })
     }
 
@@ -58,9 +60,12 @@ impl ParallelCanvasRenderer {
         let _total_tiles = tiles_x * tiles_y; // Used in wasm32 cfg below
 
         // Check if render is complete or cancelled (WASM only - uses atomics)
+        // CRITICAL: Read completed_tiles atomically BEFORE reading pixel data
+        // This establishes a happens-before relationship ensuring all pixel writes
+        // from completed tiles are visible (per JavaScript memory model)
         #[cfg(target_arch = "wasm32")]
         {
-            let tile_index = atomic_load_u32(buffer, layout.tile_index_offset() as u32);
+            let completed_tiles = atomic_load_u32(buffer, layout.completed_tiles_offset() as u32);
             let stored_render_id = atomic_load_u32(buffer, layout.render_id_offset() as u32);
             let current_render_id = *self.current_render_id.borrow();
 
@@ -69,10 +74,7 @@ impl ParallelCanvasRenderer {
                 return Ok(false); // Render was cancelled, stop polling
             }
 
-            // Note: We continue with rendering to display the result
-            // Return value indicates whether to continue polling
-            // This will be used at the end of the function
-            let _ = tile_index; // Will use below
+            let _ = completed_tiles; // Will use below for termination check
         }
 
         // Read all pixel data from SharedArrayBuffer
@@ -112,10 +114,18 @@ impl ParallelCanvasRenderer {
         context.put_image_data(&image_data, 0.0, 0.0)?;
 
         // Return whether polling should continue
+        // Poll for 1 extra frame after completion to ensure memory visibility
         #[cfg(target_arch = "wasm32")]
         {
             let completed_tiles = atomic_load_u32(buffer, layout.completed_tiles_offset() as u32);
-            Ok(completed_tiles < _total_tiles)
+
+            if completed_tiles >= _total_tiles {
+                let extra = *self.extra_frames_after_complete.borrow();
+                *self.extra_frames_after_complete.borrow_mut() = extra + 1;
+                Ok(extra < 1)
+            } else {
+                Ok(true)
+            }
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -162,6 +172,7 @@ impl Clone for ParallelCanvasRenderer {
             tile_size: self.tile_size,
             poll_closure: RefCell::new(None),
             current_render_id: RefCell::new(*self.current_render_id.borrow()),
+            extra_frames_after_complete: Rc::clone(&self.extra_frames_after_complete),
         }
     }
 }
@@ -192,6 +203,9 @@ impl CanvasRenderer for ParallelCanvasRenderer {
     fn render(&self, viewport: &Viewport<Self::Scalar>, canvas: &HtmlCanvasElement) {
         let width = canvas.width();
         let height = canvas.height();
+
+        // Reset extra frames counter for new render
+        *self.extra_frames_after_complete.borrow_mut() = 0;
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
             "ParallelCanvasRenderer::render starting ({}x{})",

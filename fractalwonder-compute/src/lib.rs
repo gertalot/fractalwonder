@@ -1,6 +1,7 @@
 pub mod adaptive_mandelbrot_renderer;
 pub mod app_data_renderer;
 pub mod computers;
+pub mod messages;
 pub mod pixel_renderer;
 pub mod point_compute;
 pub mod precision;
