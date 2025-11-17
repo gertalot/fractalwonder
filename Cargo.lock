@@ -481,6 +481,8 @@ dependencies = [
  "dashu-float",
  "dyn-clone",
  "fractalwonder-core",
+ "gloo-utils",
+ "js-sys",
  "serde",
 ]
 
@@ -503,6 +505,7 @@ dependencies = [
  "dyn-clone",
  "fractalwonder-compute",
  "fractalwonder-core",
+ "gloo-utils",
  "js-sys",
  "leptos",
  "leptos-use",

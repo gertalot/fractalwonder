@@ -19,28 +19,8 @@ js-sys.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 dyn-clone.workspace = true
-
-[dependencies.web-sys]
-version = "0.3"
-features = [
-  "Window",
-  "Document",
-  "HtmlCanvasElement",
-  "CanvasRenderingContext2d",
-  "ContextAttributes2d",
-  "ImageData",
-  "MouseEvent",
-  "EventTarget",
-  "CssStyleDeclaration",
-  "Element",
-  "HtmlElement",
-  "PointerEvent",
-  "WheelEvent",
-  "Performance",
-  "console",
-  "AddEventListenerOptions",
-  "Storage",
-]
+web-sys.workspace = true
+gloo-utils.workspace = true
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

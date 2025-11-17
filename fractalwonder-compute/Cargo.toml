@@ -12,3 +12,8 @@ dashu.workspace = true
 dashu-float.workspace = true
 serde.workspace = true
 dyn-clone.workspace = true
+js-sys.workspace = true
+gloo-utils.workspace = true
+
+# Note: NO web-sys with DOM features
+# Workers cannot access DOM

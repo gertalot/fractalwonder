@@ -18,6 +18,32 @@ dashu-float = "0.4"
 # WASM/JS bindings
 wasm-bindgen = "0.2"
 js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Navigator",
+    "Document",
+    "HtmlCanvasElement",
+    "CanvasRenderingContext2d",
+    "ContextAttributes2d",
+    "ImageData",
+    "MouseEvent",
+    "EventTarget",
+    "CssStyleDeclaration",
+    "Element",
+    "HtmlElement",
+    "PointerEvent",
+    "WheelEvent",
+    "Performance",
+    "console",
+    "AddEventListenerOptions",
+    "Storage",
+    "Worker",
+    "WorkerOptions",
+    "WorkerType",
+    "MessageEvent",
+    "DedicatedWorkerGlobalScope",
+] }
+gloo-utils = "0.2"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
