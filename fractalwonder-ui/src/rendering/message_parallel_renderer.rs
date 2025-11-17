@@ -72,7 +72,7 @@ impl MessageParallelRenderer {
             }
         };
 
-        let worker_pool = Rc::new(RefCell::new(MessageWorkerPool::new(on_tile_complete)?));
+        let worker_pool = MessageWorkerPool::new(on_tile_complete)?;
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
             "MessageParallelRenderer created with {} workers, tile_size={}",
@@ -147,7 +147,9 @@ impl CanvasRenderer for MessageParallelRenderer {
 
     fn set_renderer(
         &mut self,
-        _renderer: Box<dyn fractalwonder_compute::Renderer<Scalar = Self::Scalar, Data = Self::Data>>,
+        _renderer: Box<
+            dyn fractalwonder_compute::Renderer<Scalar = Self::Scalar, Data = Self::Data>,
+        >,
     ) {
         // Not used - workers have their own AdaptiveMandelbrotRenderer
     }
@@ -174,7 +176,8 @@ impl CanvasRenderer for MessageParallelRenderer {
             viewport.zoom,
         );
 
-        if cache.viewport.as_ref() == Some(&viewport_bf) && cache.canvas_size == Some((width, height))
+        if cache.viewport.as_ref() == Some(&viewport_bf)
+            && cache.canvas_size == Some((width, height))
         {
             // Recolorize from cache
             web_sys::console::log_1(&JsValue::from_str(&format!(

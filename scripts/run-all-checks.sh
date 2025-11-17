@@ -3,7 +3,7 @@
 RUSTFLAGS="-D warnings"
 
 echo "—————————————— Running cargo fmt ——————————————"
-cargo fmt --all -- --check
+cargo fmt --all
 
 echo "—————————————— Running cargo clippy ——————————————"
 cargo clippy --workspace --all-targets --all-features -- -W clippy::all

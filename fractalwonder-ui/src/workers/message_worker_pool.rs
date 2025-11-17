@@ -1,7 +1,7 @@
 use fractalwonder_compute::{MainToWorker, WorkerToMain};
 use fractalwonder_core::{AppData, BigFloat, PixelRect, Viewport};
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use web_sys::{MessageEvent, Worker};
@@ -20,6 +20,7 @@ struct TileRequest {
 pub struct MessageWorkerPool {
     workers: Vec<Worker>,
     pending_tiles: VecDeque<TileRequest>,
+    failed_tiles: HashMap<(u32, u32), u32>, // (x, y) -> retry_count
     current_render_id: u32,
     current_viewport: Viewport<BigFloat>,
     canvas_size: (u32, u32),
@@ -27,7 +28,7 @@ pub struct MessageWorkerPool {
 }
 
 impl MessageWorkerPool {
-    pub fn new<F>(on_tile_complete: F) -> Result<Self, JsValue>
+    pub fn new<F>(on_tile_complete: F) -> Result<Rc<RefCell<Self>>, JsValue>
     where
         F: Fn(TileResult) + 'static,
     {
@@ -47,6 +48,7 @@ impl MessageWorkerPool {
         let pool = Rc::new(RefCell::new(Self {
             workers: Vec::new(),
             pending_tiles: VecDeque::new(),
+            failed_tiles: HashMap::new(),
             current_render_id: 0,
             current_viewport: Viewport::new(
                 fractalwonder_core::Point::new(BigFloat::from(0.0), BigFloat::from(0.0)),
@@ -102,9 +104,7 @@ impl MessageWorkerPool {
 
         pool.borrow_mut().workers = workers;
 
-        Ok(Rc::try_unwrap(pool)
-            .unwrap_or_else(|_| panic!("Failed to unwrap worker pool Rc"))
-            .into_inner())
+        Ok(pool)
     }
 
     pub fn worker_count(&self) -> usize {
@@ -156,14 +156,35 @@ impl MessageWorkerPool {
                 tile,
                 error,
             } => {
-                let tile_str = tile
-                    .map(|t| format!("({}, {})", t.x, t.y))
-                    .unwrap_or_else(|| "unknown".to_string());
+                if let Some(tile) = tile {
+                    let tile_key = (tile.x, tile.y);
+                    let retry_count = self.failed_tiles.entry(tile_key).or_insert(0);
 
-                web_sys::console::error_1(&JsValue::from_str(&format!(
-                    "Worker {} error on tile {}: {}",
-                    worker_id, tile_str, error
-                )));
+                    if *retry_count < 1 {
+                        // Retry once
+                        *retry_count += 1;
+                        web_sys::console::warn_1(&JsValue::from_str(&format!(
+                            "Tile ({}, {}) failed, retrying (attempt {}): {}",
+                            tile.x,
+                            tile.y,
+                            *retry_count + 1,
+                            error
+                        )));
+
+                        self.pending_tiles.push_back(TileRequest { tile });
+                    } else {
+                        // Give up after one retry
+                        web_sys::console::error_1(&JsValue::from_str(&format!(
+                            "Tile ({}, {}) failed after retry: {}",
+                            tile.x, tile.y, error
+                        )));
+                    }
+                } else {
+                    web_sys::console::error_1(&JsValue::from_str(&format!(
+                        "Worker {} error: {}",
+                        worker_id, error
+                    )));
+                }
             }
         }
     }
@@ -209,6 +230,9 @@ impl MessageWorkerPool {
         self.current_viewport = viewport;
         self.canvas_size = (canvas_width, canvas_height);
 
+        // Clear retry tracking for new render
+        self.failed_tiles.clear();
+
         self.pending_tiles = generate_tiles(canvas_width, canvas_height, tile_size);
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
@@ -218,6 +242,13 @@ impl MessageWorkerPool {
             canvas_width,
             canvas_height
         )));
+
+        // Wake up all idle workers by sending them work requests
+        // Workers that are busy will ignore this (they already have work)
+        // Workers that are idle will receive tiles and start working
+        for worker_id in 0..self.workers.len() {
+            self.send_work_to_worker(worker_id);
+        }
     }
 
     pub fn cancel_current_render(&mut self) {

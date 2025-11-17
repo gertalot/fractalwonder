@@ -1,5 +1,5 @@
-// Worker wrapper script that initializes the fractalwonder-compute WASM module
-// This script loads the wasm-bindgen generated code and calls init_worker()
+// Message-based worker wrapper that initializes the fractalwonder-compute WASM module
+// This script loads the wasm-bindgen generated code and calls init_message_worker()
 
 // Load the wasm-bindgen generated JavaScript
 importScripts('./fractalwonder-compute.js');
@@ -22,12 +22,12 @@ try {
     const wasmModule = new WebAssembly.Module(wasmBytes);
     wasm_bindgen.initSync(wasmModule);
 
-    // Call init_worker() to set up the message handler
+    // Call init_message_worker() to set up the message handler
     // This function is exported from worker.rs via #[wasm_bindgen]
-    wasm_bindgen.init_worker();
+    wasm_bindgen.init_message_worker();
 
-    console.log('Worker initialized successfully');
+    console.log('Message-based worker initialized successfully');
 } catch (err) {
-    console.error('Worker initialization failed:', err);
+    console.error('Message-based worker initialization failed:', err);
     throw err;
 }
