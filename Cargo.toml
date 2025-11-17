@@ -41,6 +41,7 @@ web-sys = { version = "0.3", features = [
     "WorkerOptions",
     "WorkerType",
     "MessageEvent",
+    "ErrorEvent",
     "DedicatedWorkerGlobalScope",
 ] }
 gloo-utils = "0.2"

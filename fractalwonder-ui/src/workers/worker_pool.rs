@@ -3,7 +3,7 @@ use js_sys::ArrayBuffer;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
-use web_sys::Worker;
+use web_sys::{MessageEvent, Worker};
 
 pub struct WorkerPool {
     workers: Vec<Worker>,
@@ -24,7 +24,47 @@ impl WorkerPool {
             worker_count
         )));
 
-        let workers = Vec::new();
+        let mut workers = Vec::new();
+
+        for i in 0..worker_count {
+            // Worker script path (Trunk generates this in dist/)
+            // Note: Not using WorkerType::Module because worker uses no-modules target
+            let worker = Worker::new("./fractalwonder-compute.js")?;
+
+            web_sys::console::log_1(&JsValue::from_str(&format!(
+                "Worker {} created",
+                i
+            )));
+
+            // Set up message handler for worker responses
+            let worker_id = i;
+            let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
+                if let Some(msg) = e.data().as_string() {
+                    web_sys::console::log_1(&JsValue::from_str(&format!(
+                        "Worker {} message: {}",
+                        worker_id,
+                        msg
+                    )));
+                }
+            }) as Box<dyn FnMut(_)>);
+
+            worker.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+            onmessage.forget(); // Keep closure alive
+
+            // Set up error handler
+            let error_handler = Closure::wrap(Box::new(move |e: web_sys::ErrorEvent| {
+                web_sys::console::error_1(&JsValue::from_str(&format!(
+                    "Worker {} error: {:?}",
+                    worker_id,
+                    e.message()
+                )));
+            }) as Box<dyn FnMut(_)>);
+
+            worker.set_onerror(Some(error_handler.as_ref().unchecked_ref()));
+            error_handler.forget(); // Keep closure alive
+
+            workers.push(worker);
+        }
 
         Ok(Self {
             workers,
