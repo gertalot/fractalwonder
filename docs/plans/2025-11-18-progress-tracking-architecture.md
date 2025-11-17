@@ -12,6 +12,8 @@ pub struct RenderProgress {
     pub completed_tiles: u32,
     pub total_tiles: u32,
     pub render_id: u32,
+    pub elapsed_ms: f64,
+    pub is_complete: bool,
 }
 
 impl RenderProgress {
@@ -20,6 +22,8 @@ impl RenderProgress {
             completed_tiles: 0,
             total_tiles,
             render_id,
+            elapsed_ms: 0.0,
+            is_complete: false,
         }
     }
 
@@ -30,10 +34,6 @@ impl RenderProgress {
             (self.completed_tiles as f32 / self.total_tiles as f32) * 100.0
         }
     }
-
-    pub fn is_complete(&self) -> bool {
-        self.completed_tiles >= self.total_tiles
-    }
 }
 ```
 
@@ -41,17 +41,30 @@ impl RenderProgress {
 - `Copy`: Zero-cost signal updates
 - `PartialEq`: Leptos skips re-renders when unchanged
 - `render_id`: Prevents stale progress from cancelled renders
+- `elapsed_ms`: Time since render started, updated progressively
+- `is_complete`: Whether all tiles finished (replaces derived method)
 
 ## Where Progress Information Originates
 
 ### Render Start (message_worker_pool.rs)
 
 ```rust
+pub struct MessageWorkerPool {
+    workers: Vec<Worker>,
+    progress_signal: RwSignal<RenderProgress>,
+    render_start_time: Cell<Option<f64>>,  // Track start time
+    // ...
+}
+
 pub fn start_render(&self, viewport: &Viewport<BigFloat>, ...) {
     let total_tiles = pending_tiles.len() as u32;
     let render_id = self.render_id.fetch_add(1, Ordering::SeqCst);
 
-    // Initialize progress: 0 of N tiles
+    // Record start time
+    let start_time = window().performance().unwrap().now();
+    self.render_start_time.set(Some(start_time));
+
+    // Initialize progress: 0 of N tiles, 0ms elapsed
     self.progress_signal.set(RenderProgress::new(total_tiles, render_id));
 
     // Distribute tiles to workers...
@@ -68,10 +81,19 @@ fn handle_worker_message(&self, msg: WorkerToMain) {
                 return; // Ignore stale renders
             }
 
-            // Increment completed count
+            // Calculate elapsed time
+            let elapsed_ms = if let Some(start) = self.render_start_time.get() {
+                window().performance().unwrap().now() - start
+            } else {
+                0.0
+            };
+
+            // Update progress with tile count and elapsed time
             self.progress_signal.update(|p| {
                 if p.render_id == render_id {
                     p.completed_tiles += 1;
+                    p.elapsed_ms = elapsed_ms;
+                    p.is_complete = p.completed_tiles >= p.total_tiles;
                 }
             });
 
@@ -207,12 +229,117 @@ MessageParallelRenderer [OWNS SIGNAL]
 6. **Context API:** Deep components access progress without prop drilling
 7. **Single source of truth:** Renderer owns the signal
 
+## Integration with App Component
+
+The `RenderProgress` signal replaces the current broken `render_time_ms` signal:
+
+### Current (Broken)
+
+```rust
+// app.rs
+let (render_time_ms, set_render_time_ms) = create_signal(None::<f64>);
+
+create_effect(move |_| {
+    let vp = viewport.get();
+    let mut info = info_provider.info(&vp);
+    info.render_time_ms = render_time_ms.get();  // Always None or ~0ms
+    set_renderer_info.set(info);
+});
+
+// interactive_canvas.rs - WRONG: measures function call, not async work
+let start = window().performance().unwrap().now();
+canvas_renderer.with(|cr| cr.render(&vp, canvas));
+let elapsed = window().performance().unwrap().now() - start;
+set_render_time_ms.set(Some(elapsed));  // ~0ms
+```
+
+### Proposed (Correct)
+
+```rust
+// app.rs
+let render_progress = create_memo(move |_| {
+    canvas_renderer.with(|cr| cr.progress().get())
+});
+
+create_effect(move |_| {
+    let vp = viewport.get();
+    let mut info = info_provider.info(&vp);
+    info.render_time_ms = Some(render_progress.get().elapsed_ms);  // Accurate!
+    set_renderer_info.set(info);
+});
+
+// interactive_canvas.rs - Remove timing code, let worker pool handle it
+canvas_renderer.with(|cr| cr.render(&vp, canvas));  // No timing wrapper
+```
+
+### Migration Path
+
+1. Add `progress: RwSignal<RenderProgress>` to `MessageParallelRenderer`
+2. Pass progress signal to `MessageWorkerPool`
+3. Worker pool updates `elapsed_ms` on each tile completion
+4. Remove `set_render_time_ms` prop from `InteractiveCanvas`
+5. Update App to read `progress.elapsed_ms` instead of `render_time_ms` signal
+6. Remove broken timing code from `InteractiveCanvas`
+
 ## Files Modified
 
 - `fractalwonder-core/src/rendering/mod.rs` - Add RenderProgress struct
-- `fractalwonder-ui/src/workers/message_worker_pool.rs` - Accept and update progress signal
-- `fractalwonder-ui/src/rendering/message_parallel_renderer.rs` - Own progress signal, pass to pool
-- `fractalwonder-ui/src/app.rs` - Read progress signal, provide via context (optional)
+- `fractalwonder-ui/src/workers/message_worker_pool.rs` - Add render_start_time field, update progress signal with elapsed_ms
+- `fractalwonder-ui/src/rendering/message_parallel_renderer.rs` - Own progress signal, pass to pool, handle recolorization timing
+- `fractalwonder-ui/src/components/interactive_canvas.rs` - Remove broken timing code, remove set_render_time_ms prop
+- `fractalwonder-ui/src/app.rs` - Replace render_time_ms signal with progress signal, update RendererInfo effect
+
+## Elapsed Time Tracking
+
+### Why Track Time in Worker Pool
+
+The current `InteractiveCanvas` component measures time incorrectly:
+
+```rust
+// WRONG: Measures only time for render() call, which returns immediately
+let start = window().performance().unwrap().now();
+canvas_renderer.with(|cr| cr.render(&vp, canvas));  // Returns instantly
+let elapsed = window().performance().unwrap().now() - start;  // ~0ms
+```
+
+**Problem:** `render()` returns immediately after calling `start_render()`. Workers compute tiles asynchronously.
+
+**Solution:** Worker pool tracks time from `start_render()` call until each tile completes.
+
+### Recolorization Handling
+
+When recolorizing from cache (viewport unchanged, colorizer changed):
+
+```rust
+// In message_parallel_renderer.rs
+fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement) {
+    if cache.viewport == Some(viewport) && cache.canvas_size == Some((width, height)) {
+        // Recolorize from cache - measure this operation
+        let start = window().performance().unwrap().now();
+        let _ = self.recolorize_from_cache(render_id, canvas);
+        let elapsed = window().performance().unwrap().now() - start;
+
+        // Update progress for instant completion
+        self.progress.set(RenderProgress {
+            completed_tiles: total_tiles,
+            total_tiles,
+            render_id,
+            elapsed_ms: elapsed,
+            is_complete: true,
+        });
+    } else {
+        // Normal tile-based rendering
+        self.worker_pool.start_render(...);  // Pool tracks time
+    }
+}
+```
+
+### Benefits
+
+1. **Accurate:** Measures actual parallel render time, not just function call overhead
+2. **Progressive:** Updates continuously as tiles complete
+3. **Replaces broken implementation:** Fixes current `render_time_ms` signal that always shows ~0ms
+4. **Handles both paths:** Works for cache hits (recolorization) and cache misses (recompute)
 
 ## Example: Derived State
 
@@ -222,21 +349,30 @@ Components can derive additional state from progress:
 // Is rendering currently active?
 let is_rendering = create_memo(move |_| {
     let progress = render_progress.get();
-    !progress.is_complete() && progress.total_tiles > 0
+    !progress.is_complete
 });
 
-// Time remaining estimate (requires additional tracking)
+// Time remaining estimate
 let estimated_ms_remaining = create_memo(move |_| {
     let progress = render_progress.get();
-    let elapsed = elapsed_ms.get();
 
-    if progress.completed_tiles == 0 {
+    if progress.completed_tiles == 0 || progress.is_complete {
         return None;
     }
 
-    let ms_per_tile = elapsed / progress.completed_tiles as f64;
+    let ms_per_tile = progress.elapsed_ms / progress.completed_tiles as f64;
     let remaining_tiles = progress.total_tiles - progress.completed_tiles;
     Some(ms_per_tile * remaining_tiles as f64)
+});
+
+// Format elapsed time for display
+let formatted_time = create_memo(move |_| {
+    let elapsed = render_progress.get().elapsed_ms;
+    if elapsed < 1000.0 {
+        format!("{:.0}ms", elapsed)
+    } else {
+        format!("{:.1}s", elapsed / 1000.0)
+    }
 });
 ```
 
