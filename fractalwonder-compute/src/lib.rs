@@ -13,6 +13,9 @@ pub mod worker_messages;
 #[cfg(target_arch = "wasm32")]
 pub mod atomics;
 
+#[cfg(target_arch = "wasm32")]
+pub mod worker;
+
 pub use adaptive_mandelbrot_renderer::AdaptiveMandelbrotRenderer;
 pub use app_data_renderer::AppDataRenderer;
 pub use computers::{MandelbrotComputer, TestImageComputer};

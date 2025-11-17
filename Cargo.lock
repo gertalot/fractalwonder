@@ -477,6 +477,7 @@ dependencies = [
 name = "fractalwonder-compute"
 version = "0.1.0"
 dependencies = [
+ "console_error_panic_hook",
  "dashu",
  "dashu-float",
  "dyn-clone",
@@ -484,6 +485,9 @@ dependencies = [
  "gloo-utils",
  "js-sys",
  "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -494,6 +498,7 @@ dependencies = [
  "dashu-float",
  "dyn-clone",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
