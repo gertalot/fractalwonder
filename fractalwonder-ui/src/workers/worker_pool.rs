@@ -26,9 +26,9 @@ impl WorkerPool {
         let mut workers = Vec::new();
 
         for i in 0..worker_count {
-            // Worker script path (Trunk generates this in dist/)
+            // Worker wrapper script loads fractalwonder-compute.js and calls init_worker()
             // Note: Not using WorkerType::Module because worker uses no-modules target
-            let worker = Worker::new("./fractalwonder-compute.js")?;
+            let worker = Worker::new("./compute-worker.js")?;
 
             web_sys::console::log_1(&JsValue::from_str(&format!("Worker {} created", i)));
 
@@ -140,7 +140,11 @@ impl WorkerPool {
 
             // Create message object with both the JSON request and the buffer
             let msg_obj = js_sys::Object::new();
-            js_sys::Reflect::set(&msg_obj, &JsValue::from_str("request"), &JsValue::from_str(&message))?;
+            js_sys::Reflect::set(
+                &msg_obj,
+                &JsValue::from_str("request"),
+                &JsValue::from_str(&message),
+            )?;
             js_sys::Reflect::set(&msg_obj, &JsValue::from_str("buffer"), &shared_buffer)?;
 
             worker.post_message(&msg_obj)?;

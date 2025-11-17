@@ -130,17 +130,21 @@ impl CanvasRenderer for ParallelCanvasRenderer {
 
     fn set_renderer(
         &mut self,
-        _renderer: Box<dyn fractalwonder_compute::Renderer<Scalar = Self::Scalar, Data = Self::Data>>,
+        _renderer: Box<
+            dyn fractalwonder_compute::Renderer<Scalar = Self::Scalar, Data = Self::Data>,
+        >,
     ) {
         // Not used in parallel renderer - workers handle their own renderers
         web_sys::console::log_1(&JsValue::from_str(
-            "ParallelCanvasRenderer::set_renderer called (no-op)"
+            "ParallelCanvasRenderer::set_renderer called (no-op)",
         ));
     }
 
     fn set_colorizer(&mut self, colorizer: Colorizer<Self::Data>) {
         self.colorizer = colorizer;
-        web_sys::console::log_1(&JsValue::from_str("ParallelCanvasRenderer::set_colorizer called"));
+        web_sys::console::log_1(&JsValue::from_str(
+            "ParallelCanvasRenderer::set_colorizer called",
+        ));
     }
 
     fn render(&self, viewport: &Viewport<Self::Scalar>, canvas: &HtmlCanvasElement) {
@@ -153,7 +157,11 @@ impl CanvasRenderer for ParallelCanvasRenderer {
         )));
 
         // Start render on workers
-        match self.worker_pool.borrow_mut().start_render(viewport, width, height, self.tile_size) {
+        match self
+            .worker_pool
+            .borrow_mut()
+            .start_render(viewport, width, height, self.tile_size)
+        {
             Ok(render_id) => {
                 web_sys::console::log_1(&JsValue::from_str(&format!(
                     "Render {} dispatched to workers",
@@ -185,7 +193,9 @@ impl CanvasRenderer for ParallelCanvasRenderer {
     }
 
     fn cancel_render(&self) {
-        web_sys::console::log_1(&JsValue::from_str("ParallelCanvasRenderer::cancel_render called"));
+        web_sys::console::log_1(&JsValue::from_str(
+            "ParallelCanvasRenderer::cancel_render called",
+        ));
         // TODO: Implement cancellation mechanism
     }
 }

@@ -14,7 +14,7 @@ extern "C" {
 }
 
 /// Atomically fetch and add to u32 value in buffer
-pub fn atomic_fetch_add_u32(buffer: &js_sys::ArrayBuffer, byte_offset: u32, value: u32) -> u32 {
+pub fn atomic_fetch_add_u32(buffer: &js_sys::SharedArrayBuffer, byte_offset: u32, value: u32) -> u32 {
     debug_assert_eq!(byte_offset % 4, 0, "byte_offset must be 4-byte aligned");
     let int32_array = js_sys::Int32Array::new(buffer);
     let index = byte_offset / 4; // Convert byte offset to i32 index
@@ -22,7 +22,7 @@ pub fn atomic_fetch_add_u32(buffer: &js_sys::ArrayBuffer, byte_offset: u32, valu
 }
 
 /// Atomically load u32 value from buffer
-pub fn atomic_load_u32(buffer: &js_sys::ArrayBuffer, byte_offset: u32) -> u32 {
+pub fn atomic_load_u32(buffer: &js_sys::SharedArrayBuffer, byte_offset: u32) -> u32 {
     debug_assert_eq!(byte_offset % 4, 0, "byte_offset must be 4-byte aligned");
     let int32_array = js_sys::Int32Array::new(buffer);
     let index = byte_offset / 4; // Convert byte offset to i32 index
@@ -30,7 +30,7 @@ pub fn atomic_load_u32(buffer: &js_sys::ArrayBuffer, byte_offset: u32) -> u32 {
 }
 
 /// Atomically store u32 value to buffer
-pub fn atomic_store_u32(buffer: &js_sys::ArrayBuffer, byte_offset: u32, value: u32) -> u32 {
+pub fn atomic_store_u32(buffer: &js_sys::SharedArrayBuffer, byte_offset: u32, value: u32) -> u32 {
     debug_assert_eq!(byte_offset % 4, 0, "byte_offset must be 4-byte aligned");
     let int32_array = js_sys::Int32Array::new(buffer);
     let index = byte_offset / 4; // Convert byte offset to i32 index

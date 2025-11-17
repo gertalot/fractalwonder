@@ -3,7 +3,7 @@ use crate::{
     MandelbrotComputer, PixelRenderer, Renderer, SharedBufferLayout, WorkerRequest, WorkerResponse,
 };
 use fractalwonder_core::{MandelbrotData, PixelRect, Viewport};
-use js_sys::{ArrayBuffer, Uint8Array};
+use js_sys::{SharedArrayBuffer, Uint8Array};
 use wasm_bindgen::prelude::*;
 
 /// Handle message from main thread
@@ -15,7 +15,7 @@ pub fn handle_message(event_data: JsValue) -> Result<(), JsValue> {
         .ok_or_else(|| JsValue::from_str("No request field"))?;
 
     let buffer = js_sys::Reflect::get(&event_data, &JsValue::from_str("buffer"))?
-        .dyn_into::<js_sys::ArrayBuffer>()?;
+        .dyn_into::<js_sys::SharedArrayBuffer>()?;
 
     // Call existing process_render_request with the buffer
     process_render_request(request_str, buffer)
@@ -33,7 +33,9 @@ pub fn init_worker() {
         }
     }) as Box<dyn FnMut(_)>);
 
-    let global = js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>().unwrap();
+    let global = js_sys::global()
+        .dyn_into::<web_sys::DedicatedWorkerGlobalScope>()
+        .unwrap();
     global.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
     onmessage.forget();
 
@@ -48,7 +50,7 @@ pub fn init_worker() {
 #[wasm_bindgen]
 pub fn process_render_request(
     message_json: String,
-    shared_buffer: ArrayBuffer,
+    shared_buffer: SharedArrayBuffer,
 ) -> Result<(), JsValue> {
     let request: WorkerRequest = serde_json::from_str(&message_json)
         .map_err(|e| JsValue::from_str(&format!("Parse error: {}", e)))?;
@@ -94,7 +96,7 @@ fn compute_tiles(
     height: u32,
     tile_size: u32,
     render_id: u32,
-    shared_buffer: ArrayBuffer,
+    shared_buffer: SharedArrayBuffer,
 ) -> Result<(), JsValue> {
     let layout = SharedBufferLayout::new(width, height);
     let view = Uint8Array::new(&shared_buffer);
