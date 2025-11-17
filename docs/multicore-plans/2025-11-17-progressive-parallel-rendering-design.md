@@ -12,9 +12,11 @@ This design implements progressive rendering with Web Workers and perturbation t
 
 **Key architectural decisions:**
 - Workspace separation based on DOM dependencies (enables workers)
-- wasm-bindgen-rayon for parallelism (proper architecture from start)
+- Manual Web Workers with atomic work distribution (proven, documented approach)
 - Size-based + stability-based tile subdivision (progressive UX + numerical correctness)
 - Single reference orbit → multiple references (incremental perturbation complexity)
+
+**Note:** Originally planned to use wasm-bindgen-rayon, but research showed this is not documented/proven with Trunk. We use manual workers instead - simpler, proven for fractals, works with existing tooling.
 
 ---
 
@@ -29,15 +31,16 @@ This design implements progressive rendering with Web Workers and perturbation t
 - Progressive render loop (polls SharedArrayBuffer via `requestAnimationFrame`)
 - **Never blocks** - all computation off-thread
 
-**Dedicated Worker (Computation Layer)**
-- Loads fractalwonder-compute WASM
-- Initializes wasm-bindgen-rayon thread pool (spawns N workers internally)
+**Worker Threads (N workers, typically = CPU cores)**
+- Each loads fractalwonder-compute WASM independently
+- Share memory via SharedArrayBuffer
+- Compete for work using atomic counter (work-stealing pattern)
 - Sequential phases:
-  - Phase 1: Reference orbit computation (arbitrary precision, single-threaded)
-  - Phase 2: Adaptive subdivision (single-threaded logic)
-  - Phase 3: Parallel tile computation (rayon.par_iter() distributes to worker pool)
-- Writes results to SharedArrayBuffer
-- Rayon workers are internal, managed automatically by rayon
+  - Phase 1: Reference orbit computation (arbitrary precision, computed once by coordinator)
+  - Phase 2: Adaptive subdivision (computed once by coordinator)
+  - Phase 3: Parallel tile computation (workers atomically grab next tile index)
+- Each worker writes results directly to SharedArrayBuffer
+- No coordination between workers needed (fully independent)
 
 **Key principle:** Separation of concerns. Main thread = presentation, Worker = computation.
 
@@ -109,32 +112,34 @@ This design implements progressive rendering with Web Workers and perturbation t
 
 ---
 
-### Iteration 3: wasm-bindgen-rayon Worker Setup
+### Iteration 3: Manual Web Workers Setup
 
-**Goal:** Add multi-core parallelism with proper architecture
+**Goal:** Add multi-core parallelism using manual Web Workers with atomic work distribution
 
 **Architecture:**
 
 ```
 Main Thread (UI - never blocks)
-    ↓ postMessage(viewport, render_id, etc.)
-    ↑ polls SharedArrayBuffer for results
+    ↓ Creates SharedArrayBuffer
+    ↓ Spawns N workers (navigator.hardwareConcurrency)
+    ↓ postMessage(viewport, render_id, shared_buffer)
+    ↑ Polls SharedArrayBuffer for results
 
-Dedicated Worker (fractalwonder-compute)
-    - Loads WASM module
-    - Calls initThreadPool(navigator.hardwareConcurrency)
-    - Rayon spawns N workers internally (automatic)
-    - Computes tiles via rayon.par_iter()
-    - Workers write results to SharedArrayBuffer
+Worker Threads (N = CPU cores)
+    - Each loads fractalwonder-compute WASM
+    - Share same memory via SharedArrayBuffer
+    - Loop: atomically increment counter → get tile → compute → write results
+    - No coordination needed between workers
 ```
 
-**Key insight:** You spawn ONE dedicated worker. Rayon manages the worker pool internally.
+**Key insight:** Work-stealing via atomic counter. Each worker competes for next tile index.
 
 **Implementation:**
-- Create dedicated worker entry point in fractalwonder-compute
-- Initialize rayon thread pool
-- Implement SharedArrayBuffer for results
-- Workers compute tiles in parallel, write serialized AppData
+- Create worker entry points in fractalwonder-compute
+- Spawn N workers from main thread using web_sys::Worker
+- Implement SharedArrayBuffer with atomic counter at offset 0
+- Workers use Atomics.add() to get next tile index
+- Workers write tile results directly to shared buffer
 - Main thread polls buffer, deserializes, colorizes, displays
 
 **Validation:**
@@ -164,13 +169,14 @@ Dedicated Worker (fractalwonder-compute)
 
 ### Iteration 5: Optimize Tile Scheduling/Sizing
 
-**Goal:** Tune the working rayon architecture
+**Goal:** Tune the working manual worker architecture
 
 **Optimizations:**
 - Experiment with tile sizes for optimal progressive display
 - Tile ordering strategies (visible-first, spiral-out, etc.)
 - Memory management, buffer reuse
 - Performance profiling and tuning
+- Consider dynamic tile sizing based on complexity
 
 **Validation:** Benchmark improvements, smooth progressive display
 
@@ -192,14 +198,19 @@ let reference = compute_reference_orbit_arbitrary_precision(
     max_iterations
 );
 
-// Phase 2: Perturbation-based tile computation (f64, parallel via rayon)
-tiles.par_iter().for_each(|tile| {
+// Phase 2: Perturbation-based tile computation (f64, parallel via workers)
+// Each worker loops:
+loop {
+    let tile_index = atomic_fetch_add(counter, 1);
+    if tile_index >= total_tiles { break; }
+
+    let tile = tiles[tile_index];
     for pixel in tile.pixels() {
         let delta_c = pixel.coords - reference.center;  // f64
         let result = compute_perturbation_f64(delta_c, &reference);  // f64
         write_to_shared_buffer(result);
     }
-});
+}
 ```
 
 **Key benefit:** 99%+ of computation uses fast f64, only reference uses slow arbitrary precision
@@ -318,13 +329,24 @@ Exact message formats will be defined during implementation.
 
 Workers cannot access DOM. Current single-crate architecture has `hydrate()` (DOM dependency) in the same crate as computation logic. Workers fail to load. Solution: Separate by DOM dependencies - compute has no DOM, UI has DOM.
 
-### Why wasm-bindgen-rayon instead of manual workers?
+### Why manual workers instead of wasm-bindgen-rayon?
 
-Manual worker management is complex and error-prone. wasm-bindgen-rayon provides battle-tested work-stealing parallelism. We build the right architecture from the start rather than implementing throwaway manual workers.
+**Research showed wasm-bindgen-rayon + Trunk is not documented/proven:**
+- Official rayon demo uses Webpack, not Trunk
+- No confirmed working examples with Trunk exist
+- Requires nightly Rust, complex build configuration
+- Higher risk of getting stuck (as happened in previous session)
 
-### Why single dedicated worker instead of N workers?
+**Manual workers are proven for fractal rendering:**
+- Multiple working examples (sgasse/wasm_worker_interaction, ScottLogic, webfractals)
+- Works with existing Trunk + Leptos stack
+- Simpler to debug and understand
+- No nightly Rust or special build flags needed
+- Atomic work distribution achieves same performance
 
-wasm-bindgen-rayon architecture: ONE dedicated worker that initializes rayon, which spawns N workers internally. Main thread sends messages to the dedicated worker, not to individual rayon workers.
+### Why N independent workers instead of coordinator pattern?
+
+Fractal tile rendering is embarrassingly parallel. Each tile is independent, so workers can compete for work via atomic counter without needing coordination. This is simpler than a coordinator distributing work.
 
 ### Why separate size-based and stability-based subdivision?
 
@@ -341,7 +363,7 @@ Validates perturbation theory works before adding adaptive complexity. Single re
 **GPU acceleration (beyond this design):**
 - Perturbation calculations (f64 operations) are GPU-friendly
 - Reference orbits stay on CPU (require arbitrary precision)
-- WebGPU compute shaders could replace rayon workers
+- WebGPU compute shaders could replace manual workers
 - Design allows swapping compute backend without changing architecture
 
 **Series approximation:**

@@ -30,14 +30,19 @@ Create a detailed implementation plan for Iteration 2 (Progressive Rendering - S
 
 ---
 
-## Iteration 3: wasm-bindgen-rayon Worker Setup
+## Iteration 3: Manual Web Workers Setup
 
 ```
 Ultrathink. Use the superpowers:writing-plans skill.
 
-Read docs/2025-11-16-new-ideas.md. Read docs/plans/2025-11-17-progressive-parallel-rendering-design.md
+Read docs/multicore-plans/2025-11-16-new-ideas.md
+Read docs/multicore-plans/2025-11-17-progressive-parallel-rendering-design.md
+Read docs/plans/2025-11-17-iteration-3-manual-web-workers-design.md
 
-Create a detailed implementation plan for Iteration 3 (wasm-bindgen-rayon Worker Setup).
+Create a detailed implementation plan for Iteration 3 (Manual Web Workers Setup).
+
+IMPORTANT: Use manual Web Workers with atomic work distribution, NOT wasm-bindgen-rayon.
+Base the plan on proven examples from the design document.
 ```
 
 ---
