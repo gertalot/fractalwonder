@@ -4,7 +4,7 @@ use crate::hooks::fullscreen::toggle_fullscreen;
 use crate::hooks::ui_visibility::use_ui_visibility;
 use crate::rendering::canvas_renderer::CanvasRenderer;
 use crate::rendering::{
-    get_config, AppData, Colorizer, ParallelCanvasRenderer, Viewport, RENDER_CONFIGS,
+    get_config, AppData, Colorizer, MessageParallelRenderer, Viewport, RENDER_CONFIGS,
 };
 use crate::state::AppState;
 use leptos::*;
@@ -14,27 +14,27 @@ use web_sys::HtmlCanvasElement;
 
 #[derive(Clone)]
 enum CanvasRendererHolder {
-    Parallel(ParallelCanvasRenderer),
+    MessageParallel(MessageParallelRenderer),
 }
 
 impl CanvasRendererHolder {
     fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement) {
-        let CanvasRendererHolder::Parallel(r) = self;
+        let CanvasRendererHolder::MessageParallel(r) = self;
         r.render(viewport, canvas)
     }
 
     fn natural_bounds(&self) -> crate::rendering::Rect<f64> {
-        let CanvasRendererHolder::Parallel(r) = self;
+        let CanvasRendererHolder::MessageParallel(r) = self;
         r.natural_bounds()
     }
 
     fn set_colorizer(&mut self, colorizer: Colorizer<AppData>) {
-        let CanvasRendererHolder::Parallel(r) = self;
+        let CanvasRendererHolder::MessageParallel(r) = self;
         r.set_colorizer(colorizer)
     }
 
     fn cancel_render(&self) {
-        let CanvasRendererHolder::Parallel(r) = self;
+        let CanvasRendererHolder::MessageParallel(r) = self;
         r.cancel_render()
     }
 }
@@ -49,10 +49,10 @@ impl CanvasRendererTrait for CanvasRendererHolder {
     }
 }
 
-fn create_parallel_renderer(
+fn create_message_parallel_renderer(
     colorizer: Colorizer<AppData>,
-) -> Result<ParallelCanvasRenderer, JsValue> {
-    ParallelCanvasRenderer::new(colorizer, 128)
+) -> Result<MessageParallelRenderer, JsValue> {
+    MessageParallelRenderer::new(colorizer, 128)
 }
 
 #[component]
@@ -80,8 +80,9 @@ pub fn App() -> impl IntoView {
     )
     .expect("Initial renderer/color scheme combination must be valid");
 
-    let initial_canvas_renderer = CanvasRendererHolder::Parallel(
-        create_parallel_renderer(initial_colorizer).expect("Failed to create parallel renderer"),
+    let initial_canvas_renderer = CanvasRendererHolder::MessageParallel(
+        create_message_parallel_renderer(initial_colorizer)
+            .expect("Failed to create message parallel renderer"),
     );
 
     let (viewport, set_viewport) = create_signal(initial_renderer_state.viewport.clone());
@@ -139,8 +140,9 @@ pub fn App() -> impl IntoView {
                     .expect("Renderer/color scheme combination must be valid");
 
             // Create new canvas renderer
-            let new_canvas_renderer = CanvasRendererHolder::Parallel(
-                create_parallel_renderer(colorizer).expect("Failed to create parallel renderer"),
+            let new_canvas_renderer = CanvasRendererHolder::MessageParallel(
+                create_message_parallel_renderer(colorizer)
+                    .expect("Failed to create message parallel renderer"),
             );
 
             // Swap renderer
