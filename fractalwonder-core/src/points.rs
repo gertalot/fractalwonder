@@ -65,7 +65,7 @@ impl<T> Point<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Rect<T> {
     pub min: Point<T>,
     pub max: Point<T>,

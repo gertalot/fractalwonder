@@ -16,6 +16,7 @@ impl<T: Clone> Viewport<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json;
 
     #[test]
     fn test_viewport_construction() {
@@ -31,5 +32,23 @@ mod tests {
         let viewport_i32 = Viewport::new(Point::new(0, 0), 2.0);
         assert_eq!(viewport_f64.zoom, 1.0);
         assert_eq!(viewport_i32.zoom, 2.0);
+    }
+
+    #[test]
+    fn test_viewport_serialization_roundtrip() {
+        let original = Viewport::new(Point::new(-0.5, 0.0), 1.0);
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&original).expect("Failed to serialize viewport");
+
+        // Deserialize from JSON
+        let deserialized: Viewport<f64> =
+            serde_json::from_str(&json).expect("Failed to deserialize viewport");
+
+        // Verify roundtrip equals original
+        assert_eq!(original, deserialized);
+        assert_eq!(*original.center.x(), *deserialized.center.x());
+        assert_eq!(*original.center.y(), *deserialized.center.y());
+        assert_eq!(original.zoom, deserialized.zoom);
     }
 }

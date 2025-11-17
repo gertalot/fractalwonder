@@ -8,3 +8,6 @@ dashu.workspace = true
 dashu-float.workspace = true
 serde.workspace = true
 dyn-clone.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
