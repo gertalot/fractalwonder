@@ -10,6 +10,9 @@ pub mod renderer_trait;
 pub mod shared_buffer;
 pub mod worker_messages;
 
+#[cfg(target_arch = "wasm32")]
+pub mod atomics;
+
 pub use adaptive_mandelbrot_renderer::AdaptiveMandelbrotRenderer;
 pub use app_data_renderer::AppDataRenderer;
 pub use computers::{MandelbrotComputer, TestImageComputer};
@@ -21,6 +24,9 @@ pub use renderer_info::{RendererInfo, RendererInfoData};
 pub use renderer_trait::Renderer;
 pub use shared_buffer::SharedBufferLayout;
 pub use worker_messages::{WorkerRequest, WorkerResponse};
+
+#[cfg(target_arch = "wasm32")]
+pub use atomics::{atomic_fetch_add_u32, atomic_load_u32, atomic_store_u32};
 
 // Re-export core types for convenience
 pub use fractalwonder_core::*;
