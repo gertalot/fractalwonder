@@ -3,19 +3,19 @@ use crate::rendering::colorizers::Colorizer;
 use crate::workers::WorkerPool;
 use fractalwonder_core::{AppData, Point, Rect, Viewport};
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
 pub struct ParallelCanvasRenderer {
-    worker_pool: Arc<RefCell<WorkerPool>>,
+    worker_pool: Rc<RefCell<WorkerPool>>,
     colorizer: Colorizer<AppData>,
     tile_size: u32,
 }
 
 impl ParallelCanvasRenderer {
     pub fn new(colorizer: Colorizer<AppData>, tile_size: u32) -> Result<Self, JsValue> {
-        let worker_pool = Arc::new(RefCell::new(WorkerPool::new()?));
+        let worker_pool = Rc::new(RefCell::new(WorkerPool::new()?));
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
             "ParallelCanvasRenderer created with {} workers, tile_size={}",
@@ -38,7 +38,7 @@ impl ParallelCanvasRenderer {
 impl Clone for ParallelCanvasRenderer {
     fn clone(&self) -> Self {
         Self {
-            worker_pool: Arc::clone(&self.worker_pool),
+            worker_pool: Rc::clone(&self.worker_pool),
             colorizer: self.colorizer,
             tile_size: self.tile_size,
         }
