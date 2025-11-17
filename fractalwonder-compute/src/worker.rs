@@ -343,7 +343,9 @@ fn send_tile_complete(render_id: u32, tile: PixelRect, data: Vec<AppData>, compu
         let global: web_sys::DedicatedWorkerGlobalScope = js_sys::global()
             .dyn_into()
             .expect("Failed to get worker global scope");
-        global.post_message(&JsValue::from_str(&json_with_data)).ok();
+        global
+            .post_message(&JsValue::from_str(&json_with_data))
+            .ok();
     }
 }
 
