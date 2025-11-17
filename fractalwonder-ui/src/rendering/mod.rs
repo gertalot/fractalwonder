@@ -2,6 +2,7 @@ pub mod async_progressive_canvas_renderer;
 pub mod canvas_renderer;
 pub mod canvas_utils;
 pub mod colorizers;
+pub mod message_parallel_renderer;
 pub mod parallel_canvas_renderer;
 pub mod tiling_canvas_renderer;
 
@@ -12,6 +13,7 @@ pub use colorizers::{
     mandelbrot_default_colorizer, mandelbrot_fire_colorizer, mandelbrot_opal_colorizer,
     test_image_default_colorizer, test_image_pastel_colorizer, Colorizer,
 };
+pub use message_parallel_renderer::MessageParallelRenderer;
 pub use parallel_canvas_renderer::ParallelCanvasRenderer;
 pub use tiling_canvas_renderer::TilingCanvasRenderer;
 
