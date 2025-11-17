@@ -1,9 +1,9 @@
 use crate::rendering::canvas_renderer::CanvasRenderer;
 use crate::rendering::colorizers::Colorizer;
 use crate::workers::WorkerPool;
-use fractalwonder_compute::SharedBufferLayout;
 #[cfg(target_arch = "wasm32")]
 use fractalwonder_compute::atomics::atomic_load_u32;
+use fractalwonder_compute::SharedBufferLayout;
 use fractalwonder_core::{AppData, Point, Rect, Viewport};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -114,8 +114,8 @@ impl ParallelCanvasRenderer {
         // Return whether polling should continue
         #[cfg(target_arch = "wasm32")]
         {
-            let tile_index = atomic_load_u32(buffer, layout.tile_index_offset() as u32);
-            Ok(tile_index < _total_tiles)
+            let completed_tiles = atomic_load_u32(buffer, layout.completed_tiles_offset() as u32);
+            Ok(completed_tiles < _total_tiles)
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -199,11 +199,12 @@ impl CanvasRenderer for ParallelCanvasRenderer {
         )));
 
         // Start render on workers
-        let render_id = match self
-            .worker_pool
-            .borrow_mut()
-            .start_render(viewport, width, height, self.tile_size)
-        {
+        let render_id = match self.worker_pool.borrow_mut().start_render(
+            viewport,
+            width,
+            height,
+            self.tile_size,
+        ) {
             Ok(render_id) => {
                 web_sys::console::log_1(&JsValue::from_str(&format!(
                     "Render {} dispatched to workers",

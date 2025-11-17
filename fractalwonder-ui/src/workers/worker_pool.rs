@@ -106,12 +106,13 @@ impl WorkerPool {
 
         // Initialize atomic counters in buffer
         let int32_array = js_sys::Int32Array::new(&shared_buffer);
-        int32_array.set_index(0, 0); // tile_index counter = 0
+        int32_array.set_index(0, 0); // tile_index counter = 0 (assigned tiles)
         int32_array.set_index(1, render_id as i32); // render_id
+        int32_array.set_index(2, 0); // completed_tiles counter = 0
 
         // Zero out pixel data
         let view = js_sys::Uint8Array::new(&shared_buffer);
-        for i in 8..buffer_size {
+        for i in 12..buffer_size {
             view.set_index(i as u32, 0);
         }
 

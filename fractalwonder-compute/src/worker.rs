@@ -143,6 +143,9 @@ fn compute_tiles(
         // Write to shared buffer
         write_tile_to_buffer(&view, &layout, tile, &tile_data, width);
 
+        // Increment completed tiles counter AFTER writing
+        atomic_fetch_add_u32(&shared_buffer, layout.completed_tiles_offset() as u32, 1);
+
         // Notify main thread (optional - main polls buffer)
         #[cfg(target_arch = "wasm32")]
         {

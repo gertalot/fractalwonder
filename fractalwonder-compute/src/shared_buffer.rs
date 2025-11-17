@@ -3,14 +3,17 @@ use fractalwonder_core::MandelbrotData;
 /// Layout of SharedArrayBuffer for worker-main communication
 ///
 /// Memory layout:
-/// - Bytes 0-3: Tile index counter (AtomicU32)
+/// - Bytes 0-3: Tile index counter (AtomicU32) - tracks assigned tiles
 /// - Bytes 4-7: Render ID (AtomicU32) - for cancellation
-/// - Bytes 8+: Tile data (8 bytes per pixel: 4 bytes iterations + 4 bytes escaped flag)
+/// - Bytes 8-11: Completed tiles counter (AtomicU32) - tracks completed tiles
+/// - Bytes 12+: Tile data (8 bytes per pixel: 4 bytes iterations + 4 bytes escaped flag)
 pub struct SharedBufferLayout {
-    /// Offset in bytes for tile counter
+    /// Offset in bytes for tile counter (assigned)
     tile_index_offset: usize,
     /// Offset in bytes for render ID
     render_id_offset: usize,
+    /// Offset in bytes for completed tiles counter
+    completed_tiles_offset: usize,
     /// Total pixels in canvas
     pub total_pixels: usize,
 }
@@ -18,13 +21,15 @@ pub struct SharedBufferLayout {
 impl SharedBufferLayout {
     const TILE_INDEX_OFFSET: usize = 0;
     const RENDER_ID_OFFSET: usize = 4;
-    const DATA_OFFSET: usize = 8;
+    const COMPLETED_TILES_OFFSET: usize = 8;
+    const DATA_OFFSET: usize = 12;
     const BYTES_PER_PIXEL: usize = 8; // u32 iterations + u32 escaped flag
 
     pub fn new(canvas_width: u32, canvas_height: u32) -> Self {
         Self {
             tile_index_offset: Self::TILE_INDEX_OFFSET,
             render_id_offset: Self::RENDER_ID_OFFSET,
+            completed_tiles_offset: Self::COMPLETED_TILES_OFFSET,
             total_pixels: (canvas_width * canvas_height) as usize,
         }
     }
@@ -47,6 +52,11 @@ impl SharedBufferLayout {
     /// Get render ID offset
     pub fn render_id_offset(&self) -> usize {
         self.render_id_offset
+    }
+
+    /// Get completed tiles counter offset
+    pub fn completed_tiles_offset(&self) -> usize {
+        self.completed_tiles_offset
     }
 
     /// Encode MandelbrotData to bytes
@@ -76,7 +86,7 @@ mod tests {
     fn test_buffer_layout() {
         let layout = SharedBufferLayout::new(800, 600);
         assert_eq!(layout.total_pixels, 480_000);
-        assert_eq!(layout.buffer_size(), 8 + (480_000 * 8));
+        assert_eq!(layout.buffer_size(), 12 + (480_000 * 8));
     }
 
     #[test]
@@ -98,12 +108,12 @@ mod tests {
         let layout = SharedBufferLayout::new(100, 100);
 
         // First pixel
-        assert_eq!(layout.pixel_offset(0), 8);
+        assert_eq!(layout.pixel_offset(0), 12);
 
         // Second pixel (8 bytes per pixel)
-        assert_eq!(layout.pixel_offset(1), 16);
+        assert_eq!(layout.pixel_offset(1), 20);
 
         // 100th pixel
-        assert_eq!(layout.pixel_offset(99), 8 + (99 * 8));
+        assert_eq!(layout.pixel_offset(99), 12 + (99 * 8));
     }
 }
