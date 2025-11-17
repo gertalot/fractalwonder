@@ -1,16 +1,19 @@
 use crate::rendering::canvas_renderer::CanvasRenderer;
 use crate::rendering::colorizers::Colorizer;
 use crate::workers::WorkerPool;
+use fractalwonder_compute::SharedBufferLayout;
 use fractalwonder_core::{AppData, Point, Rect, Viewport};
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
 pub struct ParallelCanvasRenderer {
     worker_pool: Rc<RefCell<WorkerPool>>,
     colorizer: Colorizer<AppData>,
     tile_size: u32,
+    poll_closure: RefCell<Option<Closure<dyn FnMut()>>>,
 }
 
 impl ParallelCanvasRenderer {
@@ -27,11 +30,87 @@ impl ParallelCanvasRenderer {
             worker_pool,
             colorizer,
             tile_size,
+            poll_closure: RefCell::new(None),
         })
     }
 
     pub fn worker_count(&self) -> usize {
         self.worker_pool.borrow().worker_count()
+    }
+
+    fn poll_and_render(&self, canvas: &HtmlCanvasElement) -> Result<(), JsValue> {
+        let worker_pool = self.worker_pool.borrow();
+        let Some(buffer) = worker_pool.get_shared_buffer() else {
+            return Ok(()); // No active render
+        };
+
+        let width = canvas.width();
+        let height = canvas.height();
+        let layout = SharedBufferLayout::new(width, height);
+
+        // Read all pixel data from SharedArrayBuffer
+        let view = js_sys::Uint8Array::new(buffer);
+        let mut pixel_data = Vec::with_capacity(layout.total_pixels);
+
+        for pixel_idx in 0..layout.total_pixels {
+            let offset = layout.pixel_offset(pixel_idx);
+            let mut bytes = [0u8; 8];
+            for i in 0..8 {
+                bytes[i] = view.get_index((offset + i) as u32);
+            }
+
+            let data = SharedBufferLayout::decode_pixel(&bytes);
+            pixel_data.push(data);
+        }
+
+        // Colorize pixels
+        let colors = pixel_data
+            .iter()
+            .map(|data| {
+                let app_data = AppData::MandelbrotData(*data);
+                let (r, g, b, a) = (self.colorizer)(&app_data);
+                [r, g, b, a]
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+
+        // Draw to canvas
+        let context = canvas
+            .get_context("2d")?
+            .ok_or_else(|| JsValue::from_str("No 2d context"))?
+            .dyn_into::<web_sys::CanvasRenderingContext2d>()?;
+
+        let image_data =
+            web_sys::ImageData::new_with_u8_clamped_array(wasm_bindgen::Clamped(&colors), width)?;
+
+        context.put_image_data(&image_data, 0.0, 0.0)?;
+
+        Ok(())
+    }
+
+    fn start_progressive_poll(&self, canvas: HtmlCanvasElement) -> Result<(), JsValue> {
+        let self_clone = self.clone();
+        let canvas_clone = canvas.clone();
+
+        let closure = Closure::wrap(Box::new(move || {
+            if let Err(e) = self_clone.poll_and_render(&canvas_clone) {
+                web_sys::console::error_1(&e);
+            }
+
+            // Continue polling
+            if let Err(e) = self_clone.start_progressive_poll(canvas_clone.clone()) {
+                web_sys::console::error_1(&e);
+            }
+        }) as Box<dyn FnMut()>);
+
+        web_sys::window()
+            .ok_or_else(|| JsValue::from_str("No window"))?
+            .request_animation_frame(closure.as_ref().unchecked_ref())?;
+
+        // Store closure to keep it alive
+        *self.poll_closure.borrow_mut() = Some(closure);
+
+        Ok(())
     }
 }
 
@@ -41,6 +120,7 @@ impl Clone for ParallelCanvasRenderer {
             worker_pool: Rc::clone(&self.worker_pool),
             colorizer: self.colorizer,
             tile_size: self.tile_size,
+            poll_closure: RefCell::new(None),
         }
     }
 }
@@ -73,7 +153,7 @@ impl CanvasRenderer for ParallelCanvasRenderer {
             width, height
         )));
 
-        // Start render on workers (BLOCKS THREAD - will fix in next task)
+        // Start render on workers
         match self.worker_pool.borrow_mut().start_render(viewport, width, height, self.tile_size) {
             Ok(render_id) => {
                 web_sys::console::log_1(&JsValue::from_str(&format!(
@@ -86,11 +166,17 @@ impl CanvasRenderer for ParallelCanvasRenderer {
                     "Failed to start render: {:?}",
                     e
                 )));
+                return;
             }
         }
 
-        // TODO: Poll SharedArrayBuffer and display results progressively
-        // For now, just log that we started
+        // Start progressive polling
+        if let Err(e) = self.start_progressive_poll(canvas.clone()) {
+            web_sys::console::error_1(&JsValue::from_str(&format!(
+                "Failed to start progressive poll: {:?}",
+                e
+            )));
+        }
     }
 
     fn natural_bounds(&self) -> Rect<Self::Scalar> {
