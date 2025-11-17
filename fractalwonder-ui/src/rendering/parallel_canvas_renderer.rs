@@ -2,6 +2,8 @@ use crate::rendering::canvas_renderer::CanvasRenderer;
 use crate::rendering::colorizers::Colorizer;
 use crate::workers::WorkerPool;
 use fractalwonder_compute::SharedBufferLayout;
+#[cfg(target_arch = "wasm32")]
+use fractalwonder_compute::atomics::atomic_load_u32;
 use fractalwonder_core::{AppData, Point, Rect, Viewport};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -14,6 +16,7 @@ pub struct ParallelCanvasRenderer {
     colorizer: Colorizer<AppData>,
     tile_size: u32,
     poll_closure: RefCell<Option<Closure<dyn FnMut()>>>,
+    current_render_id: RefCell<u32>,
 }
 
 impl ParallelCanvasRenderer {
@@ -31,6 +34,7 @@ impl ParallelCanvasRenderer {
             colorizer,
             tile_size,
             poll_closure: RefCell::new(None),
+            current_render_id: RefCell::new(0),
         })
     }
 
@@ -38,15 +42,38 @@ impl ParallelCanvasRenderer {
         self.worker_pool.borrow().worker_count()
     }
 
-    fn poll_and_render(&self, canvas: &HtmlCanvasElement) -> Result<(), JsValue> {
+    fn poll_and_render(&self, canvas: &HtmlCanvasElement) -> Result<bool, JsValue> {
         let worker_pool = self.worker_pool.borrow();
         let Some(buffer) = worker_pool.get_shared_buffer() else {
-            return Ok(()); // No active render
+            return Ok(false); // No active render
         };
 
         let width = canvas.width();
         let height = canvas.height();
         let layout = SharedBufferLayout::new(width, height);
+
+        // Calculate total tiles
+        let tiles_x = width.div_ceil(self.tile_size);
+        let tiles_y = height.div_ceil(self.tile_size);
+        let _total_tiles = tiles_x * tiles_y; // Used in wasm32 cfg below
+
+        // Check if render is complete or cancelled (WASM only - uses atomics)
+        #[cfg(target_arch = "wasm32")]
+        {
+            let tile_index = atomic_load_u32(buffer, layout.tile_index_offset() as u32);
+            let stored_render_id = atomic_load_u32(buffer, layout.render_id_offset() as u32);
+            let current_render_id = *self.current_render_id.borrow();
+
+            // Check for cancellation (render_id mismatch)
+            if stored_render_id != current_render_id {
+                return Ok(false); // Render was cancelled, stop polling
+            }
+
+            // Note: We continue with rendering to display the result
+            // Return value indicates whether to continue polling
+            // This will be used at the end of the function
+            let _ = tile_index; // Will use below
+        }
 
         // Read all pixel data from SharedArrayBuffer
         let view = js_sys::Uint8Array::new(buffer);
@@ -84,7 +111,15 @@ impl ParallelCanvasRenderer {
 
         context.put_image_data(&image_data, 0.0, 0.0)?;
 
-        Ok(())
+        // Return whether polling should continue
+        #[cfg(target_arch = "wasm32")]
+        {
+            let tile_index = atomic_load_u32(buffer, layout.tile_index_offset() as u32);
+            Ok(tile_index < _total_tiles)
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        Ok(true) // Continue polling on non-WASM platforms (testing)
     }
 
     fn start_progressive_poll(&self, canvas: HtmlCanvasElement) -> Result<(), JsValue> {
@@ -92,13 +127,19 @@ impl ParallelCanvasRenderer {
         let canvas_clone = canvas.clone();
 
         let closure = Closure::wrap(Box::new(move || {
-            if let Err(e) = self_clone.poll_and_render(&canvas_clone) {
-                web_sys::console::error_1(&e);
-            }
+            let should_continue = match self_clone.poll_and_render(&canvas_clone) {
+                Ok(should_continue) => should_continue,
+                Err(e) => {
+                    web_sys::console::error_1(&e);
+                    false // Stop on error
+                }
+            };
 
-            // Continue polling
-            if let Err(e) = self_clone.start_progressive_poll(canvas_clone.clone()) {
-                web_sys::console::error_1(&e);
+            // Continue polling only if render is not complete
+            if should_continue {
+                if let Err(e) = self_clone.start_progressive_poll(canvas_clone.clone()) {
+                    web_sys::console::error_1(&e);
+                }
             }
         }) as Box<dyn FnMut()>);
 
@@ -120,6 +161,7 @@ impl Clone for ParallelCanvasRenderer {
             colorizer: self.colorizer,
             tile_size: self.tile_size,
             poll_closure: RefCell::new(None),
+            current_render_id: RefCell::new(*self.current_render_id.borrow()),
         }
     }
 }
@@ -157,7 +199,7 @@ impl CanvasRenderer for ParallelCanvasRenderer {
         )));
 
         // Start render on workers
-        match self
+        let render_id = match self
             .worker_pool
             .borrow_mut()
             .start_render(viewport, width, height, self.tile_size)
@@ -167,6 +209,7 @@ impl CanvasRenderer for ParallelCanvasRenderer {
                     "Render {} dispatched to workers",
                     render_id
                 )));
+                render_id
             }
             Err(e) => {
                 web_sys::console::error_1(&JsValue::from_str(&format!(
@@ -175,7 +218,10 @@ impl CanvasRenderer for ParallelCanvasRenderer {
                 )));
                 return;
             }
-        }
+        };
+
+        // Store current render_id for cancellation detection
+        *self.current_render_id.borrow_mut() = render_id;
 
         // Start progressive polling
         if let Err(e) = self.start_progressive_poll(canvas.clone()) {
@@ -196,6 +242,11 @@ impl CanvasRenderer for ParallelCanvasRenderer {
         web_sys::console::log_1(&JsValue::from_str(
             "ParallelCanvasRenderer::cancel_render called",
         ));
-        // TODO: Implement cancellation mechanism
+
+        // Stop the polling loop by clearing the closure
+        *self.poll_closure.borrow_mut() = None;
+
+        // Increment render_id in the worker pool to cancel workers
+        self.worker_pool.borrow_mut().cancel_current_render();
     }
 }

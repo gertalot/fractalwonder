@@ -14,7 +14,11 @@ extern "C" {
 }
 
 /// Atomically fetch and add to u32 value in buffer
-pub fn atomic_fetch_add_u32(buffer: &js_sys::SharedArrayBuffer, byte_offset: u32, value: u32) -> u32 {
+pub fn atomic_fetch_add_u32(
+    buffer: &js_sys::SharedArrayBuffer,
+    byte_offset: u32,
+    value: u32,
+) -> u32 {
     debug_assert_eq!(byte_offset % 4, 0, "byte_offset must be 4-byte aligned");
     let int32_array = js_sys::Int32Array::new(buffer);
     let index = byte_offset / 4; // Convert byte offset to i32 index

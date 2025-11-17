@@ -162,6 +162,26 @@ impl WorkerPool {
     pub fn get_shared_buffer(&self) -> Option<&js_sys::SharedArrayBuffer> {
         self.shared_buffer.as_ref()
     }
+
+    pub fn cancel_current_render(&mut self) {
+        // Increment render_id to cancel ongoing renders
+        let _new_render_id = self.current_render_id.fetch_add(1, Ordering::SeqCst) + 1;
+
+        // Update the render_id in SharedArrayBuffer if it exists (WASM only)
+        #[cfg(target_arch = "wasm32")]
+        if let Some(buffer) = &self.shared_buffer {
+            use fractalwonder_compute::atomics::atomic_store_u32;
+
+            // This is a bit of a hack - we don't know the canvas dimensions here
+            // But render_id is at a fixed offset (4 bytes), so we can update it directly
+            atomic_store_u32(buffer, 4, _new_render_id);
+
+            web_sys::console::log_1(&JsValue::from_str(&format!(
+                "Cancelled render, new render_id: {}",
+                _new_render_id
+            )));
+        }
+    }
 }
 
 impl Drop for WorkerPool {

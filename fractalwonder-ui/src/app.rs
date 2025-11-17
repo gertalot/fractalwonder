@@ -49,7 +49,9 @@ impl CanvasRendererTrait for CanvasRendererHolder {
     }
 }
 
-fn create_parallel_renderer(colorizer: Colorizer<AppData>) -> Result<ParallelCanvasRenderer, JsValue> {
+fn create_parallel_renderer(
+    colorizer: Colorizer<AppData>,
+) -> Result<ParallelCanvasRenderer, JsValue> {
     ParallelCanvasRenderer::new(colorizer, 128)
 }
 
@@ -134,8 +136,9 @@ pub fn App() -> impl IntoView {
             .expect("Renderer/color scheme combination must be valid");
 
         // Create new canvas renderer
-        let new_canvas_renderer =
-            CanvasRendererHolder::Parallel(create_parallel_renderer(colorizer).expect("Failed to create parallel renderer"));
+        let new_canvas_renderer = CanvasRendererHolder::Parallel(
+            create_parallel_renderer(colorizer).expect("Failed to create parallel renderer"),
+        );
 
         // Swap renderer
         canvas_renderer.set(new_canvas_renderer);
