@@ -19,7 +19,7 @@ fn test_shared_buffer_roundtrip() {
 fn test_buffer_size_calculation() {
     let layout = SharedBufferLayout::new(1920, 1080);
     let expected_pixels = 1920 * 1080;
-    let expected_size = 8 + (expected_pixels * 8); // metadata + pixel data
+    let expected_size = 12 + (expected_pixels * 8); // 12 bytes metadata (3 atomic counters) + pixel data
 
     assert_eq!(layout.buffer_size(), expected_size);
 }
