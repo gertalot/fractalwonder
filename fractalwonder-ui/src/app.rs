@@ -125,34 +125,38 @@ pub fn App() -> impl IntoView {
             });
         }
 
-        previous_renderer_id.set(new_renderer_id.clone());
+        // Only create new renderer if renderer_id actually changed
+        if new_renderer_id != old_renderer_id {
+            previous_renderer_id.set(new_renderer_id.clone());
 
-        // CRITICAL: Use get_untracked() to avoid re-running when color_scheme_id changes
-        let states = renderer_states.get_untracked();
-        let state = states.get(&new_renderer_id).unwrap();
+            // CRITICAL: Use get_untracked() to avoid re-running when color_scheme_id changes
+            let states = renderer_states.get_untracked();
+            let state = states.get(&new_renderer_id).unwrap();
 
-        // Find colorizer for restored color scheme
-        let colorizer = crate::rendering::get_colorizer(&new_renderer_id, &state.color_scheme_id)
-            .expect("Renderer/color scheme combination must be valid");
+            // Find colorizer for restored color scheme
+            let colorizer =
+                crate::rendering::get_colorizer(&new_renderer_id, &state.color_scheme_id)
+                    .expect("Renderer/color scheme combination must be valid");
 
-        // Create new canvas renderer
-        let new_canvas_renderer = CanvasRendererHolder::Parallel(
-            create_parallel_renderer(colorizer).expect("Failed to create parallel renderer"),
-        );
+            // Create new canvas renderer
+            let new_canvas_renderer = CanvasRendererHolder::Parallel(
+                create_parallel_renderer(colorizer).expect("Failed to create parallel renderer"),
+            );
 
-        // Swap renderer
-        canvas_renderer.set(new_canvas_renderer);
+            // Swap renderer
+            canvas_renderer.set(new_canvas_renderer);
 
-        // Restore viewport (untracked to avoid circular effects)
-        set_viewport.set_untracked(state.viewport.clone());
+            // Restore viewport (untracked to avoid circular effects)
+            set_viewport.set_untracked(state.viewport.clone());
 
-        // Save immediately
-        let states = renderer_states.get_untracked();
-        AppState {
-            selected_renderer_id: new_renderer_id.clone(),
-            renderer_states: states,
+            // Save immediately
+            let states = renderer_states.get_untracked();
+            AppState {
+                selected_renderer_id: new_renderer_id.clone(),
+                renderer_states: states,
+            }
+            .save();
         }
-        .save();
     });
 
     // ========== Effect: Viewport changed (save debounced) ==========
