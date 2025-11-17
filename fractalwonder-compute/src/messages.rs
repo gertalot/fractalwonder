@@ -1,4 +1,4 @@
-use fractalwonder_core::{MandelbrotData, PixelRect};
+use fractalwonder_core::{AppData, PixelRect};
 use serde::{Deserialize, Serialize};
 
 /// Messages sent from worker to main thread
@@ -16,8 +16,7 @@ pub enum WorkerToMain {
     TileComplete {
         render_id: u32,
         tile: PixelRect,
-        #[serde(skip)]  // Will be sent as transferable array
-        data: Vec<MandelbrotData>,
+        data: Vec<AppData>,
         compute_time_ms: f64,
     },
 

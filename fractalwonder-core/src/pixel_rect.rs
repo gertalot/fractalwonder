@@ -1,5 +1,7 @@
+use serde::{Deserialize, Serialize};
+
 /// Rectangle in pixel space, used for rendering sub-regions of canvas
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PixelRect {
     /// X coordinate of top-left corner
     pub x: u32,

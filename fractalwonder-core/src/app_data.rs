@@ -11,7 +11,7 @@ pub struct MandelbrotData {
 ///
 /// Each renderer wraps its specific data type in this enum to enable
 /// runtime polymorphism via trait objects.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum AppData {
     TestImageData(TestImageData),
     MandelbrotData(MandelbrotData),
@@ -28,7 +28,7 @@ impl Default for AppData {
 }
 
 /// Data computed by TestImageRenderer
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct TestImageData {
     pub checkerboard: bool,
     pub circle_distance: f64,

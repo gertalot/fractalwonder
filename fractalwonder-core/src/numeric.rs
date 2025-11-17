@@ -1,4 +1,5 @@
 use dashu_float::FBig;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Sub};
 
@@ -16,6 +17,33 @@ pub trait ToF64 {
 pub struct BigFloat {
     value: FBig,
     precision_bits: usize,
+}
+
+impl Serialize for BigFloat {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Serialize as string to preserve precision
+        let s = self.value.to_string();
+        serializer.serialize_str(&s)
+    }
+}
+
+impl<'de> Deserialize<'de> for BigFloat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let value = s
+            .parse::<FBig>()
+            .map_err(|e| serde::de::Error::custom(format!("Failed to parse BigFloat: {}", e)))?;
+        Ok(BigFloat {
+            value,
+            precision_bits: 256, // Default precision
+        })
+    }
 }
 
 impl BigFloat {

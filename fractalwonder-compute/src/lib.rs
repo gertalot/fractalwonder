@@ -20,6 +20,7 @@ pub mod worker;
 pub use adaptive_mandelbrot_renderer::AdaptiveMandelbrotRenderer;
 pub use app_data_renderer::AppDataRenderer;
 pub use computers::{MandelbrotComputer, TestImageComputer};
+pub use messages::{MainToWorker, WorkerToMain};
 pub use pixel_renderer::PixelRenderer;
 pub use point_compute::ImagePointComputer;
 pub use precision::PrecisionCalculator;
