@@ -2,14 +2,17 @@ use crate::components::interactive_canvas::{CanvasRendererTrait, InteractiveCanv
 use crate::components::ui::UI;
 use crate::hooks::fullscreen::toggle_fullscreen;
 use crate::hooks::ui_visibility::use_ui_visibility;
+use crate::rendering::canvas_renderer::CanvasRenderer;
 use crate::rendering::{
     get_config, AdaptiveMandelbrotRenderer, AppData, AppDataRenderer,
-    AsyncProgressiveCanvasRenderer, BigFloat, Colorizer, PixelRenderer, Point, PrecisionCalculator,
-    Rect, Renderer, TestImageComputer, ToF64, Viewport, RENDER_CONFIGS,
+    AsyncProgressiveCanvasRenderer, BigFloat, Colorizer, ParallelCanvasRenderer, PixelRenderer,
+    Point, PrecisionCalculator, Rect, Renderer, TestImageComputer, ToF64, Viewport,
+    RENDER_CONFIGS,
 };
 use crate::state::AppState;
 use leptos::*;
 use std::time::Duration;
+use wasm_bindgen::JsValue;
 use web_sys::HtmlCanvasElement;
 
 // Zoom threshold for switching from f64 to BigFloat arithmetic
@@ -19,6 +22,7 @@ const BIGFLOAT_ZOOM_THRESHOLD: f64 = 1e10;
 enum CanvasRendererHolder {
     F64(AsyncProgressiveCanvasRenderer<f64, AppData>),
     BigFloat(AsyncProgressiveCanvasRenderer<BigFloat, AppData>),
+    Parallel(ParallelCanvasRenderer),
 }
 
 impl CanvasRendererHolder {
@@ -37,6 +41,7 @@ impl CanvasRendererHolder {
                 );
                 r.render(&viewport_big, canvas)
             }
+            CanvasRendererHolder::Parallel(r) => r.render(viewport, canvas),
         }
     }
 
@@ -50,6 +55,7 @@ impl CanvasRendererHolder {
                     Point::new(bounds.max.x().to_f64(), bounds.max.y().to_f64()),
                 )
             }
+            CanvasRendererHolder::Parallel(r) => r.natural_bounds(),
         }
     }
 
@@ -57,6 +63,7 @@ impl CanvasRendererHolder {
         match self {
             CanvasRendererHolder::F64(r) => r.set_colorizer(colorizer),
             CanvasRendererHolder::BigFloat(r) => r.set_colorizer(colorizer),
+            CanvasRendererHolder::Parallel(r) => r.set_colorizer(colorizer),
         }
     }
 
@@ -64,6 +71,7 @@ impl CanvasRendererHolder {
         match self {
             CanvasRendererHolder::F64(r) => r.cancel_render(),
             CanvasRendererHolder::BigFloat(r) => r.cancel_render(),
+            CanvasRendererHolder::Parallel(r) => r.cancel_render(),
         }
     }
 }
@@ -102,6 +110,10 @@ fn create_test_image_canvas_renderer(
     AsyncProgressiveCanvasRenderer::new(renderer, colorizer, 128)
 }
 
+fn create_parallel_renderer(colorizer: Colorizer<AppData>) -> Result<ParallelCanvasRenderer, JsValue> {
+    ParallelCanvasRenderer::new(colorizer, 128)
+}
+
 #[component]
 pub fn App() -> impl IntoView {
     // ========== Load state from localStorage ==========
@@ -127,17 +139,9 @@ pub fn App() -> impl IntoView {
     )
     .expect("Initial renderer/color scheme combination must be valid");
 
-    let initial_canvas_renderer = match initial_state.selected_renderer_id.as_str() {
-        "mandelbrot" => CanvasRendererHolder::BigFloat(create_mandelbrot_canvas_renderer(
-            initial_renderer_state.viewport.zoom,
-            initial_colorizer,
-        )),
-        "test_image" => CanvasRendererHolder::F64(create_test_image_canvas_renderer(
-            initial_renderer_state.viewport.zoom,
-            initial_colorizer,
-        )),
-        _ => panic!("Unknown renderer: {}", initial_state.selected_renderer_id),
-    };
+    let initial_canvas_renderer = CanvasRendererHolder::Parallel(
+        create_parallel_renderer(initial_colorizer).expect("Failed to create parallel renderer"),
+    );
 
     let (viewport, set_viewport) = create_signal(initial_renderer_state.viewport.clone());
 
@@ -191,17 +195,8 @@ pub fn App() -> impl IntoView {
             .expect("Renderer/color scheme combination must be valid");
 
         // Create new canvas renderer
-        let new_canvas_renderer = match new_renderer_id.as_str() {
-            "mandelbrot" => CanvasRendererHolder::BigFloat(create_mandelbrot_canvas_renderer(
-                state.viewport.zoom,
-                colorizer,
-            )),
-            "test_image" => CanvasRendererHolder::F64(create_test_image_canvas_renderer(
-                state.viewport.zoom,
-                colorizer,
-            )),
-            _ => panic!("Unknown renderer: {}", new_renderer_id),
-        };
+        let new_canvas_renderer =
+            CanvasRendererHolder::Parallel(create_parallel_renderer(colorizer).expect("Failed to create parallel renderer"));
 
         // Swap renderer
         canvas_renderer.set(new_canvas_renderer);
