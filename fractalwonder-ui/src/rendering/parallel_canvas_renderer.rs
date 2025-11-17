@@ -55,8 +55,8 @@ impl ParallelCanvasRenderer {
         for pixel_idx in 0..layout.total_pixels {
             let offset = layout.pixel_offset(pixel_idx);
             let mut bytes = [0u8; 8];
-            for i in 0..8 {
-                bytes[i] = view.get_index((offset + i) as u32);
+            for (i, byte) in bytes.iter_mut().enumerate() {
+                *byte = view.get_index((offset + i) as u32);
             }
 
             let data = SharedBufferLayout::decode_pixel(&bytes);
@@ -66,12 +66,11 @@ impl ParallelCanvasRenderer {
         // Colorize pixels
         let colors = pixel_data
             .iter()
-            .map(|data| {
+            .flat_map(|data| {
                 let app_data = AppData::MandelbrotData(*data);
                 let (r, g, b, a) = (self.colorizer)(&app_data);
                 [r, g, b, a]
             })
-            .flatten()
             .collect::<Vec<_>>();
 
         // Draw to canvas
