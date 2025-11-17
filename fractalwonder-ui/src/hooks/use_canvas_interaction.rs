@@ -129,7 +129,7 @@ fn render_preview(
 ///
 /// Designed for canvases where full re-renders are expensive (seconds to hours).
 /// Captures canvas ImageData on interaction start, provides real-time preview
-/// using pixel transformations, and fires callback after 1.5s of inactivity.
+/// using pixel transformations, and fires callbacks during and after interaction.
 ///
 /// # Example
 ///
@@ -144,8 +144,10 @@ fn render_preview(
 ///     let handle = use_canvas_interaction(
 ///         canvas_ref,
 ///         move |result: TransformResult| {
-///             // Convert pixel transform to domain coordinates
-///             // Trigger expensive full re-render
+///             // Fires during interaction - update UI coordinates
+///         },
+///         move |result: TransformResult| {
+///             // Fires after interaction ends - trigger expensive render
 ///         },
 ///     );
 ///
@@ -158,17 +160,20 @@ fn render_preview(
 /// # Arguments
 ///
 /// * `canvas_ref` - Leptos NodeRef to canvas element
+/// * `on_interaction` - Callback fired during interaction (on every transform change)
 /// * `on_interaction_end` - Callback fired when interaction ends (1.5s inactivity)
 ///
 /// # Returns
 ///
 /// `InteractionHandle` with interaction state signal. All event listeners are attached internally.
-pub fn use_canvas_interaction<F>(
+pub fn use_canvas_interaction<F, G>(
     canvas_ref: NodeRef<leptos::html::Canvas>,
-    on_interaction_end: F,
+    _on_interaction: F,
+    on_interaction_end: G,
 ) -> InteractionHandle
 where
-    F: Fn(TransformResult) + 'static,
+    F: Fn(TransformResult) + 'static + Clone,
+    G: Fn(TransformResult) + 'static + Clone,
 {
     // Interaction state signals
     let is_dragging = create_rw_signal(false);
@@ -756,9 +761,15 @@ mod browser_tests {
         let canvas_ref = create_node_ref::<leptos::html::Canvas>();
         let callback_fired = create_rw_signal(false);
 
-        let handle = use_canvas_interaction(canvas_ref, move |_result| {
-            callback_fired.set(true);
-        });
+        let handle = use_canvas_interaction(
+            canvas_ref,
+            move |_result| {
+                // on_interaction callback
+            },
+            move |_result| {
+                callback_fired.set(true);
+            },
+        );
 
         assert!(!handle.is_interacting.get());
     }
