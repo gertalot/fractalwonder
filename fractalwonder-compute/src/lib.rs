@@ -31,5 +31,8 @@ pub use worker_messages::{WorkerRequest, WorkerResponse};
 #[cfg(target_arch = "wasm32")]
 pub use atomics::{atomic_fetch_add_u32, atomic_load_u32, atomic_store_u32};
 
+#[cfg(target_arch = "wasm32")]
+pub use worker::{init_worker, process_render_request, handle_message};
+
 // Re-export core types for convenience
 pub use fractalwonder_core::*;

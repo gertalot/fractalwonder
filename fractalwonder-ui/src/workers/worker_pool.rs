@@ -131,16 +131,19 @@ impl WorkerPool {
         let message = serde_json::to_string(&request)
             .map_err(|e| JsValue::from_str(&format!("Serialize request error: {}", e)))?;
 
-        // Send to all workers
+        // Send to all workers WITH SharedArrayBuffer
         for (i, worker) in self.workers.iter().enumerate() {
             web_sys::console::log_1(&JsValue::from_str(&format!(
                 "Sending render request to worker {}",
                 i
             )));
 
-            // Post message with shared buffer
-            // Note: We send the buffer reference, not transfer it
-            worker.post_message(&JsValue::from_str(&message))?;
+            // Create message object with both the JSON request and the buffer
+            let msg_obj = js_sys::Object::new();
+            js_sys::Reflect::set(&msg_obj, &JsValue::from_str("request"), &JsValue::from_str(&message))?;
+            js_sys::Reflect::set(&msg_obj, &JsValue::from_str("buffer"), &shared_buffer)?;
+
+            worker.post_message(&msg_obj)?;
         }
 
         web_sys::console::log_1(&JsValue::from_str(&format!(

@@ -6,22 +6,40 @@ use fractalwonder_core::{MandelbrotData, PixelRect, Viewport};
 use js_sys::{ArrayBuffer, Uint8Array};
 use wasm_bindgen::prelude::*;
 
+/// Handle message from main thread
+#[wasm_bindgen]
+pub fn handle_message(event_data: JsValue) -> Result<(), JsValue> {
+    // Parse the message object
+    let request_str = js_sys::Reflect::get(&event_data, &JsValue::from_str("request"))?
+        .as_string()
+        .ok_or_else(|| JsValue::from_str("No request field"))?;
+
+    let buffer = js_sys::Reflect::get(&event_data, &JsValue::from_str("buffer"))?
+        .dyn_into::<js_sys::ArrayBuffer>()?;
+
+    // Call existing process_render_request with the buffer
+    process_render_request(request_str, buffer)
+}
+
 /// Worker initialization - called when worker starts
 #[wasm_bindgen]
 pub fn init_worker() {
     console_error_panic_hook::set_once();
 
+    // Set up message handler
+    let onmessage = Closure::wrap(Box::new(move |e: web_sys::MessageEvent| {
+        if let Err(err) = handle_message(e.data()) {
+            web_sys::console::error_1(&err);
+        }
+    }) as Box<dyn FnMut(_)>);
+
+    let global = js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>().unwrap();
+    global.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+    onmessage.forget();
+
     // Send ready message
     let response = WorkerResponse::Ready;
-    let message = serde_json::to_string(&response).unwrap();
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        use wasm_bindgen::JsCast;
-        let global: web_sys::DedicatedWorkerGlobalScope = js_sys::global()
-            .dyn_into()
-            .expect("Failed to get worker global scope");
-
+    if let Ok(message) = serde_json::to_string(&response) {
         global.post_message(&JsValue::from_str(&message)).ok();
     }
 }
