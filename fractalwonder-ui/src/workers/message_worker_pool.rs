@@ -244,11 +244,26 @@ impl MessageWorkerPool {
         self.failed_tiles.clear();
 
         self.pending_tiles = generate_tiles(canvas_width, canvas_height, tile_size);
+        let total_tiles = self.pending_tiles.len() as u32;
+
+        // Record start time
+        let start_time = web_sys::window()
+            .unwrap()
+            .performance()
+            .unwrap()
+            .now();
+        *self.render_start_time.borrow_mut() = Some(start_time);
+
+        // Initialize progress signal
+        self.progress_signal.set(crate::rendering::RenderProgress::new(
+            total_tiles,
+            self.current_render_id,
+        ));
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
             "Starting render {} with {} tiles ({}x{})",
             self.current_render_id,
-            self.pending_tiles.len(),
+            total_tiles,
             canvas_width,
             canvas_height
         )));
