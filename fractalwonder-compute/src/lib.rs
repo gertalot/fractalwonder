@@ -1,5 +1,6 @@
 pub mod adaptive_mandelbrot_renderer;
 pub mod app_data_renderer;
+pub mod cancellation;
 pub mod computers;
 pub mod messages;
 pub mod pixel_renderer;
@@ -19,6 +20,7 @@ pub mod worker;
 
 pub use adaptive_mandelbrot_renderer::AdaptiveMandelbrotRenderer;
 pub use app_data_renderer::AppDataRenderer;
+pub use cancellation::{AtomicBoolChecker, CancellationChecker, NeverCancel};
 pub use computers::{MandelbrotComputer, TestImageComputer};
 pub use messages::{MainToWorker, WorkerToMain};
 pub use pixel_renderer::PixelRenderer;
