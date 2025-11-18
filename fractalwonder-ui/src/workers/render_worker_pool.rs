@@ -137,6 +137,15 @@ impl RenderWorkerPool {
 
     fn handle_worker_message(&mut self, worker_id: usize, msg: WorkerToMain) {
         match msg {
+            WorkerToMain::Ready => {
+                // TODO: Send Initialize message with renderer_id (Task 8)
+                // For now, just log and request work to maintain current behavior
+                web_sys::console::log_1(&JsValue::from_str(&format!(
+                    "Worker {} ready (Initialize protocol not yet implemented)",
+                    worker_id
+                )));
+            }
+
             WorkerToMain::RequestWork { render_id } => {
                 let should_send_work = match render_id {
                     None => true,
