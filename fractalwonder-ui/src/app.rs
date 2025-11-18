@@ -99,9 +99,7 @@ pub fn App() -> impl IntoView {
     let natural_bounds = create_memo(move |_| canvas_renderer.with(|cr| cr.natural_bounds()));
 
     // ========== Progress tracking ==========
-    let progress = create_memo(move |_| {
-        canvas_renderer.with(|cr| cr.progress())
-    });
+    let progress = create_memo(move |_| canvas_renderer.with(|cr| cr.progress()));
 
     // ========== RendererInfo for UI display ==========
     let initial_info = (initial_config.create_info_provider)().info(&viewport.get_untracked());
