@@ -41,6 +41,14 @@ fn handle_worker_message(
         .map_err(|e| JsValue::from_str(&format!("Failed to parse message: {}", e)))?;
 
     match msg {
+        MainToWorker::Initialize { renderer_id: _ } => {
+            // TODO: Create renderer based on renderer_id (Task 6)
+            // For now, just log to maintain compilation
+            web_sys::console::log_1(&JsValue::from_str(
+                "Initialize message received (not yet implemented)",
+            ));
+        }
+
         MainToWorker::RenderTile {
             render_id,
             viewport_json,
