@@ -264,8 +264,9 @@ impl MessageWorkerPool {
         canvas_width: u32,
         canvas_height: u32,
         tile_size: u32,
+        render_id: u32,
     ) {
-        self.current_render_id += 1;
+        self.current_render_id = render_id;
         self.current_viewport = viewport;
         self.canvas_size = (canvas_width, canvas_height);
 
@@ -330,12 +331,11 @@ impl MessageWorkerPool {
             }
         }
 
-        // 3. Increment render ID and clear pending work
-        self.current_render_id += 1;
+        // 3. Clear pending work
         self.pending_tiles.clear();
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
-            "Cancelled render, new render_id: {}",
+            "Cancelled render at render_id: {}",
             self.current_render_id
         )));
     }

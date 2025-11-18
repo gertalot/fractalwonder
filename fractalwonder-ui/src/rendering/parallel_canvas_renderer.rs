@@ -11,22 +11,11 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
+#[derive(Default)]
 struct CachedState {
     viewport: Option<Viewport<BigFloat>>,
     canvas_size: Option<(u32, u32)>,
     data: Vec<AppData>,
-    render_id: AtomicU32,
-}
-
-impl Default for CachedState {
-    fn default() -> Self {
-        Self {
-            viewport: None,
-            canvas_size: None,
-            data: Vec::new(),
-            render_id: AtomicU32::new(0),
-        }
-    }
 }
 
 pub struct ParallelCanvasRenderer {
@@ -34,6 +23,7 @@ pub struct ParallelCanvasRenderer {
     colorizer: Rc<RefCell<Colorizer<AppData>>>,
     canvas: Rc<RefCell<Option<HtmlCanvasElement>>>,
     cached_state: Arc<Mutex<CachedState>>,
+    render_id: Arc<AtomicU32>,
     progress: RwSignal<crate::rendering::RenderProgress>,
 }
 
@@ -53,26 +43,20 @@ impl ParallelCanvasRenderer {
             if let Some(canvas) = canvas_clone.borrow().as_ref() {
                 let mut cache = cached_state_clone.lock().unwrap();
 
-                // Store tile data in cache at raster positions
-                let width = canvas.width();
-                for local_y in 0..tile_result.tile.height {
-                    for local_x in 0..tile_result.tile.width {
-                        let canvas_x = tile_result.tile.x + local_x;
-                        let canvas_y = tile_result.tile.y + local_y;
-                        let cache_idx = (canvas_y * width + canvas_x) as usize;
-                        let tile_idx = (local_y * tile_result.tile.width + local_x) as usize;
-
-                        if cache_idx < cache.data.len() && tile_idx < tile_result.data.len() {
-                            cache.data[cache_idx] = tile_result.data[tile_idx].clone();
-                        }
-                    }
-                }
+                store_tile_in_cache(&mut cache.data, canvas.width(), &tile_result);
 
                 drop(cache);
 
                 // Draw tile immediately (progressive rendering)
                 let colorizer = colorizer_clone.borrow();
-                if let Err(e) = draw_tile(canvas, &tile_result, &colorizer) {
+                if let Err(e) = draw_colorized_pixels(
+                    canvas,
+                    &tile_result.data,
+                    tile_result.tile.width,
+                    tile_result.tile.x as f64,
+                    tile_result.tile.y as f64,
+                    &colorizer,
+                ) {
                     web_sys::console::error_1(&e);
                 }
             }
@@ -85,11 +69,14 @@ impl ParallelCanvasRenderer {
             worker_pool.borrow().worker_count(),
         )));
 
+        let render_id = Arc::new(AtomicU32::new(0));
+
         Ok(Self {
             worker_pool,
             colorizer,
             canvas,
             cached_state,
+            render_id,
             progress,
         })
     }
@@ -101,42 +88,6 @@ impl ParallelCanvasRenderer {
     pub fn worker_count(&self) -> usize {
         self.worker_pool.borrow().worker_count()
     }
-
-    fn recolorize_from_cache(
-        &self,
-        render_id: u32,
-        canvas: &HtmlCanvasElement,
-    ) -> Result<(), JsValue> {
-        let cache = self.cached_state.lock().unwrap();
-
-        if cache.render_id.load(Ordering::SeqCst) != render_id {
-            return Ok(()); // Cancelled
-        }
-
-        let width = canvas.width();
-
-        let colorizer = self.colorizer.borrow();
-        let colors: Vec<u8> = cache
-            .data
-            .iter()
-            .flat_map(|data| {
-                let (r, g, b, a) = (*colorizer)(data);
-                [r, g, b, a]
-            })
-            .collect();
-
-        let context = canvas
-            .get_context("2d")?
-            .ok_or_else(|| JsValue::from_str("No 2d context"))?
-            .dyn_into::<web_sys::CanvasRenderingContext2d>()?;
-
-        let image_data =
-            web_sys::ImageData::new_with_u8_clamped_array(wasm_bindgen::Clamped(&colors), width)?;
-
-        context.put_image_data(&image_data, 0.0, 0.0)?;
-
-        Ok(())
-    }
 }
 
 impl Clone for ParallelCanvasRenderer {
@@ -146,6 +97,7 @@ impl Clone for ParallelCanvasRenderer {
             colorizer: Rc::clone(&self.colorizer),
             canvas: Rc::clone(&self.canvas),
             cached_state: Arc::clone(&self.cached_state),
+            render_id: Arc::clone(&self.render_id),
             progress: self.progress,
         }
     }
@@ -174,8 +126,8 @@ impl CanvasRenderer for ParallelCanvasRenderer {
 
         *self.canvas.borrow_mut() = Some(canvas.clone());
 
+        let render_id = self.render_id.fetch_add(1, Ordering::SeqCst) + 1;
         let mut cache = self.cached_state.lock().unwrap();
-        let render_id = cache.render_id.fetch_add(1, Ordering::SeqCst) + 1;
 
         // Convert f64 viewport to BigFloat
         let viewport_bf = Viewport::new(
@@ -194,16 +146,31 @@ impl CanvasRenderer for ParallelCanvasRenderer {
             tile_size, viewport.zoom
         )));
 
+        // if the viewport hasn't changed and the canvas hasn't resized, then we don't
+        // have to recompute anything. Just push the computed data through the coloring
+        // function and into the canvas imagedata.
         if cache.viewport.as_ref() == Some(&viewport_bf)
             && cache.canvas_size == Some((width, height))
         {
             // Recolorize from cache
-            web_sys::console::log_1(&JsValue::from_str(&format!(
-                "RECOLORIZE from cache (render_id: {})",
-                render_id
-            )));
+            if self.render_id.load(Ordering::SeqCst) == render_id {
+                web_sys::console::log_1(&JsValue::from_str(&format!(
+                    "RECOLORIZE from cache (render_id: {})",
+                    render_id
+                )));
+                let colorizer = self.colorizer.borrow();
+                if let Err(e) = draw_colorized_pixels(
+                    canvas,
+                    &cache.data,
+                    canvas.width(),
+                    0.0,
+                    0.0,
+                    &colorizer,
+                ) {
+                    web_sys::console::error_1(&e);
+                }
+            }
             drop(cache);
-            let _ = self.recolorize_from_cache(render_id, canvas);
         } else {
             // Recompute
             web_sys::console::log_1(&JsValue::from_str(&format!(
@@ -221,7 +188,7 @@ impl CanvasRenderer for ParallelCanvasRenderer {
 
             self.worker_pool
                 .borrow_mut()
-                .start_render(viewport_bf, width, height, tile_size);
+                .start_render(viewport_bf, width, height, tile_size, render_id);
         }
     }
 
@@ -250,9 +217,35 @@ fn calculate_tile_size(zoom: f64) -> u32 {
     }
 }
 
-fn draw_tile(
+/// Store tile data in the full canvas cache by mapping tile-local coordinates to canvas-global coordinates
+///
+/// Converts from tile's local coordinate system (0,0 to tile.width-1, tile.height-1) to
+/// canvas global coordinates, then stores each pixel in the cache using 1D raster-scan indexing.
+fn store_tile_in_cache(cache_data: &mut [AppData], canvas_width: u32, tile_result: &TileResult) {
+    for local_y in 0..tile_result.tile.height {
+        for local_x in 0..tile_result.tile.width {
+            let canvas_x = tile_result.tile.x + local_x;
+            let canvas_y = tile_result.tile.y + local_y;
+            let cache_idx = (canvas_y * canvas_width + canvas_x) as usize;
+            let tile_idx = (local_y * tile_result.tile.width + local_x) as usize;
+
+            if cache_idx < cache_data.len() && tile_idx < tile_result.data.len() {
+                cache_data[cache_idx] = tile_result.data[tile_idx].clone();
+            }
+        }
+    }
+}
+
+/// Draw AppData pixels to canvas using the provided colorizer
+///
+/// The `width` parameter determines how pixels wrap into rows for ImageData.
+/// The `x` and `y` parameters specify the canvas position to draw at.
+fn draw_colorized_pixels(
     canvas: &HtmlCanvasElement,
-    tile_result: &TileResult,
+    pixels: &[AppData],
+    width: u32,
+    x: f64,
+    y: f64,
     colorizer: &Colorizer<AppData>,
 ) -> Result<(), JsValue> {
     let context = canvas
@@ -260,8 +253,7 @@ fn draw_tile(
         .ok_or_else(|| JsValue::from_str("No 2d context"))?
         .dyn_into::<web_sys::CanvasRenderingContext2d>()?;
 
-    let colors: Vec<u8> = tile_result
-        .data
+    let colors: Vec<u8> = pixels
         .iter()
         .flat_map(|data| {
             let (r, g, b, a) = colorizer(data);
@@ -271,14 +263,10 @@ fn draw_tile(
 
     let image_data = web_sys::ImageData::new_with_u8_clamped_array(
         wasm_bindgen::Clamped(&colors),
-        tile_result.tile.width,
+        width,
     )?;
 
-    context.put_image_data(
-        &image_data,
-        tile_result.tile.x as f64,
-        tile_result.tile.y as f64,
-    )?;
+    context.put_image_data(&image_data, x, y)?;
 
     Ok(())
 }
