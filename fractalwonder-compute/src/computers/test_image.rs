@@ -42,7 +42,9 @@ where
             + PartialOrd,
     {
         // Calculate circle distance
-        let distance = ((x.clone() * x.clone()) + (y.clone() * y.clone())).to_f64().sqrt();
+        let distance = ((x.clone() * x.clone()) + (y.clone() * y.clone()))
+            .to_f64()
+            .sqrt();
         let nearest_ring = (distance / self.circle_radius_step.to_f64()).round();
         let ring_distance = (distance - nearest_ring * self.circle_radius_step.to_f64()).abs();
 
