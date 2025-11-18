@@ -168,7 +168,7 @@ fn render_preview(
 /// `InteractionHandle` with interaction state signal. All event listeners are attached internally.
 pub fn use_canvas_interaction<F, G>(
     canvas_ref: NodeRef<leptos::html::Canvas>,
-    on_interaction: F,
+    _on_interaction: F,
     on_interaction_end: G,
 ) -> InteractionHandle
 where
@@ -253,17 +253,23 @@ where
         }
     };
 
-    // Helper: Build TransformResult from current transform sequence
-    let build_transform_result = move || -> Option<TransformResult> {
-        let sequence = transform_sequence.get_value();
-
-        if sequence.is_empty() {
-            return None;
+    // Stop interaction handler - builds TransformResult and fires callback
+    let on_interaction_end = store_value(on_interaction_end);
+    let stop_interaction = move || {
+        // Don't stop if still dragging (use get_untracked since we're in a timeout callback)
+        if is_dragging.get_untracked() {
+            return;
         }
+
+        is_zooming.set(false);
+        is_resizing.set(false);
+
+        // Compose the transformation sequence to get the final matrix
+        let sequence = transform_sequence.get_value();
 
         #[cfg(target_arch = "wasm32")]
         web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
-            "build_transform_result: sequence has {} transforms: {:?}",
+            "stop_interaction: sequence has {} transforms: {:?}",
             sequence.len(),
             sequence
         )));
@@ -299,41 +305,23 @@ where
                 (absolute_offset_x, absolute_offset_y)
             };
 
-        Some(TransformResult {
+        let result = TransformResult {
             offset_x: center_relative_x,
             offset_y: center_relative_y,
             zoom_factor,
             matrix: composed_matrix.data,
-        })
-    };
+        };
 
-    // Stop interaction handler - builds TransformResult and fires callback
-    let on_interaction_end = store_value(on_interaction_end);
-    let _on_interaction = store_value(on_interaction);
-    let build_transform_result_stored = store_value(build_transform_result);
-    let stop_interaction = move || {
-        // Don't stop if still dragging (use get_untracked since we're in a timeout callback)
-        if is_dragging.get_untracked() {
-            return;
-        }
+        // Clear state
+        initial_image_data.set_value(None);
+        base_offset.set_value((0.0, 0.0));
+        current_drag_offset.set_value((0.0, 0.0));
+        accumulated_zoom.set_value(1.0);
+        zoom_center.set_value(None);
+        transform_sequence.set_value(Vec::new());
 
-        is_zooming.set(false);
-        is_resizing.set(false);
-
-        // Build and fire transform result
-        let build_fn = build_transform_result_stored.get_value();
-        if let Some(result) = build_fn() {
-            // Clear state
-            initial_image_data.set_value(None);
-            base_offset.set_value((0.0, 0.0));
-            current_drag_offset.set_value((0.0, 0.0));
-            accumulated_zoom.set_value(1.0);
-            zoom_center.set_value(None);
-            transform_sequence.set_value(Vec::new());
-
-            // Fire callback
-            on_interaction_end.with_value(|cb| cb(result));
-        }
+        // Fire callback
+        on_interaction_end.with_value(|cb| cb(result));
     };
 
     // Restart timeout helper - uses manual web-sys timeout
