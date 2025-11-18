@@ -33,6 +33,57 @@ pub struct MessageWorkerPool {
     self_ref: Weak<RefCell<Self>>,
 }
 
+fn create_workers(
+    worker_count: usize,
+    pool: Rc<RefCell<MessageWorkerPool>>,
+) -> Result<Vec<Worker>, JsValue> {
+    let mut workers = Vec::new();
+
+    for i in 0..worker_count {
+        let worker = Worker::new("./message-compute-worker.js")?;
+
+        let worker_id = i;
+        let pool_clone = Rc::clone(&pool);
+
+        // Message handler
+        let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
+            if let Some(msg_str) = e.data().as_string() {
+                if let Ok(msg) = serde_json::from_str::<WorkerToMain>(&msg_str) {
+                    pool_clone
+                        .borrow_mut()
+                        .handle_worker_message(worker_id, msg);
+                } else {
+                    web_sys::console::error_1(&JsValue::from_str(&format!(
+                        "Worker {} sent invalid message: {}",
+                        worker_id, msg_str
+                    )));
+                }
+            }
+        }) as Box<dyn FnMut(_)>);
+
+        worker.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+        onmessage.forget();
+
+        // Error handler
+        let error_handler = Closure::wrap(Box::new(move |e: web_sys::ErrorEvent| {
+            web_sys::console::error_1(&JsValue::from_str(&format!(
+                "Worker {} error: {}",
+                worker_id,
+                e.message()
+            )));
+        }) as Box<dyn FnMut(_)>);
+
+        worker.set_onerror(Some(error_handler.as_ref().unchecked_ref()));
+        error_handler.forget();
+
+        workers.push(worker);
+
+        web_sys::console::log_1(&JsValue::from_str(&format!("Worker {} created", i)));
+    }
+
+    Ok(workers)
+}
+
 impl MessageWorkerPool {
     pub fn new<F>(
         on_tile_complete: F,
@@ -73,50 +124,8 @@ impl MessageWorkerPool {
         // Store weak reference to self
         pool.borrow_mut().self_ref = Rc::downgrade(&pool);
 
-        // Create workers
-        let mut workers = Vec::new();
-        for i in 0..worker_count {
-            let worker = Worker::new("./message-compute-worker.js")?;
-
-            let worker_id = i;
-            let pool_clone = Rc::clone(&pool);
-
-            // Message handler
-            let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
-                if let Some(msg_str) = e.data().as_string() {
-                    if let Ok(msg) = serde_json::from_str::<WorkerToMain>(&msg_str) {
-                        pool_clone
-                            .borrow_mut()
-                            .handle_worker_message(worker_id, msg);
-                    } else {
-                        web_sys::console::error_1(&JsValue::from_str(&format!(
-                            "Worker {} sent invalid message: {}",
-                            worker_id, msg_str
-                        )));
-                    }
-                }
-            }) as Box<dyn FnMut(_)>);
-
-            worker.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
-            onmessage.forget();
-
-            // Error handler
-            let error_handler = Closure::wrap(Box::new(move |e: web_sys::ErrorEvent| {
-                web_sys::console::error_1(&JsValue::from_str(&format!(
-                    "Worker {} error: {}",
-                    worker_id,
-                    e.message()
-                )));
-            }) as Box<dyn FnMut(_)>);
-
-            worker.set_onerror(Some(error_handler.as_ref().unchecked_ref()));
-            error_handler.forget();
-
-            workers.push(worker);
-
-            web_sys::console::log_1(&JsValue::from_str(&format!("Worker {} created", i)));
-        }
-
+        // Create workers using extracted function
+        let workers = create_workers(worker_count, Rc::clone(&pool))?;
         pool.borrow_mut().workers = workers;
 
         Ok(pool)
