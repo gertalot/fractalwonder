@@ -300,6 +300,37 @@ impl MessageWorkerPool {
     }
 
     pub fn cancel_current_render(&mut self) {
+        // 1. Terminate all workers immediately
+        for worker in &self.workers {
+            worker.terminate();
+        }
+
+        web_sys::console::log_1(&JsValue::from_str(
+            "Terminated all workers for cancellation"
+        ));
+
+        // 2. Recreate workers using stored self-reference
+        if let Some(pool_rc) = self.self_ref.upgrade() {
+            match create_workers(self.workers.len(), pool_rc) {
+                Ok(new_workers) => {
+                    self.workers = new_workers;
+                    web_sys::console::log_1(&JsValue::from_str(&format!(
+                        "Recreated {} workers",
+                        self.workers.len()
+                    )));
+                }
+                Err(e) => {
+                    web_sys::console::error_1(&JsValue::from_str(&format!(
+                        "Failed to recreate workers: {:?}",
+                        e
+                    )));
+                    // Keep empty workers vec - pool is broken
+                    self.workers.clear();
+                }
+            }
+        }
+
+        // 3. Increment render ID and clear pending work
         self.current_render_id += 1;
         self.pending_tiles.clear();
 
