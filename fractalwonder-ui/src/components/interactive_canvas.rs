@@ -19,30 +19,24 @@ pub fn InteractiveCanvas<CR: 'static + CanvasRendererTrait + Clone>(
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
-    // Canvas interaction hook - callbacks update viewport
-    let interaction = use_canvas_interaction(
-        canvas_ref,
-        move |_transform_result| {
-            // TODO: Will be used for live UI updates in next task
-        },
-        move |transform_result| {
-            if let Some(canvas_el) = canvas_ref.get_untracked() {
-                let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
-                let width = canvas.width();
-                let height = canvas.height();
+    // Canvas interaction hook - callback updates viewport
+    let interaction = use_canvas_interaction(canvas_ref, move |transform_result| {
+        if let Some(canvas_el) = canvas_ref.get_untracked() {
+            let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
+            let width = canvas.width();
+            let height = canvas.height();
 
-                set_viewport.update(|vp| {
-                    *vp = crate::rendering::apply_pixel_transform_to_viewport(
-                        vp,
-                        &natural_bounds.get_untracked(),
-                        &transform_result,
-                        width,
-                        height,
-                    );
-                });
-            }
-        },
-    );
+            set_viewport.update(|vp| {
+                *vp = crate::rendering::apply_pixel_transform_to_viewport(
+                    vp,
+                    &natural_bounds.get_untracked(),
+                    &transform_result,
+                    width,
+                    height,
+                );
+            });
+        }
+    });
 
     // Cancel any in-progress render when user starts interacting
     create_effect(move |_| {
