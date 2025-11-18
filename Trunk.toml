@@ -2,7 +2,7 @@
 target = "index.html"
 release = true
 dist = "dist"
-public_url = "/"
+public_url = "/fractalwonder/"
 filehash = true
 no_sri = true  # Disable SRI in development to avoid integrity mismatches during hot reload
 
