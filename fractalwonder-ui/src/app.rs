@@ -5,7 +5,7 @@ use crate::hooks::fullscreen::toggle_fullscreen;
 use crate::hooks::ui_visibility::use_ui_visibility;
 use crate::rendering::canvas_renderer::CanvasRenderer;
 use crate::rendering::{
-    get_config, AppData, Colorizer, MessageParallelRenderer, Viewport, RENDER_CONFIGS,
+    get_config, AppData, Colorizer, ParallelCanvasRenderer, Viewport, RENDER_CONFIGS,
 };
 use crate::state::AppState;
 use leptos::*;
@@ -15,7 +15,7 @@ use web_sys::HtmlCanvasElement;
 
 #[derive(Clone)]
 enum CanvasRendererHolder {
-    MessageParallel(MessageParallelRenderer),
+    MessageParallel(ParallelCanvasRenderer),
 }
 
 impl CanvasRendererHolder {
@@ -55,10 +55,10 @@ impl CanvasRendererTrait for CanvasRendererHolder {
     }
 }
 
-fn create_message_parallel_renderer(
+fn create_parallel_canvas_renderer(
     colorizer: Colorizer<AppData>,
-) -> Result<MessageParallelRenderer, JsValue> {
-    MessageParallelRenderer::new(colorizer)
+) -> Result<ParallelCanvasRenderer, JsValue> {
+    ParallelCanvasRenderer::new(colorizer)
 }
 
 #[component]
@@ -87,8 +87,8 @@ pub fn App() -> impl IntoView {
     .expect("Initial renderer/color scheme combination must be valid");
 
     let initial_canvas_renderer = CanvasRendererHolder::MessageParallel(
-        create_message_parallel_renderer(initial_colorizer)
-            .expect("Failed to create message parallel renderer"),
+        create_parallel_canvas_renderer(initial_colorizer)
+            .expect("Failed to create parallel canvas renderer"),
     );
 
     let (viewport, set_viewport) = create_signal(initial_renderer_state.viewport.clone());
@@ -150,8 +150,8 @@ pub fn App() -> impl IntoView {
 
             // Create new canvas renderer
             let new_canvas_renderer = CanvasRendererHolder::MessageParallel(
-                create_message_parallel_renderer(colorizer)
-                    .expect("Failed to create message parallel renderer"),
+                create_parallel_canvas_renderer(colorizer)
+                    .expect("Failed to create parallel canvas renderer"),
             );
 
             // Swap renderer

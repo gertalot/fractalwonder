@@ -11,8 +11,6 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
-use super::calculate_tile_size;
-
 struct CachedState {
     viewport: Option<Viewport<BigFloat>>,
     canvas_size: Option<(u32, u32)>,
@@ -31,7 +29,7 @@ impl Default for CachedState {
     }
 }
 
-pub struct MessageParallelRenderer {
+pub struct ParallelCanvasRenderer {
     worker_pool: Rc<RefCell<MessageWorkerPool>>,
     colorizer: Rc<RefCell<Colorizer<AppData>>>,
     canvas: Rc<RefCell<Option<HtmlCanvasElement>>>,
@@ -39,7 +37,7 @@ pub struct MessageParallelRenderer {
     progress: RwSignal<crate::rendering::RenderProgress>,
 }
 
-impl MessageParallelRenderer {
+impl ParallelCanvasRenderer {
     pub fn new(colorizer: Colorizer<AppData>) -> Result<Self, JsValue> {
         let canvas: Rc<RefCell<Option<HtmlCanvasElement>>> = Rc::new(RefCell::new(None));
         let canvas_clone = Rc::clone(&canvas);
@@ -83,7 +81,7 @@ impl MessageParallelRenderer {
         let worker_pool = MessageWorkerPool::new(on_tile_complete, progress)?;
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
-            "MessageParallelRenderer created with {} workers",
+            "ParallelCanvasRenderer created with {} workers",
             worker_pool.borrow().worker_count(),
         )));
 
@@ -141,7 +139,7 @@ impl MessageParallelRenderer {
     }
 }
 
-impl Clone for MessageParallelRenderer {
+impl Clone for ParallelCanvasRenderer {
     fn clone(&self) -> Self {
         Self {
             worker_pool: Rc::clone(&self.worker_pool),
@@ -153,7 +151,7 @@ impl Clone for MessageParallelRenderer {
     }
 }
 
-impl CanvasRenderer for MessageParallelRenderer {
+impl CanvasRenderer for ParallelCanvasRenderer {
     type Scalar = f64;
     type Data = AppData;
 
@@ -236,6 +234,22 @@ impl CanvasRenderer for MessageParallelRenderer {
     }
 }
 
+/// Calculate appropriate tile size based on zoom level
+///
+/// At extreme zoom levels, we use smaller tiles for more frequent
+/// progressive rendering updates during long renders.
+fn calculate_tile_size(zoom: f64) -> u32 {
+    const DEEP_ZOOM_THRESHOLD: f64 = 1e10;
+    const NORMAL_TILE_SIZE: u32 = 128;
+    const DEEP_ZOOM_TILE_SIZE: u32 = 64;
+
+    if zoom >= DEEP_ZOOM_THRESHOLD {
+        DEEP_ZOOM_TILE_SIZE
+    } else {
+        NORMAL_TILE_SIZE
+    }
+}
+
 fn draw_tile(
     canvas: &HtmlCanvasElement,
     tile_result: &TileResult,
@@ -267,4 +281,35 @@ fn draw_tile(
     )?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normal_zoom_uses_128px_tiles() {
+        assert_eq!(calculate_tile_size(1.0), 128);
+        assert_eq!(calculate_tile_size(100.0), 128);
+        assert_eq!(calculate_tile_size(1e9), 128);
+        assert_eq!(calculate_tile_size(9.9e9), 128);
+    }
+
+    #[test]
+    fn test_deep_zoom_uses_64px_tiles() {
+        assert_eq!(calculate_tile_size(1e10), 64);
+        assert_eq!(calculate_tile_size(1e11), 64);
+        assert_eq!(calculate_tile_size(1e50), 64);
+        assert_eq!(calculate_tile_size(1e100), 64);
+    }
+
+    #[test]
+    fn test_threshold_boundary() {
+        // Just below threshold
+        assert_eq!(calculate_tile_size(1e10 - 1.0), 128);
+        // At threshold
+        assert_eq!(calculate_tile_size(1e10), 64);
+        // Just above threshold
+        assert_eq!(calculate_tile_size(1e10 + 1.0), 64);
+    }
 }

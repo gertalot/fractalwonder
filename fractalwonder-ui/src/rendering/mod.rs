@@ -1,15 +1,13 @@
 pub mod canvas_renderer;
 pub mod colorizers;
-pub mod message_parallel_renderer;
-pub mod tile_size;
+pub mod parallel_canvas_renderer;
 
 pub use canvas_renderer::CanvasRenderer;
 pub use colorizers::{
     mandelbrot_default_colorizer, mandelbrot_fire_colorizer, mandelbrot_opal_colorizer,
     test_image_default_colorizer, test_image_pastel_colorizer, Colorizer,
 };
-pub use message_parallel_renderer::MessageParallelRenderer;
-pub use tile_size::calculate_tile_size;
+pub use parallel_canvas_renderer::ParallelCanvasRenderer;
 
 /// Progress information for ongoing renders
 #[derive(Clone, Copy, Debug, PartialEq)]
