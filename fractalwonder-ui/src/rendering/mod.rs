@@ -3,6 +3,7 @@ pub mod canvas_renderer;
 pub mod canvas_utils;
 pub mod colorizers;
 pub mod message_parallel_renderer;
+pub mod tile_size;
 pub mod tiling_canvas_renderer;
 
 pub use async_progressive_canvas_renderer::AsyncProgressiveCanvasRenderer;
@@ -13,6 +14,7 @@ pub use colorizers::{
     test_image_default_colorizer, test_image_pastel_colorizer, Colorizer,
 };
 pub use message_parallel_renderer::MessageParallelRenderer;
+pub use tile_size::calculate_tile_size;
 pub use tiling_canvas_renderer::TilingCanvasRenderer;
 
 /// Progress information for ongoing renders
