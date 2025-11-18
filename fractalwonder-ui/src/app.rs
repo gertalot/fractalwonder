@@ -58,7 +58,7 @@ impl CanvasRendererTrait for CanvasRendererHolder {
 fn create_message_parallel_renderer(
     colorizer: Colorizer<AppData>,
 ) -> Result<MessageParallelRenderer, JsValue> {
-    MessageParallelRenderer::new(colorizer, 128)
+    MessageParallelRenderer::new(colorizer)
 }
 
 #[component]
