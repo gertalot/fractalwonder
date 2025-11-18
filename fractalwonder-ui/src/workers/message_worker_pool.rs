@@ -3,7 +3,7 @@ use fractalwonder_core::{AppData, BigFloat, PixelRect, Viewport};
 use leptos::*;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use wasm_bindgen::prelude::*;
 use web_sys::{MessageEvent, Worker};
 
@@ -30,6 +30,7 @@ pub struct MessageWorkerPool {
     progress_signal: RwSignal<crate::rendering::RenderProgress>,
     #[allow(dead_code)] // Used in Task 4 and 5
     render_start_time: Rc<RefCell<Option<f64>>>,
+    self_ref: Weak<RefCell<Self>>,
 }
 
 impl MessageWorkerPool {
@@ -66,7 +67,11 @@ impl MessageWorkerPool {
             on_tile_complete,
             progress_signal,
             render_start_time: Rc::new(RefCell::new(None)),
+            self_ref: Weak::new(),
         }));
+
+        // Store weak reference to self
+        pool.borrow_mut().self_ref = Rc::downgrade(&pool);
 
         // Create workers
         let mut workers = Vec::new();
