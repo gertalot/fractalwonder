@@ -1,19 +1,28 @@
-use crate::{AdaptiveMandelbrotRenderer, MainToWorker, Renderer, WorkerToMain};
+use crate::{MainToWorker, Renderer, WorkerToMain};
 use fractalwonder_core::{AppData, BigFloat, PixelRect, Viewport};
 use js_sys::Date;
+use std::cell::RefCell;
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
+
+fn create_renderer(renderer_id: &str) -> Result<Box<dyn Renderer<Scalar = BigFloat, Data = AppData>>, JsValue> {
+    crate::render_config::create_renderer(renderer_id)
+        .ok_or_else(|| JsValue::from_str(&format!("Unknown renderer: {}", renderer_id)))
+}
 
 /// Message-based worker initialization
 #[wasm_bindgen]
 pub fn init_message_worker() {
     console_error_panic_hook::set_once();
 
-    // Create adaptive renderer once at startup
-    let renderer = AdaptiveMandelbrotRenderer::new(1e10);
+    // No renderer created yet - wait for Initialize message
+    let renderer: Rc<RefCell<Option<Box<dyn Renderer<Scalar = BigFloat, Data = AppData>>>>> =
+        Rc::new(RefCell::new(None));
 
     // Set up message handler
+    let renderer_clone = Rc::clone(&renderer);
     let onmessage = Closure::wrap(Box::new(move |e: web_sys::MessageEvent| {
-        if let Err(err) = handle_worker_message(&renderer, e.data()) {
+        if let Err(err) = handle_worker_message(&renderer_clone, e.data()) {
             web_sys::console::error_1(&JsValue::from_str(&format!("Worker error: {:?}", err)));
         }
     }) as Box<dyn FnMut(_)>);
@@ -25,12 +34,12 @@ pub fn init_message_worker() {
     global.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
     onmessage.forget();
 
-    // Request work immediately (no "Ready" message)
-    send_message(&WorkerToMain::RequestWork { render_id: None });
+    // Signal ready - wait for Initialize message
+    send_message(&WorkerToMain::Ready);
 }
 
 fn handle_worker_message(
-    renderer: &AdaptiveMandelbrotRenderer,
+    renderer: &Rc<RefCell<Option<Box<dyn Renderer<Scalar = BigFloat, Data = AppData>>>>>,
     data: JsValue,
 ) -> Result<(), JsValue> {
     let msg_str = data
@@ -41,12 +50,17 @@ fn handle_worker_message(
         .map_err(|e| JsValue::from_str(&format!("Failed to parse message: {}", e)))?;
 
     match msg {
-        MainToWorker::Initialize { renderer_id: _ } => {
-            // TODO: Create renderer based on renderer_id (Task 6)
-            // For now, just log to maintain compilation
-            web_sys::console::log_1(&JsValue::from_str(
-                "Initialize message received (not yet implemented)",
-            ));
+        MainToWorker::Initialize { renderer_id } => {
+            web_sys::console::log_1(&JsValue::from_str(&format!(
+                "Initializing worker with renderer: {}",
+                renderer_id
+            )));
+
+            let new_renderer = create_renderer(&renderer_id)?;
+            *renderer.borrow_mut() = Some(new_renderer);
+
+            // Now ready for work
+            send_message(&WorkerToMain::RequestWork { render_id: None });
         }
 
         MainToWorker::RenderTile {
@@ -56,8 +70,13 @@ fn handle_worker_message(
             canvas_width,
             canvas_height,
         } => {
+            let borrowed = renderer.borrow();
+            let r = borrowed
+                .as_ref()
+                .ok_or_else(|| JsValue::from_str("Renderer not initialized"))?;
+
             handle_render_tile(
-                renderer,
+                r.as_ref(),
                 render_id,
                 viewport_json,
                 tile,
@@ -80,7 +99,7 @@ fn handle_worker_message(
 }
 
 fn handle_render_tile(
-    renderer: &AdaptiveMandelbrotRenderer,
+    renderer: &dyn Renderer<Scalar = BigFloat, Data = AppData>,
     render_id: u32,
     viewport_json: String,
     tile: PixelRect,
