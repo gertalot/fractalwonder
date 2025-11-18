@@ -129,7 +129,7 @@ fn render_preview(
 ///
 /// Designed for canvases where full re-renders are expensive (seconds to hours).
 /// Captures canvas ImageData on interaction start, provides real-time preview
-/// using pixel transformations, and fires callback after 1.5s of inactivity.
+/// using pixel transformations, and fires callbacks during and after interaction.
 ///
 /// # Example
 ///
@@ -144,8 +144,10 @@ fn render_preview(
 ///     let handle = use_canvas_interaction(
 ///         canvas_ref,
 ///         move |result: TransformResult| {
-///             // Convert pixel transform to domain coordinates
-///             // Trigger expensive full re-render
+///             // Fires during interaction - update UI coordinates
+///         },
+///         move |result: TransformResult| {
+///             // Fires after interaction ends - trigger expensive render
 ///         },
 ///     );
 ///
@@ -158,17 +160,20 @@ fn render_preview(
 /// # Arguments
 ///
 /// * `canvas_ref` - Leptos NodeRef to canvas element
+/// * `on_interaction` - Callback fired during interaction (on every transform change)
 /// * `on_interaction_end` - Callback fired when interaction ends (1.5s inactivity)
 ///
 /// # Returns
 ///
 /// `InteractionHandle` with interaction state signal. All event listeners are attached internally.
-pub fn use_canvas_interaction<F>(
+pub fn use_canvas_interaction<F, G>(
     canvas_ref: NodeRef<leptos::html::Canvas>,
-    on_interaction_end: F,
+    on_interaction: F,
+    on_interaction_end: G,
 ) -> InteractionHandle
 where
-    F: Fn(TransformResult) + 'static,
+    F: Fn(TransformResult) + 'static + Clone,
+    G: Fn(TransformResult) + 'static + Clone,
 {
     // Interaction state signals
     let is_dragging = create_rw_signal(false);
@@ -192,6 +197,65 @@ where
 
     // Store canvas_ref for multiple closures
     let canvas_ref_stored = store_value(canvas_ref);
+
+    // Helper: Build TransformResult from current transform sequence
+    let build_transform_result = move || -> Option<TransformResult> {
+        let sequence = transform_sequence.get_value();
+
+        if sequence.is_empty() {
+            return None;
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+            "build_transform_result: sequence has {} transforms: {:?}",
+            sequence.len(),
+            sequence
+        )));
+
+        let composed_matrix: Mat3 = compose_affine_transformations(sequence);
+
+        // Extract center-relative offset and zoom from the composed matrix
+        // The matrix is in the form: [[zoom, 0, offset_x], [0, zoom, offset_y], [0, 0, 1]]
+        let zoom_factor = composed_matrix.data[0][0];
+        let absolute_offset_x = composed_matrix.data[0][2];
+        let absolute_offset_y = composed_matrix.data[1][2];
+
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+            "Composed: zoom={}, offset=({}, {})",
+            zoom_factor, absolute_offset_x, absolute_offset_y
+        )));
+
+        // Convert absolute pixel offset to center-relative offset
+        // This makes the values more intuitive: (0, 0) means we zoomed at canvas center
+        let canvas_ref = canvas_ref_stored.get_value();
+        let (center_relative_x, center_relative_y) =
+            if let Some(canvas) = canvas_ref.get_untracked() {
+                let canvas_center_x = canvas.width() as f64 / 2.0;
+                let canvas_center_y = canvas.height() as f64 / 2.0;
+
+                // Offset is relative to top-left (0, 0), convert to relative to center
+                (
+                    absolute_offset_x - canvas_center_x * (1.0 - zoom_factor),
+                    absolute_offset_y - canvas_center_y * (1.0 - zoom_factor),
+                )
+            } else {
+                (absolute_offset_x, absolute_offset_y)
+            };
+
+        Some(TransformResult {
+            offset_x: center_relative_x,
+            offset_y: center_relative_y,
+            zoom_factor,
+            matrix: composed_matrix.data,
+        })
+    };
+
+    // Store callbacks and helpers for use in closures
+    let on_interaction_end = store_value(on_interaction_end);
+    let on_interaction = store_value(on_interaction);
+    let build_transform_result_stored = store_value(build_transform_result);
 
     // Animation loop for preview rendering
     use_raf_fn(move |_| {
@@ -228,6 +292,12 @@ where
 
                 // Pass None for zoom_center since we're baking zoom adjustments into offset
                 let _ = render_preview(&canvas, &image_data, total_offset, zoom, None);
+
+                // Fire on_interaction callback with current transform
+                let build_fn = build_transform_result_stored.get_value();
+                if let Some(result) = build_fn() {
+                    on_interaction.with_value(|cb| cb(result));
+                }
             }
         }
     });
@@ -249,7 +319,6 @@ where
     };
 
     // Stop interaction handler - builds TransformResult and fires callback
-    let on_interaction_end = store_value(on_interaction_end);
     let stop_interaction = move || {
         // Don't stop if still dragging (use get_untracked since we're in a timeout callback)
         if is_dragging.get_untracked() {
@@ -259,64 +328,20 @@ where
         is_zooming.set(false);
         is_resizing.set(false);
 
-        // Compose the transformation sequence to get the final matrix
-        let sequence = transform_sequence.get_value();
+        // Build and fire transform result
+        let build_fn = build_transform_result_stored.get_value();
+        if let Some(result) = build_fn() {
+            // Clear state
+            initial_image_data.set_value(None);
+            base_offset.set_value((0.0, 0.0));
+            current_drag_offset.set_value((0.0, 0.0));
+            accumulated_zoom.set_value(1.0);
+            zoom_center.set_value(None);
+            transform_sequence.set_value(Vec::new());
 
-        #[cfg(target_arch = "wasm32")]
-        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
-            "stop_interaction: sequence has {} transforms: {:?}",
-            sequence.len(),
-            sequence
-        )));
-
-        let composed_matrix: Mat3 = compose_affine_transformations(sequence);
-
-        // Extract center-relative offset and zoom from the composed matrix
-        // The matrix is in the form: [[zoom, 0, offset_x], [0, zoom, offset_y], [0, 0, 1]]
-        let zoom_factor = composed_matrix.data[0][0];
-        let absolute_offset_x = composed_matrix.data[0][2];
-        let absolute_offset_y = composed_matrix.data[1][2];
-
-        #[cfg(target_arch = "wasm32")]
-        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
-            "Composed: zoom={}, offset=({}, {})",
-            zoom_factor, absolute_offset_x, absolute_offset_y
-        )));
-
-        // Convert absolute pixel offset to center-relative offset
-        // This makes the values more intuitive: (0, 0) means we zoomed at canvas center
-        let canvas_ref = canvas_ref_stored.get_value();
-        let (center_relative_x, center_relative_y) =
-            if let Some(canvas) = canvas_ref.get_untracked() {
-                let canvas_center_x = canvas.width() as f64 / 2.0;
-                let canvas_center_y = canvas.height() as f64 / 2.0;
-
-                // Offset is relative to top-left (0, 0), convert to relative to center
-                (
-                    absolute_offset_x - canvas_center_x * (1.0 - zoom_factor),
-                    absolute_offset_y - canvas_center_y * (1.0 - zoom_factor),
-                )
-            } else {
-                (absolute_offset_x, absolute_offset_y)
-            };
-
-        let result = TransformResult {
-            offset_x: center_relative_x,
-            offset_y: center_relative_y,
-            zoom_factor,
-            matrix: composed_matrix.data,
-        };
-
-        // Clear state
-        initial_image_data.set_value(None);
-        base_offset.set_value((0.0, 0.0));
-        current_drag_offset.set_value((0.0, 0.0));
-        accumulated_zoom.set_value(1.0);
-        zoom_center.set_value(None);
-        transform_sequence.set_value(Vec::new());
-
-        // Fire callback
-        on_interaction_end.with_value(|cb| cb(result));
+            // Fire callback
+            on_interaction_end.with_value(|cb| cb(result));
+        }
     };
 
     // Restart timeout helper - uses manual web-sys timeout
@@ -756,9 +781,15 @@ mod browser_tests {
         let canvas_ref = create_node_ref::<leptos::html::Canvas>();
         let callback_fired = create_rw_signal(false);
 
-        let handle = use_canvas_interaction(canvas_ref, move |_result| {
-            callback_fired.set(true);
-        });
+        let handle = use_canvas_interaction(
+            canvas_ref,
+            move |_result| {
+                // on_interaction callback
+            },
+            move |_result| {
+                callback_fired.set(true);
+            },
+        );
 
         assert!(!handle.is_interacting.get());
     }
