@@ -2,6 +2,7 @@ use crate::rendering::canvas_renderer::CanvasRenderer;
 use crate::rendering::colorizers::Colorizer;
 use crate::workers::{MessageWorkerPool, TileResult};
 use fractalwonder_core::{AppData, BigFloat, Point, Rect, Viewport};
+use leptos::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -34,6 +35,7 @@ pub struct MessageParallelRenderer {
     tile_size: u32,
     canvas: Rc<RefCell<Option<HtmlCanvasElement>>>,
     cached_state: Arc<Mutex<CachedState>>,
+    progress: RwSignal<crate::rendering::RenderProgress>,
 }
 
 impl MessageParallelRenderer {
@@ -44,6 +46,9 @@ impl MessageParallelRenderer {
         let colorizer_clone = Rc::clone(&colorizer);
         let cached_state = Arc::new(Mutex::new(CachedState::default()));
         let cached_state_clone = Arc::clone(&cached_state);
+
+        // Create progress signal
+        let progress = create_rw_signal(crate::rendering::RenderProgress::default());
 
         let on_tile_complete = move |tile_result: TileResult| {
             if let Some(canvas) = canvas_clone.borrow().as_ref() {
@@ -88,7 +93,12 @@ impl MessageParallelRenderer {
             tile_size,
             canvas,
             cached_state,
+            progress,
         })
+    }
+
+    pub fn progress(&self) -> RwSignal<crate::rendering::RenderProgress> {
+        self.progress
     }
 
     pub fn worker_count(&self) -> usize {
@@ -140,6 +150,7 @@ impl Clone for MessageParallelRenderer {
             tile_size: self.tile_size,
             canvas: Rc::clone(&self.canvas),
             cached_state: Arc::clone(&self.cached_state),
+            progress: self.progress,
         }
     }
 }
