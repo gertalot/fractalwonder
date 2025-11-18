@@ -116,7 +116,10 @@ fn FullscreenButton(on_click: impl Fn() + 'static) -> impl IntoView {
 }
 
 #[component]
-fn InfoDisplay(info: ReadSignal<RendererInfoData>) -> impl IntoView {
+fn InfoDisplay(
+    info: ReadSignal<RendererInfoData>,
+    #[prop(optional)] progress: Option<Signal<crate::rendering::RenderProgress>>,
+) -> impl IntoView {
     view! {
       <div class="text-white text-sm">
         <p>
@@ -125,9 +128,23 @@ fn InfoDisplay(info: ReadSignal<RendererInfoData>) -> impl IntoView {
             format!("Center: {}, zoom: {}", i.center_display, i.zoom_display)
           }}
           {move || {
-            info.get().render_time_ms.map(|ms|
-              format!(", render: {:.2}s", ms / 1000.0)
-            ).unwrap_or_default()
+            if let Some(prog_signal) = progress {
+                let prog = prog_signal.get();
+                if prog.is_complete && prog.total_tiles > 0 {
+                    // Render complete: show total time
+                    format!(", render: {:.2}s", prog.elapsed_ms / 1000.0)
+                } else if prog.total_tiles > 0 {
+                    // Render in progress: show tiles completed/total
+                    format!(", render: {}/{}", prog.completed_tiles, prog.total_tiles)
+                } else {
+                    String::new()
+                }
+            } else {
+                // Fallback to old behavior if no progress signal
+                info.get().render_time_ms.map(|ms|
+                    format!(", render: {:.2}s", ms / 1000.0)
+                ).unwrap_or_default()
+            }
           }}
         </p>
         <p>
