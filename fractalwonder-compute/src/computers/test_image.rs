@@ -73,7 +73,14 @@ where
 
 impl<T> ImagePointComputer for TestImageComputer<T>
 where
-    T: Clone + From<f64> + ToF64 + std::ops::Add<Output = T> + std::ops::Sub<Output = T> + std::ops::Mul<Output = T> + std::ops::Div<Output = T> + PartialOrd,
+    T: Clone
+        + From<f64>
+        + ToF64
+        + std::ops::Add<Output = T>
+        + std::ops::Sub<Output = T>
+        + std::ops::Mul<Output = T>
+        + std::ops::Div<Output = T>
+        + PartialOrd,
 {
     type Scalar = T;
     type Data = TestImageData;
@@ -184,10 +191,7 @@ mod tests {
     fn test_compute_with_bigfloat() {
         use fractalwonder_core::BigFloat;
         let computer = TestImageComputer::<BigFloat>::new();
-        let viewport = Viewport::new(
-            Point::new(BigFloat::from(0.0), BigFloat::from(0.0)),
-            1.0,
-        );
+        let viewport = Viewport::new(Point::new(BigFloat::from(0.0), BigFloat::from(0.0)), 1.0);
         let coord = Point::new(BigFloat::from(10.0), BigFloat::from(0.0));
         let data = computer.compute(coord, &viewport);
 

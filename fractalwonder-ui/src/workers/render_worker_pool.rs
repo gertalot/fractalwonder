@@ -23,6 +23,7 @@ pub struct TileResult {
 pub struct RenderWorkerPool {
     workers: Vec<Worker>,
     renderer_id: String,
+    initialized_workers: std::collections::HashSet<usize>,
     pending_tiles: VecDeque<TileRequest>,
     failed_tiles: HashMap<(u32, u32), u32>, // (x, y) -> retry_count
     current_render_id: u32,
@@ -110,6 +111,7 @@ impl RenderWorkerPool {
         let pool = Rc::new(RefCell::new(Self {
             workers: Vec::new(),
             renderer_id,
+            initialized_workers: std::collections::HashSet::new(),
             pending_tiles: VecDeque::new(),
             failed_tiles: HashMap::new(),
             current_render_id: 0,
@@ -153,6 +155,16 @@ impl RenderWorkerPool {
             }
 
             WorkerToMain::RequestWork { render_id } => {
+                // First RequestWork after Initialize has render_id: None
+                // This signals worker has completed initialization
+                if render_id.is_none() {
+                    self.initialized_workers.insert(worker_id);
+                    web_sys::console::log_1(&JsValue::from_str(&format!(
+                        "Worker {} initialized and ready for work",
+                        worker_id
+                    )));
+                }
+
                 let should_send_work = match render_id {
                     None => true,
                     Some(id) => id == self.current_render_id,
@@ -244,6 +256,11 @@ impl RenderWorkerPool {
     }
 
     fn send_work_to_worker(&mut self, worker_id: usize) {
+        // Only send work to initialized workers
+        if !self.initialized_workers.contains(&worker_id) {
+            return;
+        }
+
         if let Some(tile_request) = self.pending_tiles.pop_front() {
             let viewport_json = serde_json::to_string(&self.current_viewport)
                 .expect("Failed to serialize viewport");
@@ -332,7 +349,10 @@ impl RenderWorkerPool {
             "Terminated all workers for cancellation",
         ));
 
-        // 2. Recreate workers using stored self-reference
+        // 2. Clear initialized workers since we're recreating them
+        self.initialized_workers.clear();
+
+        // 3. Recreate workers using stored self-reference
         if let Some(pool_rc) = self.self_ref.upgrade() {
             match create_workers(self.workers.len(), pool_rc) {
                 Ok(new_workers) => {
@@ -353,7 +373,7 @@ impl RenderWorkerPool {
             }
         }
 
-        // 3. Clear pending work
+        // 4. Clear pending work
         self.pending_tiles.clear();
 
         web_sys::console::log_1(&JsValue::from_str(&format!(

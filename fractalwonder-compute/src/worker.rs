@@ -5,7 +5,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
-fn create_renderer(renderer_id: &str) -> Result<Box<dyn Renderer<Scalar = BigFloat, Data = AppData>>, JsValue> {
+fn create_renderer(
+    renderer_id: &str,
+) -> Result<Box<dyn Renderer<Scalar = BigFloat, Data = AppData>>, JsValue> {
     crate::render_config::create_renderer(renderer_id)
         .ok_or_else(|| JsValue::from_str(&format!("Unknown renderer: {}", renderer_id)))
 }

@@ -77,6 +77,8 @@ pub fn get_color_scheme<'a>(config: &'a RenderConfig, scheme_id: &str) -> Option
 }
 
 /// Create a renderer by ID, or return None if unknown
-pub fn create_renderer(renderer_id: &str) -> Option<Box<dyn Renderer<Scalar = BigFloat, Data = AppData>>> {
+pub fn create_renderer(
+    renderer_id: &str,
+) -> Option<Box<dyn Renderer<Scalar = BigFloat, Data = AppData>>> {
     get_config(renderer_id).map(|config| (config.create_renderer)())
 }
