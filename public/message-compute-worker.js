@@ -20,7 +20,7 @@ try {
     // Initialize WASM synchronously
     const wasmBytes = xhr.response;
     const wasmModule = new WebAssembly.Module(wasmBytes);
-    wasm_bindgen.initSync(wasmModule);
+    wasm_bindgen.initSync({ module: wasmModule });
 
     // Call init_message_worker() to set up the message handler
     // This function is exported from worker.rs via #[wasm_bindgen]

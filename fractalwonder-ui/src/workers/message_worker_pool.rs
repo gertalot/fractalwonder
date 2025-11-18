@@ -306,7 +306,7 @@ impl MessageWorkerPool {
         }
 
         web_sys::console::log_1(&JsValue::from_str(
-            "Terminated all workers for cancellation"
+            "Terminated all workers for cancellation",
         ));
 
         // 2. Recreate workers using stored self-reference
