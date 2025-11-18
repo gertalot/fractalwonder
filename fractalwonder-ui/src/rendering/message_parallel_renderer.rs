@@ -11,6 +11,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
+use super::calculate_tile_size;
+
 struct CachedState {
     viewport: Option<Viewport<BigFloat>>,
     canvas_size: Option<(u32, u32)>,
@@ -32,14 +34,13 @@ impl Default for CachedState {
 pub struct MessageParallelRenderer {
     worker_pool: Rc<RefCell<MessageWorkerPool>>,
     colorizer: Rc<RefCell<Colorizer<AppData>>>,
-    tile_size: u32,
     canvas: Rc<RefCell<Option<HtmlCanvasElement>>>,
     cached_state: Arc<Mutex<CachedState>>,
     progress: RwSignal<crate::rendering::RenderProgress>,
 }
 
 impl MessageParallelRenderer {
-    pub fn new(colorizer: Colorizer<AppData>, tile_size: u32) -> Result<Self, JsValue> {
+    pub fn new(colorizer: Colorizer<AppData>) -> Result<Self, JsValue> {
         let canvas: Rc<RefCell<Option<HtmlCanvasElement>>> = Rc::new(RefCell::new(None));
         let canvas_clone = Rc::clone(&canvas);
         let colorizer = Rc::new(RefCell::new(colorizer));
@@ -82,15 +83,13 @@ impl MessageParallelRenderer {
         let worker_pool = MessageWorkerPool::new(on_tile_complete, progress)?;
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
-            "MessageParallelRenderer created with {} workers, tile_size={}",
+            "MessageParallelRenderer created with {} workers",
             worker_pool.borrow().worker_count(),
-            tile_size
         )));
 
         Ok(Self {
             worker_pool,
             colorizer,
-            tile_size,
             canvas,
             cached_state,
             progress,
@@ -147,7 +146,6 @@ impl Clone for MessageParallelRenderer {
         Self {
             worker_pool: Rc::clone(&self.worker_pool),
             colorizer: Rc::clone(&self.colorizer),
-            tile_size: self.tile_size,
             canvas: Rc::clone(&self.canvas),
             cached_state: Arc::clone(&self.cached_state),
             progress: self.progress,
@@ -190,6 +188,14 @@ impl CanvasRenderer for MessageParallelRenderer {
             viewport.zoom,
         );
 
+        // Calculate tile size based on zoom level
+        let tile_size = calculate_tile_size(viewport.zoom);
+
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+            "Using tile_size={} for zoom={}",
+            tile_size, viewport.zoom
+        )));
+
         if cache.viewport.as_ref() == Some(&viewport_bf)
             && cache.canvas_size == Some((width, height))
         {
@@ -217,7 +223,7 @@ impl CanvasRenderer for MessageParallelRenderer {
 
             self.worker_pool
                 .borrow_mut()
-                .start_render(viewport_bf, width, height, self.tile_size);
+                .start_render(viewport_bf, width, height, tile_size);
         }
     }
 
