@@ -67,7 +67,11 @@ impl ParallelCanvasRenderer {
             }
         };
 
-        let worker_pool = RenderWorkerPool::new(on_tile_complete, progress)?;
+        let worker_pool = RenderWorkerPool::new(
+            on_tile_complete,
+            progress,
+            "mandelbrot".to_string(),
+        )?;
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
             "ParallelCanvasRenderer created with {} workers",

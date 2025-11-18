@@ -22,6 +22,7 @@ pub struct TileResult {
 
 pub struct RenderWorkerPool {
     workers: Vec<Worker>,
+    renderer_id: String,
     pending_tiles: VecDeque<TileRequest>,
     failed_tiles: HashMap<(u32, u32), u32>, // (x, y) -> retry_count
     current_render_id: u32,
@@ -88,6 +89,7 @@ impl RenderWorkerPool {
     pub fn new<F>(
         on_tile_complete: F,
         progress_signal: RwSignal<crate::rendering::RenderProgress>,
+        renderer_id: String,
     ) -> Result<Rc<RefCell<Self>>, JsValue>
     where
         F: Fn(TileResult) + 'static,
@@ -107,6 +109,7 @@ impl RenderWorkerPool {
         // Create pool structure
         let pool = Rc::new(RefCell::new(Self {
             workers: Vec::new(),
+            renderer_id,
             pending_tiles: VecDeque::new(),
             failed_tiles: HashMap::new(),
             current_render_id: 0,
