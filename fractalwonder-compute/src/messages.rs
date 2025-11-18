@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum WorkerToMain {
+    /// Worker is initialized and ready for commands
+    Ready,
+
     /// Worker requests work assignment
     RequestWork {
         /// None = worker just started, will accept any work
@@ -46,4 +49,23 @@ pub enum MainToWorker {
 
     /// Terminate worker
     Terminate,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ready_message_serialization() {
+        let msg = WorkerToMain::Ready;
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"Ready\""));
+    }
+
+    #[test]
+    fn test_ready_message_deserialization() {
+        let json = r#"{"type":"Ready"}"#;
+        let msg: WorkerToMain = serde_json::from_str(json).unwrap();
+        assert!(matches!(msg, WorkerToMain::Ready));
+    }
 }
