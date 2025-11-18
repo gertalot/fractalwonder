@@ -79,7 +79,7 @@ impl MessageParallelRenderer {
             }
         };
 
-        let worker_pool = MessageWorkerPool::new(on_tile_complete)?;
+        let worker_pool = MessageWorkerPool::new(on_tile_complete, progress)?;
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
             "MessageParallelRenderer created with {} workers, tile_size={}",

@@ -1,5 +1,6 @@
 use fractalwonder_compute::{MainToWorker, WorkerToMain};
 use fractalwonder_core::{AppData, BigFloat, PixelRect, Viewport};
+use leptos::*;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
@@ -25,10 +26,17 @@ pub struct MessageWorkerPool {
     current_viewport: Viewport<BigFloat>,
     canvas_size: (u32, u32),
     on_tile_complete: Rc<dyn Fn(TileResult)>,
+    #[allow(dead_code)] // Used in Task 4 and 5
+    progress_signal: RwSignal<crate::rendering::RenderProgress>,
+    #[allow(dead_code)] // Used in Task 4 and 5
+    render_start_time: Rc<RefCell<Option<f64>>>,
 }
 
 impl MessageWorkerPool {
-    pub fn new<F>(on_tile_complete: F) -> Result<Rc<RefCell<Self>>, JsValue>
+    pub fn new<F>(
+        on_tile_complete: F,
+        progress_signal: RwSignal<crate::rendering::RenderProgress>,
+    ) -> Result<Rc<RefCell<Self>>, JsValue>
     where
         F: Fn(TileResult) + 'static,
     {
@@ -56,6 +64,8 @@ impl MessageWorkerPool {
             ),
             canvas_size: (0, 0),
             on_tile_complete,
+            progress_signal,
+            render_start_time: Rc::new(RefCell::new(None)),
         }));
 
         // Create workers
