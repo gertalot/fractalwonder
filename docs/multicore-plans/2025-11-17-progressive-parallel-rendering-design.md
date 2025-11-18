@@ -153,17 +153,52 @@ Worker Threads (N = CPU cores)
 
 **Goal:** Pan/zoom immediately stops render, UI never freezes
 
-**Mechanism:**
-- SharedArrayBuffer includes AtomicBool cancel flag
-- Pan/zoom sets flag
-- Workers poll flag periodically during computation
-- Workers abort current tile when flag set
-- Main thread clears buffer, starts new render
+**The Problem:**
+At extreme zoom levels, individual tiles can take **minutes** to compute. When a user interacts during a long render:
+- Workers are busy computing expensive tiles for the old viewport
+- Even with render_id checking, workers cannot process cancellation messages until they finish their current tile
+- Result: User experiences **unpredictable lag** (seconds to minutes) before the new render starts
+
+**The Solution: Terminate and Recreate Workers**
+
+Instead of cooperative cancellation (render_id checking), forcefully terminate and recreate workers:
+
+```rust
+pub fn cancel_and_restart(&mut self) {
+    // 1. Immediately kill all workers (stops CPU instantly)
+    for worker in &self.workers {
+        worker.terminate();  // Web Workers API - hard stop
+    }
+
+    // 2. Recreate worker pool (80-400ms)
+    self.workers = create_workers(worker_count);
+
+    // 3. Start new render with fresh workers
+    self.start_render(new_viewport, ...);
+}
+```
+
+**Why This Works:**
+- `worker.terminate()` **immediately stops** JavaScript execution in the worker thread
+- CPU resources freed instantly (no waiting for expensive tile to finish)
+- Worker recreation takes **predictable 80-400ms** (measured in codebase)
+- New render guaranteed to start in < 0.5 seconds regardless of tile complexity
+
+**Tradeoff Analysis:**
+
+| Scenario | Render ID (cooperative) | Terminate & Recreate |
+|----------|-------------------------|----------------------|
+| Simple tiles (10ms) | ~10ms lag | ~300ms lag |
+| Complex tiles (30 sec) | **~30 second lag** | ~300ms lag ✅ |
+| Extreme tiles (5 min) | **~5 minute lag** | ~300ms lag ✅ |
+
+**Key Insight:** Predictable bounded latency (< 0.5s) is better than unpredictable unbounded latency (seconds to minutes).
 
 **Validation:**
-- Pan/zoom during render stops immediately
-- New render starts fresh
-- UI stays responsive
+- Pan/zoom during long render → new render starts within 500ms
+- CPU usage drops to zero immediately when workers terminated
+- No accumulation of stale worker threads
+- UI stays responsive throughout
 
 ---
 
