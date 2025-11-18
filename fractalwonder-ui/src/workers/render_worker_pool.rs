@@ -141,12 +141,15 @@ impl RenderWorkerPool {
     fn handle_worker_message(&mut self, worker_id: usize, msg: WorkerToMain) {
         match msg {
             WorkerToMain::Ready => {
-                // TODO: Send Initialize message with renderer_id (Task 8)
-                // For now, just log and request work to maintain current behavior
                 web_sys::console::log_1(&JsValue::from_str(&format!(
-                    "Worker {} ready (Initialize protocol not yet implemented)",
-                    worker_id
+                    "Worker {} ready, sending Initialize with renderer: {}",
+                    worker_id, self.renderer_id
                 )));
+
+                let msg = MainToWorker::Initialize {
+                    renderer_id: self.renderer_id.clone(),
+                };
+                self.send_message_to_worker(worker_id, &msg);
             }
 
             WorkerToMain::RequestWork { render_id } => {
@@ -265,6 +268,13 @@ impl RenderWorkerPool {
     fn send_no_work(&self, worker_id: usize) {
         let msg = MainToWorker::NoWork;
         let msg_json = serde_json::to_string(&msg).expect("Failed to serialize message");
+        self.workers[worker_id]
+            .post_message(&JsValue::from_str(&msg_json))
+            .expect("Failed to post message to worker");
+    }
+
+    fn send_message_to_worker(&self, worker_id: usize, msg: &MainToWorker) {
+        let msg_json = serde_json::to_string(msg).expect("Failed to serialize message");
         self.workers[worker_id]
             .post_message(&JsValue::from_str(&msg_json))
             .expect("Failed to post message to worker");
