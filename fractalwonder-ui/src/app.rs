@@ -64,7 +64,7 @@ pub fn App() -> impl IntoView {
     let natural_bounds = create_memo(move |_| canvas_renderer.with(|cr| cr.natural_bounds()));
 
     // ========== Progress tracking ==========
-    let progress = create_memo(move |_| canvas_renderer.with(|cr| cr.progress()));
+    let progress = Signal::derive(move || canvas_renderer.with(|cr| cr.progress().get()));
 
     // ========== RendererInfo for UI display ==========
     let initial_info = (initial_config.create_info_provider)().info(&viewport.get_untracked());
@@ -249,10 +249,10 @@ pub fn App() -> impl IntoView {
                 color_scheme_options=color_scheme_options.into()
                 selected_color_scheme_id=Signal::derive(move || selected_color_scheme_id.get())
                 on_color_scheme_select=on_color_scheme_select
-                progress=progress.get().into()
+                progress=progress
             />
             <CircularProgress
-                progress=progress.get().into()
+                progress=progress
                 is_ui_visible=ui_visibility.is_visible
             />
         </div>
