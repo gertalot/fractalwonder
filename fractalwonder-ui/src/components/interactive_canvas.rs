@@ -1,16 +1,11 @@
 use crate::hooks::use_canvas_interaction::use_canvas_interaction;
+use crate::rendering::{AppData, CanvasRenderer};
 use fractalwonder_core::{Rect, Viewport};
 use leptos::*;
 use wasm_bindgen::JsCast;
-use web_sys::HtmlCanvasElement;
-
-pub trait CanvasRendererTrait {
-    fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement);
-    fn cancel_render(&self);
-}
 
 #[component]
-pub fn InteractiveCanvas<CR: 'static + CanvasRendererTrait + Clone>(
+pub fn InteractiveCanvas<CR: 'static + CanvasRenderer<Scalar = f64, Data = AppData> + Clone>(
     canvas_renderer: RwSignal<CR>,
     viewport: ReadSignal<Viewport<f64>>,
     set_viewport: WriteSignal<Viewport<f64>>,
@@ -20,6 +15,7 @@ pub fn InteractiveCanvas<CR: 'static + CanvasRendererTrait + Clone>(
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
     // Canvas interaction hook - callback updates viewport
+    // This is what makes this an *interactive* canvas.
     let interaction = use_canvas_interaction(canvas_ref, move |transform_result| {
         if let Some(canvas_el) = canvas_ref.get_untracked() {
             let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();

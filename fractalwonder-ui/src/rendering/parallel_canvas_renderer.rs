@@ -1,9 +1,10 @@
 use crate::rendering::canvas_renderer::CanvasRenderer;
 use crate::rendering::colorizers::Colorizer;
-use crate::workers::{MessageWorkerPool, TileResult};
-use fractalwonder_core::{AppData, BigFloat, Point, Rect, Viewport};
+use crate::workers::{RenderWorkerPool, TileResult};
+use fractalwonder_core::{AppData, BigFloat, PixelRect, Point, Rect, Viewport};
 use leptos::*;
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -18,8 +19,12 @@ struct CachedState {
     data: Vec<AppData>,
 }
 
+pub(crate) struct TileRequest {
+    pub tile: PixelRect,
+}
+
 pub struct ParallelCanvasRenderer {
-    worker_pool: Rc<RefCell<MessageWorkerPool>>,
+    worker_pool: Rc<RefCell<RenderWorkerPool>>,
     colorizer: Rc<RefCell<Colorizer<AppData>>>,
     canvas: Rc<RefCell<Option<HtmlCanvasElement>>>,
     cached_state: Arc<Mutex<CachedState>>,
@@ -62,7 +67,7 @@ impl ParallelCanvasRenderer {
             }
         };
 
-        let worker_pool = MessageWorkerPool::new(on_tile_complete, progress)?;
+        let worker_pool = RenderWorkerPool::new(on_tile_complete, progress)?;
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
             "ParallelCanvasRenderer created with {} workers",
@@ -79,10 +84,6 @@ impl ParallelCanvasRenderer {
             render_id,
             progress,
         })
-    }
-
-    pub fn progress(&self) -> RwSignal<crate::rendering::RenderProgress> {
-        self.progress
     }
 
     pub fn worker_count(&self) -> usize {
@@ -138,14 +139,6 @@ impl CanvasRenderer for ParallelCanvasRenderer {
             viewport.zoom,
         );
 
-        // Calculate tile size based on zoom level
-        let tile_size = calculate_tile_size(viewport.zoom);
-
-        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
-            "Using tile_size={} for zoom={}",
-            tile_size, viewport.zoom
-        )));
-
         // if the viewport hasn't changed and the canvas hasn't resized, then we don't
         // have to recompute anything. Just push the computed data through the coloring
         // function and into the canvas imagedata.
@@ -155,18 +148,13 @@ impl CanvasRenderer for ParallelCanvasRenderer {
             // Recolorize from cache
             if self.render_id.load(Ordering::SeqCst) == render_id {
                 web_sys::console::log_1(&JsValue::from_str(&format!(
-                    "RECOLORIZE from cache (render_id: {})",
+                    "DRAW from cache (render_id: {})",
                     render_id
                 )));
                 let colorizer = self.colorizer.borrow();
-                if let Err(e) = draw_colorized_pixels(
-                    canvas,
-                    &cache.data,
-                    canvas.width(),
-                    0.0,
-                    0.0,
-                    &colorizer,
-                ) {
+                if let Err(e) =
+                    draw_colorized_pixels(canvas, &cache.data, canvas.width(), 0.0, 0.0, &colorizer)
+                {
                     web_sys::console::error_1(&e);
                 }
             }
@@ -186,9 +174,19 @@ impl CanvasRenderer for ParallelCanvasRenderer {
             cache.canvas_size = Some((width, height));
             drop(cache);
 
-            self.worker_pool
-                .borrow_mut()
-                .start_render(viewport_bf, width, height, tile_size, render_id);
+            // Calculate tile size based on zoom level
+            let tile_size = calculate_tile_size(viewport.zoom);
+
+            // Generate tiles using rendering strategy (tile size, center-out ordering)
+            let tiles = generate_tiles(width, height, tile_size);
+
+            self.worker_pool.borrow_mut().start_render(
+                viewport_bf,
+                width,
+                height,
+                tiles,
+                render_id,
+            );
         }
     }
 
@@ -198,6 +196,10 @@ impl CanvasRenderer for ParallelCanvasRenderer {
 
     fn cancel_render(&self) {
         self.worker_pool.borrow_mut().cancel_current_render();
+    }
+
+    fn progress(&self) -> RwSignal<crate::rendering::RenderProgress> {
+        self.progress
     }
 }
 
@@ -237,6 +239,7 @@ fn store_tile_in_cache(cache_data: &mut [AppData], canvas_width: u32, tile_resul
 }
 
 /// Draw AppData pixels to canvas using the provided colorizer
+/// This is the ONLY place where pixels are pushed into the canvas imagedata
 ///
 /// The `width` parameter determines how pixels wrap into rows for ImageData.
 /// The `x` and `y` parameters specify the canvas position to draw at.
@@ -261,14 +264,55 @@ fn draw_colorized_pixels(
         })
         .collect();
 
-    let image_data = web_sys::ImageData::new_with_u8_clamped_array(
-        wasm_bindgen::Clamped(&colors),
-        width,
-    )?;
+    let image_data =
+        web_sys::ImageData::new_with_u8_clamped_array(wasm_bindgen::Clamped(&colors), width)?;
 
     context.put_image_data(&image_data, x, y)?;
 
     Ok(())
+}
+
+/// Generate tiles for progressive rendering, sorted by distance from canvas center
+///
+/// Creates a grid of tiles covering the canvas, with each tile at most `tile_size` pixels.
+/// Tiles are sorted by distance from center to render the most visible area first.
+fn generate_tiles(width: u32, height: u32, tile_size: u32) -> VecDeque<TileRequest> {
+    let mut tiles = Vec::new();
+
+    for y_start in (0..height).step_by(tile_size as usize) {
+        for x_start in (0..width).step_by(tile_size as usize) {
+            let x = x_start;
+            let y = y_start;
+            let w = tile_size.min(width - x_start);
+            let h = tile_size.min(height - y_start);
+
+            tiles.push(TileRequest {
+                tile: PixelRect::new(x, y, w, h),
+            });
+        }
+    }
+
+    // Sort by distance from center
+    let canvas_center_x = width as f64 / 2.0;
+    let canvas_center_y = height as f64 / 2.0;
+
+    tiles.sort_by(|a, b| {
+        let a_center_x = a.tile.x as f64 + a.tile.width as f64 / 2.0;
+        let a_center_y = a.tile.y as f64 + a.tile.height as f64 / 2.0;
+        let a_dist_sq =
+            (a_center_x - canvas_center_x).powi(2) + (a_center_y - canvas_center_y).powi(2);
+
+        let b_center_x = b.tile.x as f64 + b.tile.width as f64 / 2.0;
+        let b_center_y = b.tile.y as f64 + b.tile.height as f64 / 2.0;
+        let b_dist_sq =
+            (b_center_x - canvas_center_x).powi(2) + (b_center_y - canvas_center_y).powi(2);
+
+        a_dist_sq
+            .partial_cmp(&b_dist_sq)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    tiles.into_iter().collect()
 }
 
 #[cfg(test)]

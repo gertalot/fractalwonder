@@ -1,3 +1,4 @@
+use crate::rendering::parallel_canvas_renderer::TileRequest;
 use fractalwonder_compute::{MainToWorker, WorkerToMain};
 use fractalwonder_core::{AppData, BigFloat, PixelRect, Viewport};
 use leptos::*;
@@ -7,6 +8,11 @@ use std::rc::{Rc, Weak};
 use wasm_bindgen::prelude::*;
 use web_sys::{MessageEvent, Worker};
 
+/// Path to the Web Worker script that wraps the WASM compute module
+/// This file is copied to dist/ by Trunk (see index.html data-trunk directive)
+/// This is a js file that loads the WASM built by the fractalwonder-compute crate
+const WORKER_SCRIPT_PATH: &str = "./message-compute-worker.js";
+
 #[derive(Clone)]
 pub struct TileResult {
     pub tile: PixelRect,
@@ -14,11 +20,7 @@ pub struct TileResult {
     pub compute_time_ms: f64,
 }
 
-struct TileRequest {
-    tile: PixelRect,
-}
-
-pub struct MessageWorkerPool {
+pub struct RenderWorkerPool {
     workers: Vec<Worker>,
     pending_tiles: VecDeque<TileRequest>,
     failed_tiles: HashMap<(u32, u32), u32>, // (x, y) -> retry_count
@@ -26,21 +28,19 @@ pub struct MessageWorkerPool {
     current_viewport: Viewport<BigFloat>,
     canvas_size: (u32, u32),
     on_tile_complete: Rc<dyn Fn(TileResult)>,
-    #[allow(dead_code)] // Used in Task 4 and 5
     progress_signal: RwSignal<crate::rendering::RenderProgress>,
-    #[allow(dead_code)] // Used in Task 4 and 5
     render_start_time: Rc<RefCell<Option<f64>>>,
     self_ref: Weak<RefCell<Self>>,
 }
 
 fn create_workers(
     worker_count: usize,
-    pool: Rc<RefCell<MessageWorkerPool>>,
+    pool: Rc<RefCell<RenderWorkerPool>>,
 ) -> Result<Vec<Worker>, JsValue> {
     let mut workers = Vec::new();
 
     for i in 0..worker_count {
-        let worker = Worker::new("./message-compute-worker.js")?;
+        let worker = Worker::new(WORKER_SCRIPT_PATH)?;
 
         let worker_id = i;
         let pool_clone = Rc::clone(&pool);
@@ -84,7 +84,7 @@ fn create_workers(
     Ok(workers)
 }
 
-impl MessageWorkerPool {
+impl RenderWorkerPool {
     pub fn new<F>(
         on_tile_complete: F,
         progress_signal: RwSignal<crate::rendering::RenderProgress>,
@@ -98,7 +98,7 @@ impl MessageWorkerPool {
             .unwrap_or(4);
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
-            "Creating MessageWorkerPool with {} workers",
+            "Creating RenderWorkerPool with {} workers",
             worker_count
         )));
 
@@ -258,12 +258,12 @@ impl MessageWorkerPool {
             .expect("Failed to post message to worker");
     }
 
-    pub fn start_render(
+    pub(crate) fn start_render(
         &mut self,
         viewport: Viewport<BigFloat>,
         canvas_width: u32,
         canvas_height: u32,
-        tile_size: u32,
+        tiles: VecDeque<TileRequest>,
         render_id: u32,
     ) {
         self.current_render_id = render_id;
@@ -273,7 +273,7 @@ impl MessageWorkerPool {
         // Clear retry tracking for new render
         self.failed_tiles.clear();
 
-        self.pending_tiles = generate_tiles(canvas_width, canvas_height, tile_size);
+        self.pending_tiles = tiles;
         let total_tiles = self.pending_tiles.len() as u32;
 
         // Record start time
@@ -341,7 +341,7 @@ impl MessageWorkerPool {
     }
 }
 
-impl Drop for MessageWorkerPool {
+impl Drop for RenderWorkerPool {
     fn drop(&mut self) {
         let msg = MainToWorker::Terminate;
         let msg_json = serde_json::to_string(&msg).expect("Failed to serialize terminate message");
@@ -350,43 +350,4 @@ impl Drop for MessageWorkerPool {
             worker.post_message(&JsValue::from_str(&msg_json)).ok();
         }
     }
-}
-
-fn generate_tiles(width: u32, height: u32, tile_size: u32) -> VecDeque<TileRequest> {
-    let mut tiles = Vec::new();
-
-    for y_start in (0..height).step_by(tile_size as usize) {
-        for x_start in (0..width).step_by(tile_size as usize) {
-            let x = x_start;
-            let y = y_start;
-            let w = tile_size.min(width - x_start);
-            let h = tile_size.min(height - y_start);
-
-            tiles.push(TileRequest {
-                tile: PixelRect::new(x, y, w, h),
-            });
-        }
-    }
-
-    // Sort by distance from center
-    let canvas_center_x = width as f64 / 2.0;
-    let canvas_center_y = height as f64 / 2.0;
-
-    tiles.sort_by(|a, b| {
-        let a_center_x = a.tile.x as f64 + a.tile.width as f64 / 2.0;
-        let a_center_y = a.tile.y as f64 + a.tile.height as f64 / 2.0;
-        let a_dist_sq =
-            (a_center_x - canvas_center_x).powi(2) + (a_center_y - canvas_center_y).powi(2);
-
-        let b_center_x = b.tile.x as f64 + b.tile.width as f64 / 2.0;
-        let b_center_y = b.tile.y as f64 + b.tile.height as f64 / 2.0;
-        let b_dist_sq =
-            (b_center_x - canvas_center_x).powi(2) + (b_center_y - canvas_center_y).powi(2);
-
-        a_dist_sq
-            .partial_cmp(&b_dist_sq)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    tiles.into_iter().collect()
 }

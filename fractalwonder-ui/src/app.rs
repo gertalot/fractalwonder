@@ -1,4 +1,4 @@
-use crate::components::interactive_canvas::{CanvasRendererTrait, InteractiveCanvas};
+use crate::components::interactive_canvas::InteractiveCanvas;
 use crate::components::ui::UI;
 use crate::components::CircularProgress;
 use crate::hooks::fullscreen::toggle_fullscreen;
@@ -9,56 +9,14 @@ use crate::rendering::{
 };
 use crate::state::AppState;
 use leptos::*;
+use std::rc::Rc;
 use std::time::Duration;
 use wasm_bindgen::JsValue;
-use web_sys::HtmlCanvasElement;
 
-#[derive(Clone)]
-enum CanvasRendererHolder {
-    MessageParallel(ParallelCanvasRenderer),
-}
-
-impl CanvasRendererHolder {
-    fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement) {
-        let CanvasRendererHolder::MessageParallel(r) = self;
-        r.render(viewport, canvas)
-    }
-
-    fn natural_bounds(&self) -> crate::rendering::Rect<f64> {
-        let CanvasRendererHolder::MessageParallel(r) = self;
-        r.natural_bounds()
-    }
-
-    fn set_colorizer(&mut self, colorizer: Colorizer<AppData>) {
-        let CanvasRendererHolder::MessageParallel(r) = self;
-        r.set_colorizer(colorizer)
-    }
-
-    fn cancel_render(&self) {
-        let CanvasRendererHolder::MessageParallel(r) = self;
-        r.cancel_render()
-    }
-
-    fn progress(&self) -> RwSignal<crate::rendering::RenderProgress> {
-        let CanvasRendererHolder::MessageParallel(r) = self;
-        r.progress()
-    }
-}
-
-impl CanvasRendererTrait for CanvasRendererHolder {
-    fn render(&self, viewport: &Viewport<f64>, canvas: &HtmlCanvasElement) {
-        self.render(viewport, canvas)
-    }
-
-    fn cancel_render(&self) {
-        self.cancel_render()
-    }
-}
-
-fn create_parallel_canvas_renderer(
+fn create_canvas_renderer(
     colorizer: Colorizer<AppData>,
-) -> Result<ParallelCanvasRenderer, JsValue> {
-    ParallelCanvasRenderer::new(colorizer)
+) -> Result<Rc<dyn CanvasRenderer<Scalar = f64, Data = AppData>>, JsValue> {
+    Ok(Rc::new(ParallelCanvasRenderer::new(colorizer)?))
 }
 
 #[component]
@@ -86,15 +44,14 @@ pub fn App() -> impl IntoView {
     )
     .expect("Initial renderer/color scheme combination must be valid");
 
-    let initial_canvas_renderer = CanvasRendererHolder::MessageParallel(
-        create_parallel_canvas_renderer(initial_colorizer)
-            .expect("Failed to create parallel canvas renderer"),
-    );
+    let initial_canvas_renderer =
+        create_canvas_renderer(initial_colorizer).expect("Failed to create canvas renderer");
 
     let (viewport, set_viewport) = create_signal(initial_renderer_state.viewport.clone());
 
     // ========== Canvas renderer with cache ==========
-    let canvas_renderer: RwSignal<CanvasRendererHolder> = create_rw_signal(initial_canvas_renderer);
+    let canvas_renderer: RwSignal<Rc<dyn CanvasRenderer<Scalar = f64, Data = AppData>>> =
+        create_rw_signal(initial_canvas_renderer);
 
     // ========== Natural bounds - reactive to renderer changes ==========
     let natural_bounds = create_memo(move |_| canvas_renderer.with(|cr| cr.natural_bounds()));
@@ -149,10 +106,8 @@ pub fn App() -> impl IntoView {
                     .expect("Renderer/color scheme combination must be valid");
 
             // Create new canvas renderer
-            let new_canvas_renderer = CanvasRendererHolder::MessageParallel(
-                create_parallel_canvas_renderer(colorizer)
-                    .expect("Failed to create parallel canvas renderer"),
-            );
+            let new_canvas_renderer =
+                create_canvas_renderer(colorizer).expect("Failed to create canvas renderer");
 
             // Swap renderer
             canvas_renderer.set(new_canvas_renderer);
