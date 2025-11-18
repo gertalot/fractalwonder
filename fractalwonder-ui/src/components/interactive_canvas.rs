@@ -19,30 +19,29 @@ pub fn InteractiveCanvas<CR: 'static + CanvasRendererTrait + Clone>(
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
-    // Extract viewport update logic - will be used for both callbacks
-    let update_viewport_from_transform = move |transform_result| {
-        if let Some(canvas_el) = canvas_ref.get_untracked() {
-            let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
-            let width = canvas.width();
-            let height = canvas.height();
-
-            set_viewport.update(|vp| {
-                *vp = crate::rendering::apply_pixel_transform_to_viewport(
-                    vp,
-                    &natural_bounds.get_untracked(),
-                    &transform_result,
-                    width,
-                    height,
-                );
-            });
-        }
-    };
-
-    // Canvas interaction hook - both callbacks update viewport
+    // Canvas interaction hook - callbacks update viewport
     let interaction = use_canvas_interaction(
         canvas_ref,
-        update_viewport_from_transform, // During interaction
-        update_viewport_from_transform, // At end
+        move |_transform_result| {
+            // TODO: Will be used for live UI updates in next task
+        },
+        move |transform_result| {
+            if let Some(canvas_el) = canvas_ref.get_untracked() {
+                let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
+                let width = canvas.width();
+                let height = canvas.height();
+
+                set_viewport.update(|vp| {
+                    *vp = crate::rendering::apply_pixel_transform_to_viewport(
+                        vp,
+                        &natural_bounds.get_untracked(),
+                        &transform_result,
+                        width,
+                        height,
+                    );
+                });
+            }
+        },
     );
 
     // Cancel any in-progress render when user starts interacting
