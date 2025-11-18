@@ -172,8 +172,8 @@ let should_show = create_memo(move |_| {
 
 **Applied to fill elements:**
 ```rust
-class="bg-gradient-to-r from-[rgb(224,224,224)] via-white to-[rgb(224,224,224)]
-       bg-[length:200%_100%] animate-shimmer"
+class="bg-linear-to-r from-[rgb(224,224,224)] via-white to-[rgb(224,224,224)]
+       bg-size-[200%_100%] animate-shimmer"
 ```
 
 **Configuration:**
