@@ -1,11 +1,16 @@
 # Fractal Wonder
 
-A high-performance, browser-based Mandelbrot set explorer capable of rendering at extreme zoom levels (up to 10^100 and
-beyond) with interactive real-time exploration. Built entirely in Rust using Leptos and WebAssembly.
+A high-performance, browser-based Mandelbrot set explorer, with the ambition of rendering at extreme zoom levels (up to
+10^100 and beyond) with interactive real-time exploration.
+
+This project is built entirely in Rust using Leptos and WebAssembly, using an AI-first development workflow.
+
+Check out the [live demo](https://gertalot.github.io/fractalwonder/).
 
 ## Features
 
 - **Progressive Rendering**: Tiles appear incrementally during long renders
+- **Parallel Computation**: Uses all available CPU cores for parallel rendering
 - **Responsive UI**: Interact with controls while rendering (pan, zoom, change settings)
 - **Immediate Cancellation**: Pan/zoom instantly stops current render and starts new one
 - **Extreme Precision**: Arbitrary precision support for zoom levels up to 10^100 and beyond
