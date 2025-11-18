@@ -30,55 +30,15 @@ pub fn use_ui_visibility() -> UiVisibility {
     // Start the initial timer immediately
     (timeout_fn.start)(());
 
-    // Store timeout_fn so it can be accessed from multiple closures
-    let timeout_fn_stored = store_value(timeout_fn);
-
     // Listen for mouse movement on the window
     let _ = leptos_use::use_event_listener(
         leptos_use::use_window(),
         leptos::ev::mousemove,
         move |_| {
             set_is_visible.set(true);
-            timeout_fn_stored.with_value(|tf| {
-                (tf.stop)();
-                (tf.start)(());
-            });
-        },
-    );
-
-    // Listen for wheel events (zoom)
-    let _ =
-        leptos_use::use_event_listener(leptos_use::use_window(), leptos::ev::wheel, move |_| {
-            set_is_visible.set(true);
-            timeout_fn_stored.with_value(|tf| {
-                (tf.stop)();
-                (tf.start)(());
-            });
-        });
-
-    // Listen for pointer events (drag)
-    let _ = leptos_use::use_event_listener(
-        leptos_use::use_window(),
-        leptos::ev::pointermove,
-        move |_| {
-            set_is_visible.set(true);
-            timeout_fn_stored.with_value(|tf| {
-                (tf.stop)();
-                (tf.start)(());
-            });
-        },
-    );
-
-    // Listen for touch events (pinch/zoom on mobile)
-    let _ = leptos_use::use_event_listener(
-        leptos_use::use_window(),
-        leptos::ev::touchmove,
-        move |_| {
-            set_is_visible.set(true);
-            timeout_fn_stored.with_value(|tf| {
-                (tf.stop)();
-                (tf.start)(());
-            });
+            // Cancel previous timer before starting new one to prevent flickering
+            (timeout_fn.stop)();
+            (timeout_fn.start)(());
         },
     );
 
