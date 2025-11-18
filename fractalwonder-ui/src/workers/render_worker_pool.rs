@@ -381,6 +381,49 @@ impl RenderWorkerPool {
             self.current_render_id
         )));
     }
+
+    pub fn switch_renderer(&mut self, new_renderer_id: String) {
+        web_sys::console::log_1(&JsValue::from_str(&format!(
+            "Switching renderer from '{}' to '{}'",
+            self.renderer_id, new_renderer_id
+        )));
+
+        // 1. Update renderer_id
+        self.renderer_id = new_renderer_id;
+
+        // 2. Terminate all workers immediately
+        for worker in &self.workers {
+            worker.terminate();
+        }
+
+        // 3. Clear initialized workers since we're recreating them
+        self.initialized_workers.clear();
+
+        // 4. Recreate workers using stored self-reference
+        // Workers will go through Ready → Initialize (with new renderer_id) → RequestWork
+        if let Some(pool_rc) = self.self_ref.upgrade() {
+            match create_workers(self.workers.len(), pool_rc) {
+                Ok(new_workers) => {
+                    self.workers = new_workers;
+                    web_sys::console::log_1(&JsValue::from_str(&format!(
+                        "Recreated {} workers with renderer '{}'",
+                        self.workers.len(),
+                        self.renderer_id
+                    )));
+                }
+                Err(e) => {
+                    web_sys::console::error_1(&JsValue::from_str(&format!(
+                        "Failed to recreate workers: {:?}",
+                        e
+                    )));
+                    self.workers.clear();
+                }
+            }
+        }
+
+        // 5. Clear pending work
+        self.pending_tiles.clear();
+    }
 }
 
 impl Drop for RenderWorkerPool {

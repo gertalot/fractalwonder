@@ -33,7 +33,7 @@ pub struct ParallelCanvasRenderer {
 }
 
 impl ParallelCanvasRenderer {
-    pub fn new(colorizer: Colorizer<AppData>) -> Result<Self, JsValue> {
+    pub fn new(colorizer: Colorizer<AppData>, renderer_id: String) -> Result<Self, JsValue> {
         let canvas: Rc<RefCell<Option<HtmlCanvasElement>>> = Rc::new(RefCell::new(None));
         let canvas_clone = Rc::clone(&canvas);
         let colorizer = Rc::new(RefCell::new(colorizer));
@@ -67,8 +67,7 @@ impl ParallelCanvasRenderer {
             }
         };
 
-        let worker_pool =
-            RenderWorkerPool::new(on_tile_complete, progress, "mandelbrot".to_string())?;
+        let worker_pool = RenderWorkerPool::new(on_tile_complete, progress, renderer_id)?;
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
             "ParallelCanvasRenderer created with {} workers",
@@ -89,6 +88,10 @@ impl ParallelCanvasRenderer {
 
     pub fn worker_count(&self) -> usize {
         self.worker_pool.borrow().worker_count()
+    }
+
+    pub fn switch_renderer(&self, renderer_id: String) {
+        self.worker_pool.borrow_mut().switch_renderer(renderer_id);
     }
 }
 

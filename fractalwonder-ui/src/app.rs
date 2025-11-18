@@ -15,8 +15,12 @@ use wasm_bindgen::JsValue;
 
 fn create_canvas_renderer(
     colorizer: Colorizer<AppData>,
+    renderer_id: String,
 ) -> Result<Rc<dyn CanvasRenderer<Scalar = f64, Data = AppData>>, JsValue> {
-    Ok(Rc::new(ParallelCanvasRenderer::new(colorizer)?))
+    Ok(Rc::new(ParallelCanvasRenderer::new(
+        colorizer,
+        renderer_id,
+    )?))
 }
 
 #[component]
@@ -44,8 +48,11 @@ pub fn App() -> impl IntoView {
     )
     .expect("Initial renderer/color scheme combination must be valid");
 
-    let initial_canvas_renderer =
-        create_canvas_renderer(initial_colorizer).expect("Failed to create canvas renderer");
+    let initial_canvas_renderer = create_canvas_renderer(
+        initial_colorizer,
+        initial_state.selected_renderer_id.clone(),
+    )
+    .expect("Failed to create canvas renderer");
 
     let (viewport, set_viewport) = create_signal(initial_renderer_state.viewport.clone());
 
@@ -106,8 +113,8 @@ pub fn App() -> impl IntoView {
                     .expect("Renderer/color scheme combination must be valid");
 
             // Create new canvas renderer
-            let new_canvas_renderer =
-                create_canvas_renderer(colorizer).expect("Failed to create canvas renderer");
+            let new_canvas_renderer = create_canvas_renderer(colorizer, new_renderer_id.clone())
+                .expect("Failed to create canvas renderer");
 
             // Swap renderer
             canvas_renderer.set(new_canvas_renderer);
