@@ -1,0 +1,20 @@
+[build]
+target = "index.html"
+release = true
+dist = "dist"
+public_url = "/"
+filehash = true
+no_sri = true  # Disable SRI in development to avoid integrity mismatches during hot reload
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 8080
+open = false
+no_autoreload = false
+
+[serve.headers]
+Cross-Origin-Opener-Policy = "same-origin"
+Cross-Origin-Embedder-Policy = "require-corp"
+
+[tools]
+tailwindcss = "4.1.10"

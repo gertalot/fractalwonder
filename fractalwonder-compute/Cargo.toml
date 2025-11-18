@@ -1,0 +1,26 @@
+[package]
+name = "fractalwonder-compute"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+fractalwonder-core.workspace = true
+dashu.workspace = true
+dashu-float.workspace = true
+serde.workspace = true
+dyn-clone.workspace = true
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+gloo-utils.workspace = true
+console_error_panic_hook.workspace = true
+serde_json.workspace = true
+
+# Note: NO web-sys with DOM features
+# Workers cannot access DOM
+web-sys = { workspace = true, features = [
+    "console",
+    "DedicatedWorkerGlobalScope",
+] }
