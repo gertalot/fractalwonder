@@ -1,5 +1,6 @@
 use crate::components::interactive_canvas::{CanvasRendererTrait, InteractiveCanvas};
 use crate::components::ui::UI;
+use crate::components::CircularProgress;
 use crate::hooks::fullscreen::toggle_fullscreen;
 use crate::hooks::ui_visibility::use_ui_visibility;
 use crate::rendering::canvas_renderer::CanvasRenderer;
@@ -287,6 +288,10 @@ pub fn App() -> impl IntoView {
                 selected_color_scheme_id=Signal::derive(move || selected_color_scheme_id.get())
                 on_color_scheme_select=on_color_scheme_select
                 progress=progress.get().into()
+            />
+            <CircularProgress
+                progress=progress.get().into()
+                is_ui_visible=ui_visibility.is_visible
             />
         </div>
     }
