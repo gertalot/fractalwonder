@@ -100,7 +100,7 @@ pub fn App() -> impl IntoView {
 
     // ========== Progress tracking ==========
     let progress = create_memo(move |_| {
-        canvas_renderer.with(|cr| cr.progress().get())
+        canvas_renderer.with(|cr| cr.progress())
     });
 
     // ========== RendererInfo for UI display ==========
@@ -288,7 +288,7 @@ pub fn App() -> impl IntoView {
                 color_scheme_options=color_scheme_options.into()
                 selected_color_scheme_id=Signal::derive(move || selected_color_scheme_id.get())
                 on_color_scheme_select=on_color_scheme_select
-                progress=Signal::derive(move || progress.get())
+                progress=progress.get().into()
             />
         </div>
     }
