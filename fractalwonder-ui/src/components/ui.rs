@@ -173,6 +173,7 @@ pub fn UI(
     color_scheme_options: Signal<Vec<(String, String)>>,
     selected_color_scheme_id: Signal<String>,
     on_color_scheme_select: impl Fn(String) + 'static + Copy,
+    #[prop(optional)] progress: Option<Signal<crate::rendering::RenderProgress>>,
 ) -> impl IntoView {
     let (is_popover_open, set_is_popover_open) = create_signal(false);
 
@@ -221,7 +222,12 @@ pub fn UI(
 
           // Center section: info display
           <div class="flex-1 text-center">
-            <InfoDisplay info=info />
+            {
+              move || match progress {
+                Some(p) => view! { <InfoDisplay info=info progress=p /> }.into_view(),
+                None => view! { <InfoDisplay info=info /> }.into_view(),
+              }
+            }
           </div>
 
           // Right section: fullscreen
