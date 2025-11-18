@@ -198,6 +198,61 @@ where
     // Store canvas_ref for multiple closures
     let canvas_ref_stored = store_value(canvas_ref);
 
+    // Animation loop for preview rendering
+    use_raf_fn(move |_| {
+        // Only render if we're interacting and have image data
+        if !is_interacting.get() {
+            return;
+        }
+
+        let canvas_ref = canvas_ref_stored.get_value();
+        if let Some(canvas) = canvas_ref.get() {
+            if let Some(image_data) = initial_image_data.get_value() {
+                // Check if canvas size changed during interaction
+                let current_size = (canvas.width(), canvas.height());
+                let size_offset = if let Some(initial_size) = initial_canvas_size.get_value() {
+                    // Canvas resized - adjust offset to keep center of image centered
+                    // If canvas grew, we need to shift image to stay centered
+                    // If canvas shrunk, we need to shift image to stay centered
+                    let width_change = (current_size.0 as f64 - initial_size.0 as f64) / 2.0;
+                    let height_change = (current_size.1 as f64 - initial_size.1 as f64) / 2.0;
+                    (width_change, height_change)
+                } else {
+                    (0.0, 0.0)
+                };
+
+                // Total offset = base (from previous drags + zoom adjustments) + current drag + resize adjustment
+                let base = base_offset.get_value();
+                let current = current_drag_offset.get_value();
+                let total_offset = (
+                    base.0 + current.0 + size_offset.0,
+                    base.1 + current.1 + size_offset.1,
+                );
+
+                let zoom = accumulated_zoom.get_value();
+
+                // Pass None for zoom_center since we're baking zoom adjustments into offset
+                let _ = render_preview(&canvas, &image_data, total_offset, zoom, None);
+            }
+        }
+    });
+
+    // Interaction start helper
+    let start_interaction = move || {
+        let canvas_ref = canvas_ref_stored.get_value();
+        if let Some(canvas) = canvas_ref.get_untracked() {
+            if let Ok(image_data) = capture_canvas_image_data(&canvas) {
+                initial_image_data.set_value(Some(image_data));
+                initial_canvas_size.set_value(Some((canvas.width(), canvas.height())));
+                base_offset.set_value((0.0, 0.0));
+                current_drag_offset.set_value((0.0, 0.0));
+                accumulated_zoom.set_value(1.0);
+                zoom_center.set_value(None);
+                transform_sequence.set_value(Vec::new());
+            }
+        }
+    };
+
     // Helper: Build TransformResult from current transform sequence
     let build_transform_result = move || -> Option<TransformResult> {
         let sequence = transform_sequence.get_value();
@@ -252,73 +307,10 @@ where
         })
     };
 
-    // Store callbacks and helpers for use in closures
-    let on_interaction_end = store_value(on_interaction_end);
-    let on_interaction = store_value(on_interaction);
-    let build_transform_result_stored = store_value(build_transform_result);
-
-    // Animation loop for preview rendering
-    use_raf_fn(move |_| {
-        // Only render if we're interacting and have image data
-        if !is_interacting.get() {
-            return;
-        }
-
-        let canvas_ref = canvas_ref_stored.get_value();
-        if let Some(canvas) = canvas_ref.get() {
-            if let Some(image_data) = initial_image_data.get_value() {
-                // Check if canvas size changed during interaction
-                let current_size = (canvas.width(), canvas.height());
-                let size_offset = if let Some(initial_size) = initial_canvas_size.get_value() {
-                    // Canvas resized - adjust offset to keep center of image centered
-                    // If canvas grew, we need to shift image to stay centered
-                    // If canvas shrunk, we need to shift image to stay centered
-                    let width_change = (current_size.0 as f64 - initial_size.0 as f64) / 2.0;
-                    let height_change = (current_size.1 as f64 - initial_size.1 as f64) / 2.0;
-                    (width_change, height_change)
-                } else {
-                    (0.0, 0.0)
-                };
-
-                // Total offset = base (from previous drags + zoom adjustments) + current drag + resize adjustment
-                let base = base_offset.get_value();
-                let current = current_drag_offset.get_value();
-                let total_offset = (
-                    base.0 + current.0 + size_offset.0,
-                    base.1 + current.1 + size_offset.1,
-                );
-
-                let zoom = accumulated_zoom.get_value();
-
-                // Pass None for zoom_center since we're baking zoom adjustments into offset
-                let _ = render_preview(&canvas, &image_data, total_offset, zoom, None);
-
-                // Fire on_interaction callback with current transform
-                let build_fn = build_transform_result_stored.get_value();
-                if let Some(result) = build_fn() {
-                    on_interaction.with_value(|cb| cb(result));
-                }
-            }
-        }
-    });
-
-    // Interaction start helper
-    let start_interaction = move || {
-        let canvas_ref = canvas_ref_stored.get_value();
-        if let Some(canvas) = canvas_ref.get_untracked() {
-            if let Ok(image_data) = capture_canvas_image_data(&canvas) {
-                initial_image_data.set_value(Some(image_data));
-                initial_canvas_size.set_value(Some((canvas.width(), canvas.height())));
-                base_offset.set_value((0.0, 0.0));
-                current_drag_offset.set_value((0.0, 0.0));
-                accumulated_zoom.set_value(1.0);
-                zoom_center.set_value(None);
-                transform_sequence.set_value(Vec::new());
-            }
-        }
-    };
-
     // Stop interaction handler - builds TransformResult and fires callback
+    let on_interaction_end = store_value(on_interaction_end);
+    let _on_interaction = store_value(on_interaction);
+    let build_transform_result_stored = store_value(build_transform_result);
     let stop_interaction = move || {
         // Don't stop if still dragging (use get_untracked since we're in a timeout callback)
         if is_dragging.get_untracked() {
