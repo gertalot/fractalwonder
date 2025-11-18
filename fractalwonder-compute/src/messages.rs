@@ -35,6 +35,9 @@ pub enum WorkerToMain {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum MainToWorker {
+    /// Initialize worker with specified renderer
+    Initialize { renderer_id: String },
+
     /// Assign tile to render
     RenderTile {
         render_id: u32,
@@ -67,5 +70,27 @@ mod tests {
         let json = r#"{"type":"Ready"}"#;
         let msg: WorkerToMain = serde_json::from_str(json).unwrap();
         assert!(matches!(msg, WorkerToMain::Ready));
+    }
+
+    #[test]
+    fn test_initialize_message_serialization() {
+        let msg = MainToWorker::Initialize {
+            renderer_id: "test_image".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"Initialize\""));
+        assert!(json.contains("\"renderer_id\":\"test_image\""));
+    }
+
+    #[test]
+    fn test_initialize_message_deserialization() {
+        let json = r#"{"type":"Initialize","renderer_id":"mandelbrot"}"#;
+        let msg: MainToWorker = serde_json::from_str(json).unwrap();
+        match msg {
+            MainToWorker::Initialize { renderer_id } => {
+                assert_eq!(renderer_id, "mandelbrot");
+            }
+            _ => panic!("Expected Initialize variant"),
+        }
     }
 }
