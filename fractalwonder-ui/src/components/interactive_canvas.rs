@@ -64,20 +64,24 @@ pub fn InteractiveCanvas<CR: 'static + CanvasRendererTrait + Clone>(
         }
     });
 
-    // Effect: Render when canvas_renderer OR viewport changes
+    // Effect: Render when canvas_renderer OR viewport changes, but NOT during interaction
     create_effect(move |_| {
         let vp = viewport.get();
         canvas_renderer.track();
+        let interacting = interaction.is_interacting.get();
 
-        if let Some(canvas_el) = canvas_ref.get() {
-            let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
+        // Only render when not interacting
+        if !interacting {
+            if let Some(canvas_el) = canvas_ref.get() {
+                let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
 
-            let start = web_sys::window().unwrap().performance().unwrap().now();
+                let start = web_sys::window().unwrap().performance().unwrap().now();
 
-            canvas_renderer.with(|cr| cr.render(&vp, canvas));
+                canvas_renderer.with(|cr| cr.render(&vp, canvas));
 
-            let elapsed = web_sys::window().unwrap().performance().unwrap().now() - start;
-            set_render_time_ms.set(Some(elapsed));
+                let elapsed = web_sys::window().unwrap().performance().unwrap().now() - start;
+                set_render_time_ms.set(Some(elapsed));
+            }
         }
     });
 
