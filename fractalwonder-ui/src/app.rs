@@ -37,6 +37,11 @@ impl CanvasRendererHolder {
         let CanvasRendererHolder::MessageParallel(r) = self;
         r.cancel_render()
     }
+
+    fn progress(&self) -> RwSignal<crate::rendering::RenderProgress> {
+        let CanvasRendererHolder::MessageParallel(r) = self;
+        r.progress()
+    }
 }
 
 impl CanvasRendererTrait for CanvasRendererHolder {
@@ -92,6 +97,11 @@ pub fn App() -> impl IntoView {
 
     // ========== Natural bounds - reactive to renderer changes ==========
     let natural_bounds = create_memo(move |_| canvas_renderer.with(|cr| cr.natural_bounds()));
+
+    // ========== Progress tracking ==========
+    let progress = create_memo(move |_| {
+        canvas_renderer.with(|cr| cr.progress().get())
+    });
 
     // ========== RendererInfo for UI display ==========
     let initial_info = (initial_config.create_info_provider)().info(&viewport.get_untracked());
@@ -278,6 +288,7 @@ pub fn App() -> impl IntoView {
                 color_scheme_options=color_scheme_options.into()
                 selected_color_scheme_id=Signal::derive(move || selected_color_scheme_id.get())
                 on_color_scheme_select=on_color_scheme_select
+                progress=Signal::derive(move || progress.get())
             />
         </div>
     }
