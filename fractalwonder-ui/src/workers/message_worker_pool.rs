@@ -148,6 +148,21 @@ impl MessageWorkerPool {
                         worker_id, tile.x, tile.y, compute_time_ms
                     )));
 
+                    // Calculate elapsed time and update progress
+                    let elapsed_ms = if let Some(start) = *self.render_start_time.borrow() {
+                        web_sys::window().unwrap().performance().unwrap().now() - start
+                    } else {
+                        0.0
+                    };
+
+                    self.progress_signal.update(|p| {
+                        if p.render_id == render_id {
+                            p.completed_tiles += 1;
+                            p.elapsed_ms = elapsed_ms;
+                            p.is_complete = p.completed_tiles >= p.total_tiles;
+                        }
+                    });
+
                     (self.on_tile_complete)(TileResult {
                         tile,
                         data,
