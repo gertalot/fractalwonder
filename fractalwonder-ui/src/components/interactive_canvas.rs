@@ -19,6 +19,10 @@ pub fn InteractiveCanvas<CR: 'static + CanvasRendererTrait + Clone>(
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
+    // Track the viewport at the start of interaction
+    // Transforms are ABSOLUTE from interaction start, so we must apply them to the INITIAL viewport
+    let initial_viewport = create_rw_signal(viewport.get());
+
     // Extract viewport update logic - will be used for both callbacks
     let update_viewport_from_transform = move |transform_result| {
         if let Some(canvas_el) = canvas_ref.get_untracked() {
@@ -26,9 +30,13 @@ pub fn InteractiveCanvas<CR: 'static + CanvasRendererTrait + Clone>(
             let width = canvas.width();
             let height = canvas.height();
 
+            // Apply transform to INITIAL viewport, not current
+            // This prevents accumulation since TransformResult is absolute from interaction start
+            let base_viewport = initial_viewport.get_untracked();
+
             set_viewport.update(|vp| {
                 *vp = crate::rendering::apply_pixel_transform_to_viewport(
-                    vp,
+                    &base_viewport,
                     &natural_bounds.get_untracked(),
                     &transform_result,
                     width,
@@ -50,6 +58,19 @@ pub fn InteractiveCanvas<CR: 'static + CanvasRendererTrait + Clone>(
         if interaction.is_interacting.get() {
             canvas_renderer.with(|cr| cr.cancel_render());
         }
+    });
+
+    // Capture the viewport at the START of interaction
+    // This ensures transforms are applied to the initial state, not accumulated
+    create_effect(move |prev_interacting: Option<bool>| {
+        let interacting = interaction.is_interacting.get();
+
+        // Detect transition from not interacting -> interacting
+        if interacting && prev_interacting != Some(true) {
+            initial_viewport.set(viewport.get());
+        }
+
+        interacting
     });
 
     // Initialize canvas dimensions on mount
