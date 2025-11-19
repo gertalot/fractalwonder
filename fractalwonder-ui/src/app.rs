@@ -54,7 +54,25 @@ pub fn App() -> impl IntoView {
     )
     .expect("Failed to create canvas renderer");
 
-    let (viewport, set_viewport) = create_signal(initial_renderer_state.viewport.clone());
+    // ========== Viewport - derived from current renderer's state ==========
+    // This ensures each renderer has its own isolated viewport
+    let viewport = Signal::derive(move || {
+        let renderer_id = selected_renderer_id.get();
+        let states = renderer_states.get();
+        states
+            .get(&renderer_id)
+            .map(|s| s.viewport.clone())
+            .unwrap_or_else(|| Viewport::new(fractalwonder_core::Point::new(0.0, 0.0), 1.0))
+    });
+
+    let set_viewport = move |new_viewport: Viewport<f64>| {
+        let renderer_id = selected_renderer_id.get_untracked();
+        set_renderer_states.update(|states| {
+            if let Some(state) = states.get_mut(&renderer_id) {
+                state.viewport = new_viewport;
+            }
+        });
+    };
 
     // ========== Canvas renderer with cache ==========
     let canvas_renderer: RwSignal<Rc<dyn CanvasRenderer<Scalar = f64, Data = AppData>>> =
@@ -89,16 +107,6 @@ pub fn App() -> impl IntoView {
         let new_renderer_id = selected_renderer_id.get();
         let old_renderer_id = previous_renderer_id.get_untracked();
 
-        // Save current viewport to OLD renderer before switching
-        if new_renderer_id != old_renderer_id {
-            let current_vp = viewport.get_untracked();
-            set_renderer_states.update(|states| {
-                if let Some(state) = states.get_mut(&old_renderer_id) {
-                    state.viewport = current_vp;
-                }
-            });
-        }
-
         // Only create new renderer if renderer_id actually changed
         if new_renderer_id != old_renderer_id {
             previous_renderer_id.set(new_renderer_id.clone());
@@ -118,9 +126,6 @@ pub fn App() -> impl IntoView {
 
             // Swap renderer
             canvas_renderer.set(new_canvas_renderer);
-
-            // Restore viewport (untracked to avoid circular effects)
-            set_viewport.set_untracked(state.viewport.clone());
 
             // Save immediately
             let states = renderer_states.get_untracked();
@@ -147,16 +152,9 @@ pub fn App() -> impl IntoView {
 
     create_effect(move |_| {
         viewport_save_trigger.get();
-        let vp = viewport.get();
         let renderer_id = selected_renderer_id.get();
+        let states = renderer_states.get();
 
-        set_renderer_states.update(|states| {
-            if let Some(state) = states.get_mut(&renderer_id) {
-                state.viewport = vp;
-            }
-        });
-
-        let states = renderer_states.get_untracked();
         AppState {
             selected_renderer_id: renderer_id,
             renderer_states: states,
@@ -221,7 +219,7 @@ pub fn App() -> impl IntoView {
 
     let on_home_click = move || {
         let bounds = natural_bounds.get();
-        set_viewport.set(Viewport::new(bounds.center(), 1.0));
+        set_viewport(Viewport::new(bounds.center(), 1.0));
     };
 
     let on_fullscreen_click = move || {

@@ -1,6 +1,6 @@
 use crate::rendering::parallel_canvas_renderer::TileRequest;
 use fractalwonder_compute::{MainToWorker, WorkerToMain};
-use fractalwonder_core::{AppData, BigFloat, PixelRect, Viewport};
+use fractalwonder_core::{AppData, BigFloat, PixelRect, ToF64, Viewport};
 use leptos::*;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
@@ -80,7 +80,7 @@ fn create_workers(
 
         workers.push(worker);
 
-        web_sys::console::log_1(&JsValue::from_str(&format!("Worker {} created", i)));
+        // web_sys::console::log_1(&JsValue::from_str(&format!("Worker {} created", i)));
     }
 
     Ok(workers)
@@ -143,10 +143,10 @@ impl RenderWorkerPool {
     fn handle_worker_message(&mut self, worker_id: usize, msg: WorkerToMain) {
         match msg {
             WorkerToMain::Ready => {
-                web_sys::console::log_1(&JsValue::from_str(&format!(
-                    "Worker {} ready, sending Initialize with renderer: {}",
-                    worker_id, self.renderer_id
-                )));
+                // web_sys::console::log_1(&JsValue::from_str(&format!(
+                //     "Worker {} ready, sending Initialize with renderer: {}",
+                //     worker_id, self.renderer_id
+                // )));
 
                 let msg = MainToWorker::Initialize {
                     renderer_id: self.renderer_id.clone(),
@@ -159,10 +159,10 @@ impl RenderWorkerPool {
                 // This signals worker has completed initialization
                 if render_id.is_none() {
                     self.initialized_workers.insert(worker_id);
-                    web_sys::console::log_1(&JsValue::from_str(&format!(
-                        "Worker {} initialized and ready for work",
-                        worker_id
-                    )));
+                    // web_sys::console::log_1(&JsValue::from_str(&format!(
+                    //     "Worker {} initialized and ready for work",
+                    //     worker_id
+                    // )));
                 }
 
                 let should_send_work = match render_id {
@@ -184,10 +184,10 @@ impl RenderWorkerPool {
                 compute_time_ms,
             } => {
                 if render_id == self.current_render_id {
-                    web_sys::console::log_1(&JsValue::from_str(&format!(
-                        "Worker {} completed tile ({}, {}) in {:.2}ms",
-                        worker_id, tile.x, tile.y, compute_time_ms
-                    )));
+                    // web_sys::console::log_1(&JsValue::from_str(&format!(
+                    //     "Worker {} completed tile ({}, {}) in {:.2}ms",
+                    //     worker_id, tile.x, tile.y, compute_time_ms
+                    // )));
 
                     // Calculate elapsed time and update progress
                     let elapsed_ms = if let Some(start) = *self.render_start_time.borrow() {
@@ -305,6 +305,8 @@ impl RenderWorkerPool {
         tiles: VecDeque<TileRequest>,
         render_id: u32,
     ) {
+        let vp = viewport.clone();
+
         self.current_render_id = render_id;
         self.current_viewport = viewport;
         self.canvas_size = (canvas_width, canvas_height);
@@ -327,8 +329,14 @@ impl RenderWorkerPool {
             ));
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
-            "Starting render {} with {} tiles ({}x{})",
-            self.current_render_id, total_tiles, canvas_width, canvas_height
+            "Starting render {} with {} tiles ({}x{}). Viewport: ({}, {}), zoom: {}",
+            self.current_render_id,
+            total_tiles,
+            canvas_width,
+            canvas_height,
+            vp.center.x().to_f64(),
+            vp.center.y().to_f64(),
+            vp.zoom
         )));
 
         // Wake up all idle workers by sending them work requests

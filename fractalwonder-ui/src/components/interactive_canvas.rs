@@ -7,8 +7,8 @@ use wasm_bindgen::JsCast;
 #[component]
 pub fn InteractiveCanvas<CR: 'static + CanvasRenderer<Scalar = f64, Data = AppData> + Clone>(
     canvas_renderer: RwSignal<CR>,
-    viewport: ReadSignal<Viewport<f64>>,
-    set_viewport: WriteSignal<Viewport<f64>>,
+    viewport: Signal<Viewport<f64>>,
+    set_viewport: impl Fn(Viewport<f64>) + 'static + Copy,
     set_render_time_ms: WriteSignal<Option<f64>>,
     natural_bounds: Signal<Rect<f64>>,
 ) -> impl IntoView {
@@ -22,15 +22,15 @@ pub fn InteractiveCanvas<CR: 'static + CanvasRenderer<Scalar = f64, Data = AppDa
             let width = canvas.width();
             let height = canvas.height();
 
-            set_viewport.update(|vp| {
-                *vp = crate::rendering::apply_pixel_transform_to_viewport(
-                    vp,
-                    &natural_bounds.get_untracked(),
-                    &transform_result,
-                    width,
-                    height,
-                );
-            });
+            let current_vp = viewport.get_untracked();
+            let new_vp = crate::rendering::apply_pixel_transform_to_viewport(
+                &current_vp,
+                &natural_bounds.get_untracked(),
+                &transform_result,
+                width,
+                height,
+            );
+            set_viewport(new_vp);
         }
     });
 

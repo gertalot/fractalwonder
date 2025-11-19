@@ -1,7 +1,7 @@
 use crate::rendering::canvas_renderer::CanvasRenderer;
 use crate::rendering::colorizers::Colorizer;
 use crate::workers::{RenderWorkerPool, TileResult};
-use fractalwonder_core::{AppData, BigFloat, PixelRect, Point, Rect, Viewport};
+use fractalwonder_core::{AppData, BigFloat, PixelRect, Point, Rect, ToF64, Viewport};
 use leptos::*;
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -30,6 +30,7 @@ pub struct ParallelCanvasRenderer {
     cached_state: Arc<Mutex<CachedState>>,
     render_id: Arc<AtomicU32>,
     progress: RwSignal<crate::rendering::RenderProgress>,
+    natural_bounds: Rect<f64>,
 }
 
 impl ParallelCanvasRenderer {
@@ -67,12 +68,28 @@ impl ParallelCanvasRenderer {
             }
         };
 
-        let worker_pool = RenderWorkerPool::new(on_tile_complete, progress, renderer_id)?;
+        let worker_pool = RenderWorkerPool::new(on_tile_complete, progress, renderer_id.clone())?;
 
         web_sys::console::log_1(&JsValue::from_str(&format!(
             "ParallelCanvasRenderer created with {} workers",
             worker_pool.borrow().worker_count(),
         )));
+
+        // Get natural bounds from the renderer config
+        let config = fractalwonder_compute::get_config(&renderer_id)
+            .ok_or_else(|| JsValue::from_str(&format!("Unknown renderer: {}", renderer_id)))?;
+        let renderer = (config.create_renderer)();
+        let natural_bounds_bigfloat = renderer.natural_bounds();
+        let natural_bounds = Rect::new(
+            Point::new(
+                natural_bounds_bigfloat.min.x().to_f64(),
+                natural_bounds_bigfloat.min.y().to_f64(),
+            ),
+            Point::new(
+                natural_bounds_bigfloat.max.x().to_f64(),
+                natural_bounds_bigfloat.max.y().to_f64(),
+            ),
+        );
 
         let render_id = Arc::new(AtomicU32::new(0));
 
@@ -83,6 +100,7 @@ impl ParallelCanvasRenderer {
             cached_state,
             render_id,
             progress,
+            natural_bounds,
         })
     }
 
@@ -104,6 +122,7 @@ impl Clone for ParallelCanvasRenderer {
             cached_state: Arc::clone(&self.cached_state),
             render_id: Arc::clone(&self.render_id),
             progress: self.progress,
+            natural_bounds: self.natural_bounds.clone(),
         }
     }
 }
@@ -195,7 +214,7 @@ impl CanvasRenderer for ParallelCanvasRenderer {
     }
 
     fn natural_bounds(&self) -> Rect<Self::Scalar> {
-        Rect::new(Point::new(-2.5, -1.25), Point::new(1.0, 1.25))
+        self.natural_bounds.clone()
     }
 
     fn cancel_render(&self) {

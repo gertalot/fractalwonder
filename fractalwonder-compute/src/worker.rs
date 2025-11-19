@@ -53,10 +53,10 @@ fn handle_worker_message(
 
     match msg {
         MainToWorker::Initialize { renderer_id } => {
-            web_sys::console::log_1(&JsValue::from_str(&format!(
-                "Initializing worker with renderer: {}",
-                renderer_id
-            )));
+            // web_sys::console::log_1(&JsValue::from_str(&format!(
+            //     "Initializing worker with renderer: {}",
+            //     renderer_id
+            // )));
 
             let new_renderer = create_renderer(&renderer_id)?;
             *renderer.borrow_mut() = Some(new_renderer);
