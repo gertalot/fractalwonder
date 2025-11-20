@@ -1210,3 +1210,943 @@ mod tests {
         );
     }
 }
+
+/// Comprehensive test suite for apply_pixel_transform_to_viewport
+///
+/// Tests the critical function that translates pixel-space transformations
+/// (from user interactions) into viewport-space coordinates (for rendering).
+///
+/// The golden invariant: After applying a TransformResult to a viewport,
+/// rendering the new viewport should produce the same visual output as if
+/// we had applied the pixel transformation matrix to the original render.
+#[cfg(test)]
+mod apply_pixel_transform_tests {
+    use super::*;
+    use crate::TransformResult;
+
+    // Helper: Create TransformResult from simpler parameters
+    fn create_transform_result(
+        offset_x: f64,
+        offset_y: f64,
+        zoom_factor: f64,
+        canvas_width: u32,
+        canvas_height: u32,
+    ) -> TransformResult {
+        // Convert center-relative to absolute for matrix
+        let canvas_center_x = canvas_width as f64 / 2.0;
+        let canvas_center_y = canvas_height as f64 / 2.0;
+        let absolute_offset_x = offset_x + canvas_center_x * (1.0 - zoom_factor);
+        let absolute_offset_y = offset_y + canvas_center_y * (1.0 - zoom_factor);
+
+        TransformResult {
+            offset_x,
+            offset_y,
+            zoom_factor,
+            matrix: [
+                [zoom_factor, 0.0, absolute_offset_x],
+                [0.0, zoom_factor, absolute_offset_y],
+                [0.0, 0.0, 1.0],
+            ],
+        }
+    }
+
+    // Helper: Verify that an image point appears at expected pixel location
+    fn verify_image_point_at_pixel(
+        image_point: &Point<f64>,
+        expected_pixel: (f64, f64),
+        viewport: &Viewport<f64>,
+        natural_bounds: &Rect<f64>,
+        canvas_width: u32,
+        canvas_height: u32,
+    ) {
+        let bounds =
+            calculate_visible_bounds(viewport, natural_bounds, canvas_width, canvas_height);
+        let actual_pixel = image_to_pixel(image_point, &bounds, canvas_width, canvas_height);
+
+        assert!(
+            (actual_pixel.0 - expected_pixel.0).abs() < 0.1
+                && (actual_pixel.1 - expected_pixel.1).abs() < 0.1,
+            "Image point {:?} should appear at pixel {:?}, but appears at {:?}",
+            image_point,
+            expected_pixel,
+            actual_pixel
+        );
+    }
+
+    // Helper: Verify zoom factor
+    fn verify_zoom(viewport: &Viewport<f64>, expected_zoom: f64, tolerance: f64) {
+        assert!(
+            (viewport.zoom - expected_zoom).abs() < tolerance,
+            "Expected zoom {}, got {}",
+            expected_zoom,
+            viewport.zoom
+        );
+    }
+
+    mod pan_tests {
+        use super::*;
+
+        #[test]
+        fn test_pan_right() {
+            // Start at origin
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // User drags right 200px (looking left in image space)
+            let transform = create_transform_result(200.0, 0.0, 1.0, canvas_width, canvas_height);
+
+            // Apply transformation
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Verify zoom unchanged
+            verify_zoom(&new_viewport, 1.0, 0.0001);
+
+            // Verify viewport moved left (negative x)
+            // Dragging right means looking left, so viewport center should move left
+            assert!(
+                *new_viewport.center.x() < 0.0,
+                "After dragging right, viewport should move left (negative x), got x={}",
+                new_viewport.center.x()
+            );
+
+            // The original center point should now appear 200px to the right
+            let original_center = Point::new(0.0, 0.0);
+            let canvas_center_x = canvas_width as f64 / 2.0;
+            let canvas_center_y = canvas_height as f64 / 2.0;
+            verify_image_point_at_pixel(
+                &original_center,
+                (canvas_center_x + 200.0, canvas_center_y),
+                &new_viewport,
+                &natural_bounds,
+                canvas_width,
+                canvas_height,
+            );
+        }
+
+        #[test]
+        fn test_pan_left() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // User drags left 200px (looking right in image space)
+            let transform = create_transform_result(-200.0, 0.0, 1.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 1.0, 0.0001);
+
+            // Viewport should move right (positive x)
+            assert!(
+                *new_viewport.center.x() > 0.0,
+                "After dragging left, viewport should move right (positive x), got x={}",
+                new_viewport.center.x()
+            );
+        }
+
+        #[test]
+        fn test_pan_down() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // User drags down 150px (looking up in image space)
+            let transform = create_transform_result(0.0, 150.0, 1.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 1.0, 0.0001);
+
+            // Viewport should move up (negative y)
+            assert!(
+                *new_viewport.center.y() < 0.0,
+                "After dragging down, viewport should move up (negative y), got y={}",
+                new_viewport.center.y()
+            );
+        }
+
+        #[test]
+        fn test_pan_up() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // User drags up 150px (looking down in image space)
+            let transform = create_transform_result(0.0, -150.0, 1.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 1.0, 0.0001);
+
+            // Viewport should move down (positive y)
+            assert!(
+                *new_viewport.center.y() > 0.0,
+                "After dragging up, viewport should move down (positive y), got y={}",
+                new_viewport.center.y()
+            );
+        }
+
+        #[test]
+        fn test_pan_diagonal() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Drag diagonally: right 100px, down 100px
+            let transform = create_transform_result(100.0, 100.0, 1.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 1.0, 0.0001);
+
+            // Both coordinates should move opposite to drag direction
+            assert!(
+                *new_viewport.center.x() < 0.0,
+                "x should be negative after dragging right"
+            );
+            assert!(
+                *new_viewport.center.y() < 0.0,
+                "y should be negative after dragging down"
+            );
+        }
+
+        #[test]
+        fn test_pan_large_offset() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Large pan beyond canvas size
+            let transform = create_transform_result(2000.0, 0.0, 1.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 1.0, 0.0001);
+
+            // Should handle large offsets correctly
+            assert!(
+                new_viewport.center.x().is_finite(),
+                "Viewport center should remain finite"
+            );
+        }
+
+        #[test]
+        fn test_pan_small_offset() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Sub-pixel pan
+            let transform = create_transform_result(0.5, 0.3, 1.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 1.0, 0.0001);
+
+            // Should still apply transformation, even if small
+            assert!(
+                *new_viewport.center.x() != 0.0 || *new_viewport.center.y() != 0.0,
+                "Small pan should still move viewport"
+            );
+        }
+
+        #[test]
+        fn test_pan_from_non_origin() {
+            // Start from an offset position
+            let viewport = Viewport::new(Point::new(20.0, -15.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Pan right 100px
+            let transform = create_transform_result(100.0, 0.0, 1.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 1.0, 0.0001);
+
+            // Should move relative to starting position
+            assert!(
+                *new_viewport.center.x() < *viewport.center.x(),
+                "After dragging right, x should decrease from starting position"
+            );
+            assert_eq!(
+                *new_viewport.center.y(),
+                *viewport.center.y(),
+                "Y should remain unchanged"
+            );
+        }
+    }
+
+    mod zoom_tests {
+        use super::*;
+
+        #[test]
+        fn test_zoom_in_at_center() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Zoom 2x at canvas center
+            let transform = create_transform_result(0.0, 0.0, 2.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Verify zoom doubled
+            verify_zoom(&new_viewport, 2.0, 0.0001);
+
+            // Center should remain at origin when zooming at center
+            assert!(
+                (*new_viewport.center.x()).abs() < 0.1 && (*new_viewport.center.y()).abs() < 0.1,
+                "Center should stay near origin when zooming at canvas center, got ({}, {})",
+                new_viewport.center.x(),
+                new_viewport.center.y()
+            );
+        }
+
+        #[test]
+        fn test_zoom_out_at_center() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 2.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Zoom out 0.5x at center
+            let transform = create_transform_result(0.0, 0.0, 0.5, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Verify zoom: 2.0 * 0.5 = 1.0
+            verify_zoom(&new_viewport, 1.0, 0.0001);
+
+            // Center should remain near origin
+            assert!(
+                (*new_viewport.center.x()).abs() < 0.1,
+                "Center x should stay near origin, got {}",
+                new_viewport.center.x()
+            );
+        }
+
+        #[test]
+        fn test_zoom_in_at_corner() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Zoom 2x at top-left corner (pixel 0, 0)
+            // The image content at pixel (0, 0) should remain at pixel (0, 0)
+            let canvas_center_x = canvas_width as f64 / 2.0;
+            let canvas_center_y = canvas_height as f64 / 2.0;
+
+            // For zoom at corner: offset = corner * (1 - zoom)
+            let zoom_factor = 2.0;
+            let corner_x = 0.0;
+            let corner_y = 0.0;
+            let offset_x = corner_x * (1.0 - zoom_factor) - canvas_center_x * (1.0 - zoom_factor);
+            let offset_y = corner_y * (1.0 - zoom_factor) - canvas_center_y * (1.0 - zoom_factor);
+
+            let transform = create_transform_result(
+                offset_x,
+                offset_y,
+                zoom_factor,
+                canvas_width,
+                canvas_height,
+            );
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 2.0, 0.0001);
+
+            // Viewport center should shift (it was centered, now corner is fixed point)
+            // When zooming at corner, center moves
+            assert!(
+                *new_viewport.center.x() < 0.0,
+                "Center should move left when zooming at top-left corner"
+            );
+            assert!(
+                *new_viewport.center.y() < 0.0,
+                "Center should move up when zooming at top-left corner"
+            );
+        }
+
+        #[test]
+        fn test_zoom_large_factor() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Large zoom 100x at center
+            let transform = create_transform_result(0.0, 0.0, 100.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 100.0, 0.01);
+
+            // Should handle extreme zoom
+            assert!(
+                new_viewport.center.x().is_finite() && new_viewport.center.y().is_finite(),
+                "Viewport center should remain finite"
+            );
+        }
+
+        #[test]
+        fn test_zoom_small_factor() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Small zoom 1.1x (just 10% zoom)
+            let transform = create_transform_result(0.0, 0.0, 1.1, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 1.1, 0.0001);
+        }
+
+        #[test]
+        fn test_deep_zoom_scenario() {
+            // Start at already deep zoom
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1000.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Zoom 2x more
+            let transform = create_transform_result(0.0, 0.0, 2.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 2000.0, 0.1);
+        }
+    }
+
+    mod combined_tests {
+        use super::*;
+
+        #[test]
+        fn test_drag_right_then_zoom_in() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Simulate: drag right 200px, then zoom 2x at the dragged position
+            // After dragging right 200px, the center content is now at pixel (600, 300)
+            // We want to zoom there
+            let drag_offset = 200.0;
+            let zoom_factor = 2.0;
+            let zoom_point_x = 600.0; // Where content moved to
+            let zoom_point_y = 300.0;
+
+            // Formula from use_canvas_interaction.rs
+            let absolute_offset_x = drag_offset * zoom_factor + zoom_point_x * (1.0 - zoom_factor);
+            let absolute_offset_y = 0.0 * zoom_factor + zoom_point_y * (1.0 - zoom_factor);
+
+            let canvas_center_x = canvas_width as f64 / 2.0;
+            let canvas_center_y = canvas_height as f64 / 2.0;
+            let offset_x = absolute_offset_x - canvas_center_x * (1.0 - zoom_factor);
+            let offset_y = absolute_offset_y - canvas_center_y * (1.0 - zoom_factor);
+
+            let transform = TransformResult {
+                offset_x,
+                offset_y,
+                zoom_factor,
+                matrix: [
+                    [zoom_factor, 0.0, absolute_offset_x],
+                    [0.0, zoom_factor, absolute_offset_y],
+                    [0.0, 0.0, 1.0],
+                ],
+            };
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 2.0, 0.0001);
+
+            // The zoom point should remain fixed
+            // Calculate where zoom point should be in intermediate (dragged) state
+            let original_bounds =
+                calculate_visible_bounds(&viewport, &natural_bounds, canvas_width, canvas_height);
+            let drag_in_image = (drag_offset / canvas_width as f64) * original_bounds.width();
+            let intermediate_center_x = *viewport.center.x() - drag_in_image;
+
+            let intermediate_viewport =
+                Viewport::new(Point::new(intermediate_center_x, 0.0), viewport.zoom);
+            let intermediate_bounds = calculate_visible_bounds(
+                &intermediate_viewport,
+                &natural_bounds,
+                canvas_width,
+                canvas_height,
+            );
+            let image_at_zoom_point = pixel_to_image(
+                zoom_point_x,
+                zoom_point_y,
+                &intermediate_bounds,
+                canvas_width,
+                canvas_height,
+            );
+
+            // After full transformation, that image point should still be at zoom_point
+            verify_image_point_at_pixel(
+                &image_at_zoom_point,
+                (zoom_point_x, zoom_point_y),
+                &new_viewport,
+                &natural_bounds,
+                canvas_width,
+                canvas_height,
+            );
+        }
+
+        #[test]
+        fn test_drag_left_then_zoom_out() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Drag left 150px, then zoom out 0.5x
+            let drag_offset = -150.0;
+            let zoom_factor = 0.5;
+            let zoom_point_x = 400.0; // Canvas center
+            let zoom_point_y = 300.0;
+
+            let absolute_offset_x = drag_offset * zoom_factor + zoom_point_x * (1.0 - zoom_factor);
+            let absolute_offset_y = 0.0 * zoom_factor + zoom_point_y * (1.0 - zoom_factor);
+
+            let canvas_center_x = canvas_width as f64 / 2.0;
+            let canvas_center_y = canvas_height as f64 / 2.0;
+            let offset_x = absolute_offset_x - canvas_center_x * (1.0 - zoom_factor);
+            let offset_y = absolute_offset_y - canvas_center_y * (1.0 - zoom_factor);
+
+            let transform = TransformResult {
+                offset_x,
+                offset_y,
+                zoom_factor,
+                matrix: [
+                    [zoom_factor, 0.0, absolute_offset_x],
+                    [0.0, zoom_factor, absolute_offset_y],
+                    [0.0, 0.0, 1.0],
+                ],
+            };
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 0.5, 0.0001);
+
+            // Should be valid viewport
+            assert!(
+                new_viewport.center.x().is_finite() && new_viewport.center.y().is_finite(),
+                "Viewport center should be finite"
+            );
+        }
+
+        #[test]
+        fn test_zoom_then_pan() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // First zoom 2x at center
+            let transform1 = create_transform_result(0.0, 0.0, 2.0, canvas_width, canvas_height);
+            let viewport_after_zoom = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform1,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Then pan right 100px
+            let transform2 = create_transform_result(100.0, 0.0, 1.0, canvas_width, canvas_height);
+            let final_viewport = apply_pixel_transform_to_viewport(
+                &viewport_after_zoom,
+                &natural_bounds,
+                &transform2,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Zoom should still be 2.0
+            verify_zoom(&final_viewport, 2.0, 0.0001);
+
+            // Should have moved left from zoomed position
+            assert!(
+                *final_viewport.center.x() < *viewport_after_zoom.center.x(),
+                "After panning right, center should move left"
+            );
+        }
+    }
+
+    mod edge_cases {
+        use super::*;
+
+        #[test]
+        fn test_transform_at_exact_corner() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Zoom at exact corner (0, 0)
+            let zoom_factor = 2.0;
+            let canvas_center_x = canvas_width as f64 / 2.0;
+            let canvas_center_y = canvas_height as f64 / 2.0;
+            let offset_x = -canvas_center_x * (1.0 - zoom_factor);
+            let offset_y = -canvas_center_y * (1.0 - zoom_factor);
+
+            let transform = create_transform_result(
+                offset_x,
+                offset_y,
+                zoom_factor,
+                canvas_width,
+                canvas_height,
+            );
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Should not crash or produce NaN
+            assert!(
+                new_viewport.center.x().is_finite() && new_viewport.center.y().is_finite(),
+                "Viewport center should be finite"
+            );
+            verify_zoom(&new_viewport, 2.0, 0.0001);
+        }
+
+        #[test]
+        fn test_extreme_wide_canvas() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 3840;
+            let canvas_height = 600;
+
+            // Pan and zoom on ultra-wide canvas
+            let transform = create_transform_result(200.0, 0.0, 1.5, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 1.5, 0.0001);
+            assert!(
+                new_viewport.center.x().is_finite(),
+                "Should handle extreme aspect ratio"
+            );
+        }
+
+        #[test]
+        fn test_extreme_tall_canvas() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 600;
+            let canvas_height = 3840;
+
+            let transform = create_transform_result(0.0, 200.0, 1.5, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            verify_zoom(&new_viewport, 1.5, 0.0001);
+            assert!(
+                new_viewport.center.y().is_finite(),
+                "Should handle extreme aspect ratio"
+            );
+        }
+
+        #[test]
+        fn test_small_canvas() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 10;
+            let canvas_height = 10;
+
+            let transform = create_transform_result(5.0, 5.0, 2.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Should not have numerical instability
+            assert!(
+                new_viewport.center.x().is_finite() && new_viewport.center.y().is_finite(),
+                "Should handle tiny canvas"
+            );
+            verify_zoom(&new_viewport, 2.0, 0.0001);
+        }
+
+        #[test]
+        fn test_very_large_canvas() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 10000;
+            let canvas_height = 10000;
+
+            let transform =
+                create_transform_result(1000.0, 1000.0, 2.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Should not overflow
+            assert!(
+                new_viewport.center.x().is_finite() && new_viewport.center.y().is_finite(),
+                "Should handle large canvas"
+            );
+            verify_zoom(&new_viewport, 2.0, 0.0001);
+        }
+
+        #[test]
+        fn test_viewport_at_extreme_zoom() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1e10);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            let transform = create_transform_result(0.0, 0.0, 2.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Should handle extreme starting zoom
+            assert!(new_viewport.zoom.is_finite(), "Zoom should remain finite");
+            verify_zoom(&new_viewport, 2e10, 1e9);
+        }
+    }
+
+    mod precision_tests {
+        use super::*;
+
+        #[test]
+        fn test_very_small_offsets() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Sub-pixel offsets
+            let transform = create_transform_result(0.01, 0.02, 1.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Should maintain precision
+            assert!(
+                *new_viewport.center.x() != 0.0 || *new_viewport.center.y() != 0.0,
+                "Should not lose precision on tiny offsets"
+            );
+        }
+
+        #[test]
+        fn test_commutative_pans() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Two separate pans
+            let transform1 = create_transform_result(100.0, 0.0, 1.0, canvas_width, canvas_height);
+            let viewport1 = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform1,
+                canvas_width,
+                canvas_height,
+            );
+
+            let transform2 = create_transform_result(50.0, 0.0, 1.0, canvas_width, canvas_height);
+            let viewport2 = apply_pixel_transform_to_viewport(
+                &viewport1,
+                &natural_bounds,
+                &transform2,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Single combined pan
+            let transform_combined =
+                create_transform_result(150.0, 0.0, 1.0, canvas_width, canvas_height);
+            let viewport_combined = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform_combined,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Results should be similar (within floating point tolerance)
+            assert!(
+                (*viewport2.center.x() - *viewport_combined.center.x()).abs() < 0.1,
+                "Sequential pans should match combined pan: got {} vs {}",
+                viewport2.center.x(),
+                viewport_combined.center.x()
+            );
+        }
+
+        #[test]
+        fn test_floating_point_edge_values() {
+            let viewport = Viewport::new(Point::new(0.0, 0.0), 1.0);
+            let natural_bounds = Rect::new(Point::new(-50.0, -50.0), Point::new(50.0, 50.0));
+            let canvas_width = 800;
+            let canvas_height = 600;
+
+            // Very small offset
+            let transform = create_transform_result(1e-10, 0.0, 1.0, canvas_width, canvas_height);
+
+            let new_viewport = apply_pixel_transform_to_viewport(
+                &viewport,
+                &natural_bounds,
+                &transform,
+                canvas_width,
+                canvas_height,
+            );
+
+            // Should not produce NaN or Infinity
+            assert!(
+                new_viewport.center.x().is_finite() && new_viewport.center.y().is_finite(),
+                "Should handle very small values"
+            );
+            assert!(!new_viewport.zoom.is_nan(), "Zoom should not be NaN");
+        }
+    }
+}
