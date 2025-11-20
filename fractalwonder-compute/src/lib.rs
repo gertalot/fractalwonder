@@ -5,9 +5,7 @@ pub mod messages;
 pub mod pixel_renderer;
 pub mod point_compute;
 pub mod precision;
-pub mod renderer_factory;
-pub mod renderer_info;
-pub mod renderer_trait;
+pub mod renderer;
 
 #[cfg(target_arch = "wasm32")]
 pub mod worker;
@@ -19,9 +17,7 @@ pub use messages::{MainToWorker, WorkerToMain};
 pub use pixel_renderer::PixelRenderer;
 pub use point_compute::ImagePointComputer;
 pub use precision::PrecisionCalculator;
-pub use renderer_factory::create_renderer;
-pub use renderer_info::{RendererInfo, RendererInfoData};
-pub use renderer_trait::Renderer;
+pub use renderer::{create_renderer, Renderer, RendererInfo, RendererInfoData};
 
 #[cfg(target_arch = "wasm32")]
 pub use worker::init_message_worker;

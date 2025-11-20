@@ -1,5 +1,5 @@
 use crate::point_compute::ImagePointComputer;
-use crate::renderer_info::{RendererInfo, RendererInfoData};
+use crate::renderer::{RendererInfo, RendererInfoData};
 use fractalwonder_core::{Point, Rect, TestImageData, ToF64, Viewport};
 
 #[derive(Clone)]

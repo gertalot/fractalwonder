@@ -1,4 +1,4 @@
-use crate::renderer_trait::Renderer;
+use crate::renderer::Renderer;
 use fractalwonder_core::{AppData, PixelRect, Rect, Viewport};
 
 /// Wrapper that converts a Renderer<Data=D> to Renderer<Data=AppData>
