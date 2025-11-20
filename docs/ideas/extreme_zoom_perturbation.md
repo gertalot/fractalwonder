@@ -40,7 +40,7 @@ Reference orbits and mandelbrot compute mathematics follow perturbation theory.
 to compute required bits of precision in main thread:
 
 ```rs
-fn required_precision(viewport_width: f64, canvas_width: usize, max_iter: usize) -> usize {
+fn required_precision_bits(viewport_width: f64, canvas_width: usize, max_iter: usize) -> usize {
     let delta = viewport_width / (canvas_width as f64);
     let bits_for_spacing = (-delta.log2()).ceil() as usize;
     let bits_for_iterations = (max_iter as f64).log2().ceil() as usize;
@@ -49,7 +49,7 @@ fn required_precision(viewport_width: f64, canvas_width: usize, max_iter: usize)
 }
 
 // In main thread
-let precision = required_precision(viewport.width, canvas.width, max_iter);
+let precision = required_precision_bits(viewport.width, canvas.width, max_iter);
 worker.send(TileRequest {
     tile,
     reference_orbit,

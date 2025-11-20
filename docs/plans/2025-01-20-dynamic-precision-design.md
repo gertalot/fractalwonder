@@ -20,25 +20,22 @@ The current architecture stores viewport as `Viewport<f64>` throughout the appli
 ## Architecture Principles
 
 ### Layer Structure
-```
-CORE: Pure math, types, transforms
-  ↑           ↑
-  |           |
-UI ←→ (no direct connection) ←→ COMPUTE
-```
 
-- **CORE**: Cannot import from anywhere
-- **UI**: Imports from CORE only
-- **COMPUTE**: Imports from CORE only
+- **CORE**: Foundational types and utilities. Cannot import from anywhere
+- **UI**: Leptos web app, user interaction, worker coordination, pushing pixels onto a canvas. Imports from CORE only
+- **COMPUTE**: Pure computational engine. Imports from CORE only. No DOM, no UI code
 - **UI and COMPUTE are siblings** - they don't directly import from each other
-- Communication happens via web workers (message passing)
+- Communication between UI and COMPUTE happens via web workers (message passing)
 
 ### Separation of Concerns
 
 **Pixel Space vs Fractal Space:**
 - **Pixel space**: Mouse coords, canvas dimensions, drag offsets - f64 is fine
-- **Fractal space**: Mandelbrot coordinates - needs BigFloat with calculated precision
+- **Fractal space**: Renderer and Compute (e.g. test image and mandelbrot) coordinates - needs BigFloat with calculate
+  precision
 - Transform functions convert pixel → fractal using precision parameter
+
+---
 
 ## Solution Design
 
@@ -48,6 +45,7 @@ UI ←→ (no direct connection) ←→ COMPUTE
 
 ```rust
 /// Calculate maximum iterations based on zoom level
+/// CURRENTLY IN MANDELBROT.RS - move to core.
 pub fn calculate_max_iterations(zoom: f64) -> u32 {
     let base = 50.0;
     let k = 100.0;
@@ -57,7 +55,7 @@ pub fn calculate_max_iterations(zoom: f64) -> u32 {
 }
 
 /// Calculate required precision bits for viewport at given zoom
-pub fn required_precision(
+pub fn required_precision_bits(
     viewport_width: f64,
     canvas_width: usize,
     max_iter: u32
@@ -107,10 +105,10 @@ impl<T: Clone> Viewport<T> {
 
 ```rust
 /// Calculate precision for a viewport
-pub fn calculate_viewport_precision(viewport: &Viewport<BigFloat>) -> usize {
+pub fn calculate_viewport_precision_bits(viewport: &Viewport<BigFloat>) -> usize {
     let viewport_width = viewport.natural_bounds.width() / viewport.zoom;
     let max_iter = calculate_max_iterations(viewport.zoom);
-    required_precision(viewport_width, viewport.canvas_width as usize, max_iter)
+    required_precision_bits(viewport_width, viewport.canvas_width as usize, max_iter)
 }
 ```
 
@@ -125,7 +123,7 @@ pub fn apply_pixel_transform_to_viewport(
     let new_zoom = viewport.zoom * transform.zoom_factor;
 
     // Calculate precision for new zoom
-    let precision = calculate_viewport_precision_for_zoom(viewport, new_zoom);
+    let precision = calculate_viewport_precision_bits_for_zoom(viewport, new_zoom);
 
     // Create natural bounds with appropriate precision
     let natural_bounds_bf = /* ... */;
@@ -161,17 +159,9 @@ let interaction = use_canvas_interaction(canvas_ref, move |transform_result| {
 **New code**:
 ```rust
 let interaction = use_canvas_interaction(canvas_ref, move |transform_result| {
-    if let Some(canvas_el) = canvas_ref.get_untracked() {
-        let canvas = canvas_el.unchecked_ref::<web_sys::HtmlCanvasElement>();
-
-        let current_vp = viewport.get_untracked();
-
-        // Viewport already contains natural_bounds and canvas_size
-        // Transform function handles precision automatically
-        let new_vp = apply_pixel_transform_to_viewport(&current_vp, &transform_result);
-
-        set_viewport(new_vp);
-    }
+    let current_vp = viewport.get_untracked();
+    let new_vp = apply_pixel_transform_to_viewport(&current_vp, &transform_result);
+    set_viewport(new_vp);
 });
 ```
 
@@ -181,7 +171,7 @@ let interaction = use_canvas_interaction(canvas_ref, move |transform_result| {
 
 1. **Create** `fractalwonder-core/src/precision.rs`
    - Move `calculate_max_iterations` from `mandelbrot.rs`
-   - Create `required_precision` function
+   - Create `required_precision_bits` function
 
 2. **Update** `fractalwonder-core/src/lib.rs`
    - Export precision functions
