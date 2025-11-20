@@ -1,4 +1,6 @@
-use crate::{AdaptiveMandelbrotRenderer, AppDataRenderer, PixelRenderer, Renderer, TestImageComputer};
+use crate::{
+    AdaptiveMandelbrotRenderer, AppDataRenderer, PixelRenderer, Renderer, TestImageComputer,
+};
 use fractalwonder_core::{AppData, BigFloat};
 
 /// Create a renderer by ID for use by workers
