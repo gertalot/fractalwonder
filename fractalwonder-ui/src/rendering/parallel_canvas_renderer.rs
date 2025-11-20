@@ -75,10 +75,9 @@ impl ParallelCanvasRenderer {
             worker_pool.borrow().worker_count(),
         )));
 
-        // Get natural bounds from the renderer config
-        let config = fractalwonder_compute::get_config(&renderer_id)
+        // Get natural bounds from the renderer
+        let renderer = fractalwonder_compute::create_renderer(&renderer_id)
             .ok_or_else(|| JsValue::from_str(&format!("Unknown renderer: {}", renderer_id)))?;
-        let renderer = (config.create_renderer)();
         let natural_bounds_bigfloat = renderer.natural_bounds();
         let natural_bounds = Rect::new(
             Point::new(
