@@ -5,7 +5,8 @@ use crate::hooks::fullscreen::toggle_fullscreen;
 use crate::hooks::ui_visibility::use_ui_visibility;
 use crate::rendering::canvas_renderer::CanvasRenderer;
 use crate::rendering::{
-    get_config, AppData, Colorizer, ParallelCanvasRenderer, Viewport, RENDER_CONFIGS,
+    get_colorizer, get_colorizers_for_renderer, get_renderer_config, AppData, Colorizer,
+    ParallelCanvasRenderer, Viewport, RENDERER_CONFIGS,
 };
 use crate::state::AppState;
 use leptos::*;
@@ -14,7 +15,7 @@ use std::time::Duration;
 use wasm_bindgen::JsValue;
 
 fn create_canvas_renderer(
-    colorizer: Colorizer<AppData>,
+    colorizer: Colorizer,
     renderer_id: String,
 ) -> Result<Rc<dyn CanvasRenderer<Scalar = f64, Data = AppData>>, JsValue> {
     Ok(Rc::new(ParallelCanvasRenderer::new(
@@ -32,7 +33,7 @@ pub fn App() -> impl IntoView {
         create_signal(initial_state.selected_renderer_id.clone());
 
     // Get initial config and state before moving renderer_states
-    let initial_config = get_config(&initial_state.selected_renderer_id).unwrap();
+    let initial_config = get_renderer_config(&initial_state.selected_renderer_id).unwrap();
     let initial_renderer_state = initial_state
         .renderer_states
         .get(&initial_state.selected_renderer_id)
@@ -42,7 +43,7 @@ pub fn App() -> impl IntoView {
     let (renderer_states, set_renderer_states) = create_signal(initial_state.renderer_states);
 
     // ========== Create initial renderer ==========
-    let initial_colorizer = crate::rendering::get_colorizer(
+    let initial_colorizer = get_colorizer(
         &initial_state.selected_renderer_id,
         &initial_renderer_state.color_scheme_id,
     )
@@ -93,7 +94,7 @@ pub fn App() -> impl IntoView {
     create_effect(move |_| {
         let vp = viewport.get();
         let renderer_id = selected_renderer_id.get();
-        let config = get_config(&renderer_id).unwrap();
+        let config = get_renderer_config(&renderer_id).unwrap();
         let info_provider = (config.create_info_provider)();
         let mut info = info_provider.info(&vp);
         info.render_time_ms = render_time_ms.get();
@@ -116,9 +117,8 @@ pub fn App() -> impl IntoView {
             let state = states.get(&new_renderer_id).unwrap();
 
             // Find colorizer for restored color scheme
-            let colorizer =
-                crate::rendering::get_colorizer(&new_renderer_id, &state.color_scheme_id)
-                    .expect("Renderer/color scheme combination must be valid");
+            let colorizer = get_colorizer(&new_renderer_id, &state.color_scheme_id)
+                .expect("Renderer/color scheme combination must be valid");
 
             // Create new canvas renderer
             let new_canvas_renderer = create_canvas_renderer(colorizer, new_renderer_id.clone())
@@ -175,7 +175,7 @@ pub fn App() -> impl IntoView {
     // ========== Effect: Color scheme changed ==========
     let on_color_scheme_select = move |scheme_id: String| {
         let renderer_id = selected_renderer_id.get();
-        let colorizer = crate::rendering::get_colorizer(&renderer_id, &scheme_id)
+        let colorizer = get_colorizer(&renderer_id, &scheme_id)
             .expect("Renderer/color scheme combination must be valid");
 
         canvas_renderer.update(|cr| {
@@ -198,7 +198,7 @@ pub fn App() -> impl IntoView {
 
     // ========== UI menu options ==========
     let render_function_options = create_memo(move |_| {
-        RENDER_CONFIGS
+        RENDERER_CONFIGS
             .iter()
             .map(|c| (c.id.to_string(), c.display_name.to_string()))
             .collect::<Vec<_>>()
@@ -206,11 +206,11 @@ pub fn App() -> impl IntoView {
 
     let color_scheme_options = create_memo(move |_| {
         let renderer_id = selected_renderer_id.get();
-        let config = get_config(&renderer_id).unwrap();
-        config
-            .color_schemes
+        let colorizers = get_colorizers_for_renderer(&renderer_id).unwrap();
+        colorizers
+            .colorizers
             .iter()
-            .map(|cs| (cs.id.to_string(), cs.display_name.to_string()))
+            .map(|c| (c.id.to_string(), c.display_name.to_string()))
             .collect::<Vec<_>>()
     });
 

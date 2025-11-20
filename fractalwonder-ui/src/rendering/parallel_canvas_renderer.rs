@@ -25,7 +25,7 @@ pub(crate) struct TileRequest {
 
 pub struct ParallelCanvasRenderer {
     worker_pool: Rc<RefCell<RenderWorkerPool>>,
-    colorizer: Rc<RefCell<Colorizer<AppData>>>,
+    colorizer: Rc<RefCell<Colorizer>>,
     canvas: Rc<RefCell<Option<HtmlCanvasElement>>>,
     cached_state: Arc<Mutex<CachedState>>,
     render_id: Arc<AtomicU32>,
@@ -34,7 +34,7 @@ pub struct ParallelCanvasRenderer {
 }
 
 impl ParallelCanvasRenderer {
-    pub fn new(colorizer: Colorizer<AppData>, renderer_id: String) -> Result<Self, JsValue> {
+    pub fn new(colorizer: Colorizer, renderer_id: String) -> Result<Self, JsValue> {
         let canvas: Rc<RefCell<Option<HtmlCanvasElement>>> = Rc::new(RefCell::new(None));
         let canvas_clone = Rc::clone(&canvas);
         let colorizer = Rc::new(RefCell::new(colorizer));
@@ -140,7 +140,7 @@ impl CanvasRenderer for ParallelCanvasRenderer {
         // Not used - workers have their own AdaptiveMandelbrotRenderer
     }
 
-    fn set_colorizer(&mut self, colorizer: Colorizer<Self::Data>) {
+    fn set_colorizer(&mut self, colorizer: Colorizer) {
         *self.colorizer.borrow_mut() = colorizer;
     }
 
@@ -272,7 +272,7 @@ fn draw_colorized_pixels(
     width: u32,
     x: f64,
     y: f64,
-    colorizer: &Colorizer<AppData>,
+    colorizer: &Colorizer,
 ) -> Result<(), JsValue> {
     let context = canvas
         .get_context("2d")?

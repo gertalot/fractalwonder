@@ -21,7 +21,7 @@ pub trait CanvasRenderer {
     );
 
     /// Swap the colorizer at runtime (preserves cache if implementation supports it)
-    fn set_colorizer(&mut self, colorizer: Colorizer<Self::Data>);
+    fn set_colorizer(&mut self, colorizer: Colorizer);
 
     /// Main rendering entry point - renders viewport to canvas
     fn render(&self, viewport: &Viewport<Self::Scalar>, canvas: &HtmlCanvasElement);
@@ -50,7 +50,7 @@ impl<S, D: Clone> CanvasRenderer for Rc<dyn CanvasRenderer<Scalar = S, Data = D>
             .set_renderer(renderer);
     }
 
-    fn set_colorizer(&mut self, colorizer: Colorizer<Self::Data>) {
+    fn set_colorizer(&mut self, colorizer: Colorizer) {
         Rc::get_mut(self)
             .expect("Cannot modify renderer with multiple references")
             .set_colorizer(colorizer);

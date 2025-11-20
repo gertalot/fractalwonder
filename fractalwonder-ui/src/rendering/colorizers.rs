@@ -1,4 +1,4 @@
-use fractalwonder_core::{AppData, MandelbrotData, TestImageData};
+use fractalwonder_core::{AppData, TestImageData};
 
 pub type Colorizer = fn(&AppData) -> (u8, u8, u8, u8);
 
