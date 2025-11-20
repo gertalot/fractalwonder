@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fractal Wonder</title>
+  <script src="coi-serviceworker.js"></script>
+  
+  <link rel="stylesheet" href="/fractalwonder/input-2af05ca6b53a20a3.css"/>
+
+  <!-- Main UI WASM -->
+  
+<script type="module">
+import init, * as bindings from '/fractalwonder/fractalwonder-ui-26fac9d4d6503d93.js';
+const wasm = await init({ module_or_path: '/fractalwonder/fractalwonder-ui-26fac9d4d6503d93_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+
+  <!-- Worker WASM (no-modules target) -->
+  
+
+  <!-- Worker wrapper script -->
+  
+<link rel="modulepreload" href="/fractalwonder/fractalwonder-ui-26fac9d4d6503d93.js" crossorigin="anonymous"><link rel="preload" href="/fractalwonder/fractalwonder-ui-26fac9d4d6503d93_bg.wasm" crossorigin="anonymous" as="fetch" type="application/wasm"></head>
+
+<body class="m-0 p-0 overflow-hidden">
+  <div id="app"></div>
+  <script type="module">
+    window.addEventListener('TrunkApplicationStarted', () => {
+      window.wasmBindings.hydrate();
+    });
+  </script>
+</body>
+
+</html>
