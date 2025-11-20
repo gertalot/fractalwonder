@@ -1,13 +1,24 @@
 pub mod canvas_renderer;
 pub mod colorizers;
 pub mod parallel_canvas_renderer;
+pub mod presentation_config;
 
 pub use canvas_renderer::CanvasRenderer;
-pub use colorizers::{
-    mandelbrot_default_colorizer, mandelbrot_fire_colorizer, mandelbrot_opal_colorizer,
-    test_image_default_colorizer, test_image_pastel_colorizer, Colorizer,
-};
+pub use colorizers::{Colorizer, ColorizerInfo, RendererColorizers, COLORIZERS};
 pub use parallel_canvas_renderer::ParallelCanvasRenderer;
+pub use presentation_config::{
+    get_colorizer, get_colorizers_for_renderer, get_default_colorizer_id, get_renderer_config,
+    RendererPresentationConfig, RENDERER_CONFIGS,
+};
+
+// Re-export compute types
+pub use fractalwonder_compute::{
+    create_renderer, AdaptiveMandelbrotRenderer, AppDataRenderer, PixelRenderer,
+    PrecisionCalculator, Renderer, RendererInfo, TestImageComputer,
+};
+pub use fractalwonder_core::{
+    apply_pixel_transform_to_viewport, AppData, BigFloat, Point, Rect, ToF64, Viewport,
+};
 
 /// Progress information for ongoing renders
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -48,27 +59,5 @@ impl Default for RenderProgress {
             elapsed_ms: 0.0,
             is_complete: false,
         }
-    }
-}
-
-// Re-export commonly used types from core and compute for convenience in UI code
-pub use fractalwonder_compute::{
-    get_color_scheme, get_config, AdaptiveMandelbrotRenderer, AppDataRenderer, PixelRenderer,
-    PrecisionCalculator, RenderConfig, Renderer, TestImageComputer, RENDER_CONFIGS,
-};
-pub use fractalwonder_core::{
-    apply_pixel_transform_to_viewport, AppData, BigFloat, Point, Rect, ToF64, Viewport,
-};
-
-/// Get colorizer function for a specific renderer and color scheme.
-/// Returns None if the renderer/scheme combination is unknown.
-pub fn get_colorizer(renderer_id: &str, scheme_id: &str) -> Option<Colorizer<AppData>> {
-    match (renderer_id, scheme_id) {
-        ("test_image", "default") => Some(test_image_default_colorizer),
-        ("test_image", "pastel") => Some(test_image_pastel_colorizer),
-        ("mandelbrot", "default") => Some(mandelbrot_default_colorizer),
-        ("mandelbrot", "fire") => Some(mandelbrot_fire_colorizer),
-        ("mandelbrot", "opal") => Some(mandelbrot_opal_colorizer),
-        _ => None,
     }
 }
