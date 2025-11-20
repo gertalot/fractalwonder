@@ -1,4 +1,4 @@
-use fractalwonder_compute::RENDER_CONFIGS;
+use crate::rendering::{get_default_colorizer_id, RENDERER_CONFIGS};
 use fractalwonder_core::Viewport;
 use leptos::window;
 use serde::{Deserialize, Serialize};
@@ -42,15 +42,18 @@ impl Default for AppState {
     fn default() -> Self {
         let mut renderer_states = HashMap::new();
 
-        for config in RENDER_CONFIGS.iter() {
+        for config in RENDERER_CONFIGS.iter() {
             // Use default viewport - app will compute natural bounds on first render
             let default_viewport = Viewport::new(fractalwonder_core::Point::new(0.0, 0.0), 1.0);
+
+            let default_colorizer_id = get_default_colorizer_id(config.id)
+                .expect("All renderers must have a default colorizer");
 
             renderer_states.insert(
                 config.id.to_string(),
                 RendererState {
                     viewport: default_viewport,
-                    color_scheme_id: config.default_color_scheme_id.to_string(),
+                    color_scheme_id: default_colorizer_id.to_string(),
                 },
             );
         }
