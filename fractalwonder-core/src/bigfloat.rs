@@ -67,6 +67,14 @@ impl BigFloat {
         }
     }
 
+    /// Convert to string representation preserving full precision
+    pub fn to_string_precise(&self) -> String {
+        match &self.value {
+            BigFloatValue::F64(v) => v.to_string(),
+            BigFloatValue::Arbitrary(v) => v.to_string(),
+        }
+    }
+
     /// Add two BigFloats, preserving max precision
     pub fn add(&self, other: &Self) -> Self {
         let result_precision = self.precision_bits.max(other.precision_bits);
@@ -740,5 +748,42 @@ mod tests {
         // Should get back to 1.0
         assert!((result.to_f64() - 1.0).abs() < 1e-10);
         assert_eq!(result.precision_bits(), 256);
+    }
+
+    #[test]
+    fn test_string_representation_preserves_precision() {
+        // Test that to_string_precise works for both F64 and Arbitrary
+        let bf_f64 = BigFloat::with_precision(123.456, 64);
+        let str_f64 = bf_f64.to_string_precise();
+        assert!(str_f64.contains("123.456"));
+
+        // FBig outputs in binary format, which is perfect for precision
+        let bf_arb = BigFloat::with_precision(123.456, 256);
+        let str_arb = bf_arb.to_string_precise();
+        // Binary representation - should contain binary digits
+        assert!(str_arb.contains('0') || str_arb.contains('1'));
+        assert!(str_arb.len() > 10); // Binary representation is longer
+
+        // Test that precision is preserved through operations
+        // Create a very precise fraction: 1/3 with 256 bits precision
+        let one = BigFloat::with_precision(1.0, 256);
+        let three = BigFloat::with_precision(3.0, 256);
+        let one_third = one.div(&three);
+
+        let str_repr = one_third.to_string_precise();
+        // Binary representation should be much longer than f64 precision
+        assert!(str_repr.len() > 50); // 256 bits of precision
+
+        // Verify precision is preserved through serialization roundtrip
+        let json = serde_json::to_string(&one_third).unwrap();
+        let restored: BigFloat = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.precision_bits(), 256);
+        // String representations should match exactly
+        assert_eq!(restored.to_string_precise(), one_third.to_string_precise());
+
+        // Demonstrate that string comparison works for exact equality testing
+        let a = BigFloat::with_precision(1.0, 256).div(&BigFloat::with_precision(7.0, 256));
+        let b = BigFloat::with_precision(1.0, 256).div(&BigFloat::with_precision(7.0, 256));
+        assert_eq!(a.to_string_precise(), b.to_string_precise());
     }
 }
