@@ -30,12 +30,12 @@ pub fn TestCanvas() -> impl IntoView {
     }
 }
 
-fn render_test_pattern(canvas: &leptos::HtmlElement<leptos::html::Canvas>, width: u32, height: u32) {
-    let ctx: CanvasRenderingContext2d = canvas
-        .get_context("2d")
-        .unwrap()
-        .unwrap()
-        .unchecked_into();
+fn render_test_pattern(
+    canvas: &leptos::HtmlElement<leptos::html::Canvas>,
+    width: u32,
+    height: u32,
+) {
+    let ctx: CanvasRenderingContext2d = canvas.get_context("2d").unwrap().unwrap().unchecked_into();
 
     // Create pixel buffer
     let pixel_count = (width * height * 4) as usize;
@@ -60,12 +60,9 @@ fn render_test_pattern(canvas: &leptos::HtmlElement<leptos::html::Canvas>, width
     }
 
     // Put pixels on canvas
-    let image_data = ImageData::new_with_u8_clamped_array_and_sh(
-        wasm_bindgen::Clamped(&pixels),
-        width,
-        height,
-    )
-    .unwrap();
+    let image_data =
+        ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&pixels), width, height)
+            .unwrap();
 
     ctx.put_image_data(&image_data, 0.0, 0.0).unwrap();
 }

@@ -1,8 +1,8 @@
 use leptos::*;
 use wasm_bindgen::prelude::*;
 
-mod components;
 mod app;
+mod components;
 use app::App;
 
 #[wasm_bindgen]

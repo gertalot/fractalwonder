@@ -21,3 +21,6 @@ web-sys = { workspace = true, features = [
 console_error_panic_hook = { workspace = true }
 console_log = { workspace = true }
 log = { workspace = true }
+
+[dev-dependencies]
+wasm-bindgen-test = { workspace = true }
