@@ -8,6 +8,7 @@ fractalwonder-core = { path = "./fractalwonder-core" }
 
 # Arbitrary precision
 dashu = "0.4"
+dashu-base = "0.4"
 dashu-float = "0.4"
 
 # Leptos framework

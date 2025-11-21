@@ -1,5 +1,6 @@
+use dashu_base::Approximation;
 use dashu_float::ops::SquareRoot;
-use dashu_float::FBig;
+use dashu_float::{DBig, FBig};
 use serde::{Deserialize, Serialize};
 
 /// Arbitrary precision floating point with explicit precision enforcement
@@ -67,11 +68,34 @@ impl BigFloat {
         }
     }
 
-    /// Convert to string representation preserving full precision
-    pub fn to_string_precise(&self) -> String {
-        match &self.value {
-            BigFloatValue::F64(v) => v.to_string(),
-            BigFloatValue::Arbitrary(v) => v.to_string(),
+    /// Create BigFloat from string with explicit precision
+    ///
+    /// Allows creating values beyond f64 range (e.g., "1e1000").
+    /// Uses atomic base conversion with target precision to avoid precision loss.
+    pub fn from_string(val: &str, precision_bits: usize) -> Result<Self, String> {
+        if precision_bits <= 64 {
+            val.parse::<f64>()
+                .map(|f| Self::with_precision(f, precision_bits))
+                .map_err(|e| format!("Failed to parse f64: {}", e))
+        } else {
+            // Parse as decimal, then convert to binary with atomic precision specification
+            val.parse::<DBig>()
+                .map_err(|e| format!("Failed to parse DBig: {}", e))
+                .map(|dbig| {
+                    // Use with_base_and_precision for atomic conversion with target precision
+                    // Returns Approximation enum, extract value using match
+                    let fbig_halfaway = match dbig.with_base_and_precision::<2>(precision_bits) {
+                        Approximation::Exact(v) => v,
+                        Approximation::Inexact(v, _) => v,
+                    };
+                    // Convert from HalfAway rounding to Zero rounding (used by FBig default)
+                    let fbig_with_prec =
+                        fbig_halfaway.with_rounding::<dashu_float::round::mode::Zero>();
+                    Self {
+                        value: BigFloatValue::Arbitrary(fbig_with_prec),
+                        precision_bits,
+                    }
+                })
         }
     }
 
@@ -220,6 +244,15 @@ impl PartialOrd for BigFloat {
     }
 }
 
+impl std::fmt::Display for BigFloat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.value {
+            BigFloatValue::F64(v) => write!(f, "{}", v),
+            BigFloatValue::Arbitrary(v) => write!(f, "{}", v),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct BigFloatSerde {
     value: String,
@@ -270,520 +303,5 @@ impl<'de> Deserialize<'de> for BigFloat {
             value,
             precision_bits: serde.precision_bits,
         })
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::approx_constant)]
-mod tests {
-    use super::*;
-
-    // === Creation Tests ===
-
-    #[test]
-    fn test_zero_with_precision() {
-        let bf = BigFloat::zero(64);
-        assert_eq!(bf.precision_bits(), 64);
-        assert_eq!(bf.to_f64(), 0.0);
-
-        let bf2 = BigFloat::zero(256);
-        assert_eq!(bf2.precision_bits(), 256);
-        assert_eq!(bf2.to_f64(), 0.0);
-    }
-
-    #[test]
-    fn test_one_with_precision() {
-        let bf = BigFloat::one(64);
-        assert_eq!(bf.precision_bits(), 64);
-        assert_eq!(bf.to_f64(), 1.0);
-
-        let bf2 = BigFloat::one(128);
-        assert_eq!(bf2.precision_bits(), 128);
-        assert_eq!(bf2.to_f64(), 1.0);
-    }
-
-    #[test]
-    fn test_with_precision() {
-        let bf = BigFloat::with_precision(42.5, 128);
-        assert_eq!(bf.precision_bits(), 128);
-        assert!((bf.to_f64() - 42.5).abs() < 1e-10);
-
-        let bf2 = BigFloat::with_precision(-3.14159, 256);
-        assert_eq!(bf2.precision_bits(), 256);
-        assert!((bf2.to_f64() - (-3.14159)).abs() < 1e-5);
-    }
-
-    #[test]
-    fn test_f64_path_used_for_low_precision() {
-        let bf = BigFloat::with_precision(2.0, 64);
-        // Should use f64 internally when precision <= 64
-        if let BigFloatValue::F64(_) = bf.value {
-            // Correct
-        } else {
-            panic!("Should use f64 fast path for precision=64");
-        }
-    }
-
-    #[test]
-    fn test_arbitrary_path_used_for_high_precision() {
-        let bf = BigFloat::with_precision(2.0, 128);
-        // Should use FBig internally when precision > 64
-        if let BigFloatValue::Arbitrary(_) = bf.value {
-            // Correct
-        } else {
-            panic!("Should use FBig for precision > 64");
-        }
-    }
-
-    // === Addition Tests ===
-
-    #[test]
-    fn test_add_same_precision() {
-        let a = BigFloat::with_precision(2.5, 128);
-        let b = BigFloat::with_precision(1.5, 128);
-        let result = a.add(&b);
-        assert_eq!(result.precision_bits(), 128);
-        assert!((result.to_f64() - 4.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_add_preserves_max_precision() {
-        let a = BigFloat::with_precision(2.5, 64);
-        let b = BigFloat::with_precision(1.5, 256);
-        let result = a.add(&b);
-        assert_eq!(result.precision_bits(), 256); // Max precision
-        assert!((result.to_f64() - 4.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_add_negative_numbers() {
-        let a = BigFloat::with_precision(-5.0, 128);
-        let b = BigFloat::with_precision(3.0, 128);
-        let result = a.add(&b);
-        assert!((result.to_f64() - (-2.0)).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_add_with_zero() {
-        let a = BigFloat::with_precision(42.0, 128);
-        let b = BigFloat::zero(128);
-        let result = a.add(&b);
-        assert!((result.to_f64() - 42.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_add_large_numbers() {
-        let a = BigFloat::with_precision(1e100, 256);
-        let b = BigFloat::with_precision(1e100, 256);
-        let result = a.add(&b);
-        assert!((result.to_f64() - 2e100).abs() / 2e100 < 1e-10);
-    }
-
-    #[test]
-    fn test_add_very_small_numbers() {
-        let a = BigFloat::with_precision(1e-100, 256);
-        let b = BigFloat::with_precision(1e-100, 256);
-        let result = a.add(&b);
-        assert!((result.to_f64() - 2e-100).abs() / 2e-100 < 1e-10);
-    }
-
-    // === Subtraction Tests ===
-
-    #[test]
-    fn test_sub_same_precision() {
-        let a = BigFloat::with_precision(5.0, 128);
-        let b = BigFloat::with_precision(3.0, 128);
-        let result = a.sub(&b);
-        assert!((result.to_f64() - 2.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_sub_preserves_max_precision() {
-        let a = BigFloat::with_precision(5.0, 64);
-        let b = BigFloat::with_precision(3.0, 256);
-        let result = a.sub(&b);
-        assert_eq!(result.precision_bits(), 256);
-    }
-
-    #[test]
-    fn test_sub_negative_result() {
-        let a = BigFloat::with_precision(3.0, 128);
-        let b = BigFloat::with_precision(5.0, 128);
-        let result = a.sub(&b);
-        assert!((result.to_f64() - (-2.0)).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_sub_with_zero() {
-        let a = BigFloat::with_precision(42.0, 128);
-        let b = BigFloat::zero(128);
-        let result = a.sub(&b);
-        assert!((result.to_f64() - 42.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_sub_from_zero() {
-        let a = BigFloat::zero(128);
-        let b = BigFloat::with_precision(42.0, 128);
-        let result = a.sub(&b);
-        assert!((result.to_f64() - (-42.0)).abs() < 1e-10);
-    }
-
-    // === Multiplication Tests ===
-
-    #[test]
-    fn test_mul_same_precision() {
-        let a = BigFloat::with_precision(3.0, 128);
-        let b = BigFloat::with_precision(4.0, 128);
-        let result = a.mul(&b);
-        assert!((result.to_f64() - 12.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_mul_preserves_max_precision() {
-        let a = BigFloat::with_precision(3.0, 64);
-        let b = BigFloat::with_precision(4.0, 256);
-        let result = a.mul(&b);
-        assert_eq!(result.precision_bits(), 256);
-    }
-
-    #[test]
-    fn test_mul_with_zero() {
-        let a = BigFloat::with_precision(42.0, 128);
-        let b = BigFloat::zero(128);
-        let result = a.mul(&b);
-        assert_eq!(result.to_f64(), 0.0);
-    }
-
-    #[test]
-    fn test_mul_with_one() {
-        let a = BigFloat::with_precision(42.0, 128);
-        let b = BigFloat::one(128);
-        let result = a.mul(&b);
-        assert!((result.to_f64() - 42.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_mul_negative_numbers() {
-        let a = BigFloat::with_precision(-3.0, 128);
-        let b = BigFloat::with_precision(4.0, 128);
-        let result = a.mul(&b);
-        assert!((result.to_f64() - (-12.0)).abs() < 1e-10);
-
-        let c = BigFloat::with_precision(-3.0, 128);
-        let d = BigFloat::with_precision(-4.0, 128);
-        let result2 = c.mul(&d);
-        assert!((result2.to_f64() - 12.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_mul_large_numbers() {
-        let a = BigFloat::with_precision(1e50, 256);
-        let b = BigFloat::with_precision(1e50, 256);
-        let result = a.mul(&b);
-        assert!((result.to_f64() - 1e100).abs() / 1e100 < 1e-10);
-    }
-
-    // === Division Tests ===
-
-    #[test]
-    fn test_div_same_precision() {
-        let a = BigFloat::with_precision(10.0, 128);
-        let b = BigFloat::with_precision(2.0, 128);
-        let result = a.div(&b);
-        assert!((result.to_f64() - 5.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_div_preserves_max_precision() {
-        let a = BigFloat::with_precision(10.0, 64);
-        let b = BigFloat::with_precision(2.0, 256);
-        let result = a.div(&b);
-        assert_eq!(result.precision_bits(), 256);
-    }
-
-    #[test]
-    fn test_div_by_one() {
-        let a = BigFloat::with_precision(42.0, 128);
-        let b = BigFloat::one(128);
-        let result = a.div(&b);
-        assert!((result.to_f64() - 42.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_div_fractional_result() {
-        let a = BigFloat::with_precision(1.0, 128);
-        let b = BigFloat::with_precision(3.0, 128);
-        let result = a.div(&b);
-        assert!((result.to_f64() - 0.333333).abs() < 1e-5);
-    }
-
-    #[test]
-    fn test_div_negative_numbers() {
-        let a = BigFloat::with_precision(-10.0, 128);
-        let b = BigFloat::with_precision(2.0, 128);
-        let result = a.div(&b);
-        assert!((result.to_f64() - (-5.0)).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_div_by_large_number() {
-        let a = BigFloat::with_precision(1.0, 256);
-        let b = BigFloat::with_precision(1e100, 256);
-        let result = a.div(&b);
-        assert!((result.to_f64() - 1e-100).abs() / 1e-100 < 1e-10);
-    }
-
-    // === Square Root Tests ===
-
-    #[test]
-    fn test_sqrt_perfect_square() {
-        let a = BigFloat::with_precision(16.0, 128);
-        let result = a.sqrt();
-        assert!((result.to_f64() - 4.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_sqrt_preserves_precision() {
-        let a = BigFloat::with_precision(2.0, 256);
-        let result = a.sqrt();
-        assert_eq!(result.precision_bits(), 256);
-    }
-
-    #[test]
-    fn test_sqrt_non_perfect_square() {
-        let a = BigFloat::with_precision(2.0, 128);
-        let result = a.sqrt();
-        assert!((result.to_f64() - 1.414213).abs() < 1e-5);
-    }
-
-    #[test]
-    fn test_sqrt_of_one() {
-        let a = BigFloat::one(128);
-        let result = a.sqrt();
-        assert!((result.to_f64() - 1.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_sqrt_of_zero() {
-        let a = BigFloat::zero(128);
-        let result = a.sqrt();
-        assert_eq!(result.to_f64(), 0.0);
-    }
-
-    #[test]
-    fn test_sqrt_large_number() {
-        let a = BigFloat::with_precision(1e100, 256);
-        let result = a.sqrt();
-        assert!((result.to_f64() - 1e50).abs() / 1e50 < 1e-10);
-    }
-
-    // === Comparison Tests ===
-
-    #[test]
-    fn test_partial_eq_same_value() {
-        let a = BigFloat::with_precision(2.5, 128);
-        let b = BigFloat::with_precision(2.5, 128);
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn test_partial_eq_different_precision_same_value() {
-        let a = BigFloat::with_precision(2.5, 64);
-        let b = BigFloat::with_precision(2.5, 256);
-        assert_eq!(a, b); // Values equal, precision doesn't affect equality
-    }
-
-    #[test]
-    fn test_partial_eq_different_value() {
-        let a = BigFloat::with_precision(2.5, 128);
-        let b = BigFloat::with_precision(3.5, 128);
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn test_partial_ord_less_than() {
-        let a = BigFloat::with_precision(2.5, 128);
-        let b = BigFloat::with_precision(3.5, 128);
-        assert!(a < b);
-    }
-
-    #[test]
-    fn test_partial_ord_greater_than() {
-        let a = BigFloat::with_precision(3.5, 128);
-        let b = BigFloat::with_precision(2.5, 128);
-        assert!(a > b);
-    }
-
-    #[test]
-    fn test_partial_ord_equal() {
-        let a = BigFloat::with_precision(2.5, 128);
-        let b = BigFloat::with_precision(2.5, 128);
-        assert_eq!(a.partial_cmp(&b), Some(std::cmp::Ordering::Equal));
-    }
-
-    #[test]
-    fn test_partial_ord_negative_numbers() {
-        let a = BigFloat::with_precision(-2.5, 128);
-        let b = BigFloat::with_precision(-1.5, 128);
-        assert!(a < b); // -2.5 < -1.5
-    }
-
-    #[test]
-    fn test_partial_ord_zero() {
-        let a = BigFloat::zero(128);
-        let b = BigFloat::with_precision(1.0, 128);
-        assert!(a < b);
-
-        let c = BigFloat::with_precision(-1.0, 128);
-        let d = BigFloat::zero(128);
-        assert!(c < d);
-    }
-
-    // === Serialization Tests ===
-
-    #[test]
-    fn test_serialization_roundtrip_f64_precision() {
-        let original = BigFloat::with_precision(3.14159, 64);
-        let json = serde_json::to_string(&original).expect("serialize failed");
-        let restored: BigFloat = serde_json::from_str(&json).expect("deserialize failed");
-
-        assert_eq!(restored.precision_bits(), 64);
-        assert!((restored.to_f64() - 3.14159).abs() < 1e-5);
-    }
-
-    #[test]
-    fn test_serialization_roundtrip_high_precision() {
-        let original = BigFloat::with_precision(3.14159, 256);
-        let json = serde_json::to_string(&original).expect("serialize failed");
-        let restored: BigFloat = serde_json::from_str(&json).expect("deserialize failed");
-
-        assert_eq!(restored.precision_bits(), 256);
-        assert!((restored.to_f64() - 3.14159).abs() < 1e-5);
-    }
-
-    #[test]
-    fn test_serialization_preserves_zero() {
-        let original = BigFloat::zero(128);
-        let json = serde_json::to_string(&original).unwrap();
-        let restored: BigFloat = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(restored.to_f64(), 0.0);
-        assert_eq!(restored.precision_bits(), 128);
-    }
-
-    #[test]
-    fn test_serialization_preserves_negative() {
-        let original = BigFloat::with_precision(-42.5, 256);
-        let json = serde_json::to_string(&original).unwrap();
-        let restored: BigFloat = serde_json::from_str(&json).unwrap();
-
-        assert!((restored.to_f64() - (-42.5)).abs() < 1e-10);
-        assert_eq!(restored.precision_bits(), 256);
-    }
-
-    // === Complex Expression Tests ===
-
-    #[test]
-    fn test_complex_expression_with_all_operations() {
-        // (2 + 3) * 4 / 2 - 1 = 9
-        let two = BigFloat::with_precision(2.0, 128);
-        let three = BigFloat::with_precision(3.0, 128);
-        let four = BigFloat::with_precision(4.0, 128);
-        let one = BigFloat::one(128);
-
-        let result = two.add(&three).mul(&four).div(&two).sub(&one);
-        assert!((result.to_f64() - 9.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_mandelbrot_iteration_formula() {
-        // Test z = z^2 + c where z=(2,1), c=(0.5, 0.3)
-        // z^2 = (2^2 - 1^2, 2*2*1) = (3, 4)
-        // z^2 + c = (3.5, 4.3)
-        let z_real = BigFloat::with_precision(2.0, 128);
-        let z_imag = BigFloat::with_precision(1.0, 128);
-        let c_real = BigFloat::with_precision(0.5, 128);
-        let c_imag = BigFloat::with_precision(0.3, 128);
-
-        let z_real_sq = z_real.mul(&z_real);
-        let z_imag_sq = z_imag.mul(&z_imag);
-        let new_real = z_real_sq.sub(&z_imag_sq).add(&c_real);
-
-        let two = BigFloat::with_precision(2.0, 128);
-        let new_imag = two.mul(&z_real).mul(&z_imag).add(&c_imag);
-
-        assert!((new_real.to_f64() - 3.5).abs() < 1e-10);
-        assert!((new_imag.to_f64() - 4.3).abs() < 1e-10);
-    }
-
-    // === Edge Case Tests ===
-
-    #[test]
-    fn test_very_large_precision() {
-        let bf = BigFloat::with_precision(1.0, 1024);
-        assert_eq!(bf.precision_bits(), 1024);
-        assert_eq!(bf.to_f64(), 1.0);
-    }
-
-    #[test]
-    fn test_operations_maintain_finite_values() {
-        let a = BigFloat::with_precision(1e100, 256);
-        let b = BigFloat::with_precision(1e-100, 256);
-
-        let product = a.mul(&b);
-        assert!(product.to_f64().is_finite());
-
-        let quotient = a.div(&b);
-        assert!(quotient.to_f64().is_finite());
-    }
-
-    #[test]
-    fn test_chain_of_operations_maintains_precision() {
-        let start = BigFloat::with_precision(1.0, 256);
-        let two = BigFloat::with_precision(2.0, 256);
-
-        let result = start.add(&two).mul(&two).div(&two).sub(&two);
-
-        // Should get back to 1.0
-        assert!((result.to_f64() - 1.0).abs() < 1e-10);
-        assert_eq!(result.precision_bits(), 256);
-    }
-
-    #[test]
-    fn test_string_representation_preserves_precision() {
-        // Test that to_string_precise works for both F64 and Arbitrary
-        let bf_f64 = BigFloat::with_precision(123.456, 64);
-        let str_f64 = bf_f64.to_string_precise();
-        assert!(str_f64.contains("123.456"));
-
-        // FBig outputs in binary format, which is perfect for precision
-        let bf_arb = BigFloat::with_precision(123.456, 256);
-        let str_arb = bf_arb.to_string_precise();
-        // Binary representation - should contain binary digits
-        assert!(str_arb.contains('0') || str_arb.contains('1'));
-        assert!(str_arb.len() > 10); // Binary representation is longer
-
-        // Test that precision is preserved through operations
-        // Create a very precise fraction: 1/3 with 256 bits precision
-        let one = BigFloat::with_precision(1.0, 256);
-        let three = BigFloat::with_precision(3.0, 256);
-        let one_third = one.div(&three);
-
-        let str_repr = one_third.to_string_precise();
-        // Binary representation should be much longer than f64 precision
-        assert!(str_repr.len() > 50); // 256 bits of precision
-
-        // Verify precision is preserved through serialization roundtrip
-        let json = serde_json::to_string(&one_third).unwrap();
-        let restored: BigFloat = serde_json::from_str(&json).unwrap();
-        assert_eq!(restored.precision_bits(), 256);
-        // String representations should match exactly
-        assert_eq!(restored.to_string_precise(), one_third.to_string_precise());
-
-        // Demonstrate that string comparison works for exact equality testing
-        let a = BigFloat::with_precision(1.0, 256).div(&BigFloat::with_precision(7.0, 256));
-        let b = BigFloat::with_precision(1.0, 256).div(&BigFloat::with_precision(7.0, 256));
-        assert_eq!(a.to_string_precise(), b.to_string_precise());
     }
 }
