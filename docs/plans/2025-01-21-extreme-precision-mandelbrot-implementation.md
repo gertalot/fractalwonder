@@ -42,7 +42,11 @@ mv tests _archive/ 2>/dev/null || true
 Run: `ls -la`
 Expected: Only `_archive/`, `Cargo.toml`, `Trunk.toml`, `docs/`, `.claude/`, `target/` remain
 
-**Step 4: Commit**
+**Step 4: Test**
+
+`./scripts/run-all-checks.sh` has no errors. `trunk serve` has no errors.
+
+**Step 5: Commit**
 
 ```bash
 git add -A
@@ -183,7 +187,12 @@ Expected: Server starts on http://localhost:8080
 Open browser: http://localhost:8080
 Expected: See "Fractal Wonder - Stage 0" centered on dark background
 
-**Step 6: Commit**
+**Step 6: Test**
+
+`./scripts/run-all-checks.sh` has no errors. `trunk serve` has no errors.
+
+
+**Step 7: Commit**
 
 ```bash
 git add -A
@@ -348,7 +357,7 @@ pub fn hydrate() {
 
 **Step 6: Verify it builds and renders**
 
-Run: `cargo check`
+Run: `./scripts/run-all-checks.sh`
 Expected: Success
 
 Refresh browser: http://localhost:8080
