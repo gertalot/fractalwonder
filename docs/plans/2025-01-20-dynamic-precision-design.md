@@ -165,63 +165,129 @@ let interaction = use_canvas_interaction(canvas_ref, move |transform_result| {
 });
 ```
 
-## Required Changes
+## Implementation Plan
 
-### Phase 1: Move precision logic to CORE
+Each task delivers working, tested, incrementally improved functionality.
 
-1. **Create** `fractalwonder-core/src/precision.rs`
-   - Move `calculate_max_iterations` from `mandelbrot.rs`
-   - Create `required_precision_bits` function
+### Task 1: Add Precision Calculation to CORE
 
-2. **Update** `fractalwonder-core/src/lib.rs`
-   - Export precision functions
+**Goal:** Foundational infrastructure - precision calculation functions
 
-3. **Update** `fractalwonder-compute/src/computers/mandelbrot.rs`
-   - Import `calculate_max_iterations` from core
-   - Remove local implementation
+**Changes:**
+- Create `fractalwonder-core/src/precision.rs`
+  - Move `calculate_max_iterations` from `mandelbrot.rs`
+  - Add `required_precision_bits(viewport_width, canvas_width, max_iter)` function
+- Update `fractalwonder-core/src/lib.rs` to export precision module
+- Update `fractalwonder-compute/src/computers/mandelbrot.rs` to import from core
+- Update `fractalwonder-compute/src/precision.rs` to import from core
 
-4. **Update** `fractalwonder-compute/src/precision.rs`
-   - Import `calculate_max_iterations` from core
-   - Update `PrecisionCalculator` to use it
+**Verification:**
+```bash
+cargo test --workspace
+cargo clippy --workspace
+```
 
-### Phase 2: Extend Viewport with context fields
+**Browser test:** Works exactly the same (no functional change)
 
-5. **Update** `fractalwonder-core/src/viewport.rs`
-   - Add `natural_bounds`, `canvas_width`, `canvas_height` fields
-   - Update constructor
+---
 
-6. **Update all Viewport creation sites** throughout codebase
-   - Pass natural_bounds and canvas_size to constructor
+### Task 2: Extend Viewport with Context Fields
 
-### Phase 3: Change Viewport<f64> → Viewport<BigFloat>
+**Goal:** Viewport carries all data needed for precision calculation
 
-7. **Update** `fractalwonder-ui/src/state/app_state.rs`
-   - Change `viewport: Viewport<f64>` to `viewport: Viewport<BigFloat>`
+**Changes:**
+- Update `fractalwonder-core/src/viewport.rs`
+  - Add `natural_bounds: Rect<T>`, `canvas_width: u32`, `canvas_height: u32` fields
+  - Update `Viewport::new()` constructor signature
+- Update all Viewport creation sites:
+  - `fractalwonder-ui/src/state/app_state.rs`
+  - `fractalwonder-ui/src/app.rs`
+  - `fractalwonder-ui/src/components/interactive_canvas.rs`
+  - Test files
 
-8. **Update** `fractalwonder-ui/src/app.rs`
-   - Change all viewport signals and functions to use `Viewport<BigFloat>`
-   - Update `CanvasRenderer` type signature
+**Verification:**
+```bash
+cargo test --workspace
+cargo clippy --workspace
+```
 
-9. **Update** `fractalwonder-ui/src/components/interactive_canvas.rs`
-   - Change component signature to accept `Viewport<BigFloat>`
-   - Simplify interaction callback (viewport already has everything)
-   - Update render effect
+**Browser test:** Works exactly the same (just carrying extra data)
 
-10. **Update** `fractalwonder-ui/src/rendering/parallel_canvas_renderer.rs`
-    - Remove hardcoded f64 → BigFloat conversion (lines 156-162)
-    - Viewport is already BigFloat from app state
+---
 
-### Phase 4: Fix BigFloat to use precision properly
+### Task 3: Fix BigFloat to Use Precision Properly
 
-11. **Update** `fractalwonder-core/src/numeric.rs`
-    - Fix BigFloat arithmetic to actually use FBig Context with stored precision
-    - Currently precision is stored but not used in operations
+**Goal:** BigFloat operations respect stored precision
 
-12. **Update worker protocol** `fractalwonder-compute/src/messages.rs`
-    - Add `precision_bits: usize` to `MainToWorker::RenderTile`
+**Changes:**
+- Update `fractalwonder-core/src/numeric.rs`
+  - Modify BigFloat arithmetic operations (`add`, `sub`, `mul`, `div`) to create and use `FBig::Context` with stored precision
+  - Currently precision is stored but operations don't use it
 
-13. **Update** `fractalwonder-compute/src/worker.rs`
-    - Use precision from message for rendering
+**Verification:**
+```bash
+cargo test --workspace -- BigFloat
+```
+
+**Browser test:** Works the same (slightly more accurate internally)
+
+---
+
+### Task 4: Calculate and Use Dynamic Precision in Rendering
+
+**Goal:** 🎯 **ENABLES EXTREME ZOOM** - precision calculated based on zoom level
+
+**Changes:**
+- Add to `fractalwonder-core/src/precision.rs`:
+  - `calculate_viewport_precision_bits(viewport: &Viewport<f64>) -> usize`
+- Update `fractalwonder-compute/src/messages.rs`:
+  - Add `precision_bits: usize` field to `MainToWorker::RenderTile`
+- Update `fractalwonder-ui/src/rendering/parallel_canvas_renderer.rs`:
+  - Calculate precision from viewport using new function
+  - Use calculated precision when converting `f64` → `BigFloat` (replace hardcoded 256)
+  - Pass `precision_bits` in worker message
+- Update `fractalwonder-compute/src/worker.rs`:
+  - Extract `precision_bits` from message
+  - Use it when working with BigFloat values
+
+**Verification:**
+```bash
+cargo test --workspace
+wasm-pack test --headless --chrome
+```
+
+**Browser test:** 🚀 **Can now zoom beyond 1e15!** Try zooming to 1e20 and verify fractal details remain crisp
+
+---
+
+### Task 5: Change Viewport to BigFloat Throughout UI
+
+**Goal:** Cleaner architecture - eliminate conversion boundary
+
+**Changes:**
+- Update `fractalwonder-ui/src/state/app_state.rs`:
+  - Change `viewport: RwSignal<Viewport<f64>>` → `viewport: RwSignal<Viewport<BigFloat>>`
+- Update `fractalwonder-ui/src/app.rs`:
+  - Update all viewport signal types
+  - Update `CanvasRenderer` type signature
+- Update `fractalwonder-ui/src/components/interactive_canvas.rs`:
+  - Change component to accept `Viewport<BigFloat>`
+  - Simplify interaction callback (no canvas dimensions needed)
+- Update `fractalwonder-core/src/transforms.rs`:
+  - Update `apply_pixel_transform_to_viewport` to work with `Viewport<BigFloat>`
+  - Calculate precision for new zoom level inside transform
+- Update `fractalwonder-ui/src/rendering/parallel_canvas_renderer.rs`:
+  - Remove `f64` → `BigFloat` conversion (lines 156-162)
+  - Viewport is already `BigFloat` from app state
+
+**Verification:**
+```bash
+cargo test --workspace
+cargo clippy --workspace
+wasm-pack test --headless --chrome
+```
+
+**Browser test:** Works exactly the same as Task 4, but cleaner code architecture
 
 ## Open Questions
 
