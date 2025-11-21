@@ -26,7 +26,7 @@ fn with_precision_fbig_path_128_bits() {
 
 #[test]
 fn with_precision_fbig_path_7000_bits() {
-    let bf = BigFloat::with_precision(3.14159, 7000);
+    let bf = BigFloat::with_precision(3.125, 7000);
     assert_eq!(bf.precision_bits(), 7000);
 }
 
