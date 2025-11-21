@@ -266,6 +266,7 @@ impl<'de> Deserialize<'de> for BigFloat {
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
 
@@ -610,8 +611,7 @@ mod tests {
     fn test_partial_ord_equal() {
         let a = BigFloat::with_precision(2.5, 128);
         let b = BigFloat::with_precision(2.5, 128);
-        assert!(!(a < b));
-        assert!(!(a > b));
+        assert_eq!(a.partial_cmp(&b), Some(std::cmp::Ordering::Equal));
     }
 
     #[test]
