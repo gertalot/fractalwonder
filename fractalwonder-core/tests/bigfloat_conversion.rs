@@ -64,31 +64,37 @@ fn precision_bits_after_mul_cross_precision_extreme() {
 }
 
 // ============================================================================
-// to_f64() within f64 range tests
+// Value verification tests (using string comparison, NOT to_f64())
 // ============================================================================
+// to_f64() destroys precision - use to_string() for value verification
 
 #[test]
-fn to_f64_f64_path_exact() {
+fn value_verification_f64_path() {
     let bf = BigFloat::with_precision(1.5, 64);
-    assert_eq!(bf.to_f64(), 1.5);
+    assert_eq!(bf.to_string(), "1.5");
 }
 
 #[test]
-fn to_f64_fbig_path_within_range() {
-    let bf = BigFloat::with_precision(2.5, 128);
-    assert_eq!(bf.to_f64(), 2.5);
+fn value_verification_fbig_path() {
+    // FBig Display uses binary representation, so use cross-path equality
+    let bf_fbig = BigFloat::with_precision(2.5, 128);
+    let bf_f64 = BigFloat::with_precision(2.5, 64);
+    assert_eq!(bf_fbig, bf_f64);
 }
 
 #[test]
-fn to_f64_round_trip() {
-    let original = 7.5;
-    let bf = BigFloat::with_precision(original, 64);
-    assert_eq!(bf.to_f64(), original);
+fn value_verification_cross_path_equality() {
+    // Verify same value across paths via direct comparison
+    let bf_f64 = BigFloat::with_precision(7.5, 64);
+    let bf_fbig = BigFloat::with_precision(7.5, 128);
+    assert_eq!(bf_f64, bf_fbig);
 }
 
 // ============================================================================
-// to_f64() beyond f64 range tests
+// to_f64() boundary tests - LEGITIMATE uses of to_f64()
 // ============================================================================
+// These tests verify the BEHAVIOR of to_f64() at boundaries (overflow/underflow)
+// NOT used for verifying BigFloat precision/correctness
 
 #[test]
 fn to_f64_extreme_large_becomes_infinity() {
@@ -103,8 +109,9 @@ fn to_f64_extreme_tiny_becomes_zero() {
 }
 
 // ============================================================================
-// to_f64() at f64 boundaries tests
+// to_f64() at f64 range boundaries - LEGITIMATE uses
 // ============================================================================
+// These test that values at f64 limits convert correctly (not precision tests)
 
 #[test]
 fn to_f64_at_f64_max() {
