@@ -1,14 +1,9 @@
 use leptos::*;
 use wasm_bindgen::prelude::*;
 
-#[component]
-fn App() -> impl IntoView {
-    view! {
-        <div style="width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; background: #1a1a1a; color: white;">
-            <h1>"Fractal Wonder - Stage 0"</h1>
-        </div>
-    }
-}
+mod components;
+mod app;
+use app::App;
 
 #[wasm_bindgen]
 pub fn hydrate() {

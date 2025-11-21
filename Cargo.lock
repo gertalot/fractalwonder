@@ -273,6 +273,7 @@ dependencies = [
  "leptos_meta",
  "log",
  "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
