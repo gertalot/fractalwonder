@@ -1,24 +1,29 @@
+use std::ops::Deref;
+
 use leptos::*;
 use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, ImageData};
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
 #[component]
 pub fn TestCanvas() -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
-    // Render test pattern on mount and when canvas resizes
+    // Render test pattern on mount
     create_effect(move |_| {
         if let Some(canvas_el) = canvas_ref.get() {
+            // Get the underlying HtmlCanvasElement via deref and JsCast
+            let canvas: &HtmlCanvasElement = canvas_el.deref().unchecked_ref();
+
             // Set canvas to fill viewport
             let window = web_sys::window().unwrap();
             let width = window.inner_width().unwrap().as_f64().unwrap() as u32;
             let height = window.inner_height().unwrap().as_f64().unwrap() as u32;
 
-            canvas_el.set_width(width);
-            canvas_el.set_height(height);
+            canvas.set_width(width);
+            canvas.set_height(height);
 
             // Render test pattern: blue-orange gradient
-            render_test_pattern(&canvas_el, width, height);
+            render_test_pattern(canvas, width, height);
         }
     });
 
@@ -30,11 +35,7 @@ pub fn TestCanvas() -> impl IntoView {
     }
 }
 
-fn render_test_pattern(
-    canvas: &leptos::HtmlElement<leptos::html::Canvas>,
-    width: u32,
-    height: u32,
-) {
+fn render_test_pattern(canvas: &HtmlCanvasElement, width: u32, height: u32) {
     let ctx: CanvasRenderingContext2d = canvas.get_context("2d").unwrap().unwrap().unchecked_into();
 
     // Create pixel buffer
