@@ -1,50 +1,16 @@
 [workspace]
-members = [
-    "fractalwonder-ui",
-    "fractalwonder-compute",
-    "fractalwonder-core",
-]
+members = ["fractalwonder-ui"]
 resolver = "2"
 
 [workspace.dependencies]
-# Shared core crate
-fractalwonder-core = { path = "./fractalwonder-core" }
-fractalwonder-compute = { path = "./fractalwonder-compute" }
-
-# Arbitrary precision
-dashu = "0.4"
-dashu-float = "0.4"
+# Leptos framework
+leptos = { version = "0.6", features = ["csr"] }
+leptos_meta = { version = "0.6", features = ["csr"] }
 
 # WASM/JS bindings
 wasm-bindgen = "0.2"
 js-sys = "0.3"
-web-sys = { version = "0.3", features = [
-    "Window",
-    "Navigator",
-    "Document",
-    "HtmlCanvasElement",
-    "CanvasRenderingContext2d",
-    "ContextAttributes2d",
-    "ImageData",
-    "MouseEvent",
-    "EventTarget",
-    "CssStyleDeclaration",
-    "Element",
-    "HtmlElement",
-    "PointerEvent",
-    "WheelEvent",
-    "Performance",
-    "console",
-    "AddEventListenerOptions",
-    "Storage",
-    "Worker",
-    "WorkerOptions",
-    "WorkerType",
-    "MessageEvent",
-    "ErrorEvent",
-    "DedicatedWorkerGlobalScope",
-] }
-gloo-utils = "0.2"
+web-sys = { version = "0.3" }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -53,7 +19,7 @@ serde_json = "1.0"
 # Utilities
 console_error_panic_hook = "0.1"
 console_log = "1.0"
-dyn-clone = "1.0.20"
+log = "0.4"
 
 # Testing
 wasm-bindgen-test = "0.3"
