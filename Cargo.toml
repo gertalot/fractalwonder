@@ -1,8 +1,15 @@
 [workspace]
-members = ["fractalwonder-ui"]
+members = ["fractalwonder-core", "fractalwonder-ui"]
 resolver = "2"
 
 [workspace.dependencies]
+# Core crates
+fractalwonder-core = { path = "./fractalwonder-core" }
+
+# Arbitrary precision
+dashu = "0.4"
+dashu-float = "0.4"
+
 # Leptos framework
 leptos = { version = "0.6", features = ["csr"] }
 leptos_meta = { version = "0.6", features = ["csr"] }

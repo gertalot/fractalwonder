@@ -182,9 +182,9 @@ Run: `cargo check --workspace`
 Expected: Success
 
 Run: `trunk serve` (in separate terminal)
-Expected: Server starts on http://localhost:8080
+Expected: Server starts on http://localhost:8080/fractalwonder/
 
-Open browser: http://localhost:8080
+Open browser: http://localhost:8080/fractalwonder/
 Expected: See "Fractal Wonder - Stage 0" centered on dark background
 
 **Step 6: Test**
@@ -360,7 +360,7 @@ pub fn hydrate() {
 Run: `./scripts/run-all-checks.sh`
 Expected: Success
 
-Refresh browser: http://localhost:8080
+Refresh browser: http://localhost:8080/fractalwonder/
 Expected: Full-screen canvas with blue-orange gradient
 
 **Step 7: Commit**
@@ -2136,7 +2136,7 @@ Expected: Success
 
 **Step 7: Test in browser**
 
-Refresh: http://localhost:8080
+Refresh: http://localhost:8080/fractalwonder/
 Expected:
 - Canvas shows gradient test pattern
 - Can pan with mouse drag
@@ -2747,7 +2747,7 @@ Expected: Success
 
 **Step 7: Test in browser**
 
-Refresh: http://localhost:8080
+Refresh: http://localhost:8080/fractalwonder/
 Expected:
 - Canvas shows Mandelbrot set with smooth coloring
 - Black region (inside set) visible
