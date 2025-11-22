@@ -1,12 +1,12 @@
-use fractalwonder_core::{compose_affine_transformations, Mat3, Transform};
+use fractalwonder_core::{compose_affine_transformations, AffinePrimitive, PixelMat3};
 use leptos::*;
 use leptos_use::use_raf_fn;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, ContextAttributes2d, HtmlCanvasElement, ImageData};
 
-// Re-export TransformResult for convenience (so users can import from this module)
-pub use fractalwonder_core::TransformResult;
+// Re-export PixelTransform for convenience (so users can import from this module)
+pub use fractalwonder_core::PixelTransform;
 
 const INTERACTION_TIMEOUT_MS: i32 = 1500;
 const ZOOM_SENSITIVITY: f64 = 0.0005;
@@ -19,31 +19,6 @@ const DOUBLE_CLICK_ZOOM_FACTOR: f64 = 2.0; // 2x zoom in/out on double-click
 pub struct InteractionHandle {
     /// Reactive signal indicating whether user is currently interacting
     pub is_interacting: Signal<bool>,
-}
-
-/// Builds a 2D affine transformation matrix from offset, zoom, and optional zoom center
-fn build_transform_matrix(
-    offset: (f64, f64),
-    zoom: f64,
-    zoom_center: Option<(f64, f64)>,
-) -> [[f64; 3]; 3] {
-    let mut matrix = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-
-    // Apply scale (zoom)
-    matrix[0][0] = zoom;
-    matrix[1][1] = zoom;
-
-    // Apply translation
-    if let Some((cx, cy)) = zoom_center {
-        // Translate to zoom center, scale, translate back
-        matrix[0][2] = offset.0 + cx * (1.0 - zoom);
-        matrix[1][2] = offset.1 + cy * (1.0 - zoom);
-    } else {
-        matrix[0][2] = offset.0;
-        matrix[1][2] = offset.1;
-    }
-
-    matrix
 }
 
 fn capture_canvas_image_data(canvas: &HtmlCanvasElement) -> Result<ImageData, JsValue> {
@@ -104,14 +79,14 @@ fn render_preview(
     temp_context.put_image_data(image_data, 0.0, 0.0)?;
 
     // Apply transformation matrix to main canvas
-    let matrix = build_transform_matrix(offset, zoom, zoom_center);
+    let matrix = PixelMat3::from_scale_and_offset(zoom, offset, zoom_center);
     context.set_transform(
-        matrix[0][0],
-        matrix[1][0],
-        matrix[0][1],
-        matrix[1][1],
-        matrix[0][2],
-        matrix[1][2],
+        matrix.data[0][0],
+        matrix.data[1][0],
+        matrix.data[0][1],
+        matrix.data[1][1],
+        matrix.data[0][2],
+        matrix.data[1][2],
     )?;
 
     // Draw the transformed image from temporary canvas
@@ -135,7 +110,7 @@ fn render_preview(
 ///
 /// ```rust,no_run
 /// use leptos::*;
-/// use fractalwonder_ui::hooks::use_canvas_interaction::{use_canvas_interaction, TransformResult};
+/// use fractalwonder_ui::hooks::{use_canvas_interaction, PixelTransform};
 ///
 /// #[component]
 /// pub fn MyCanvas() -> impl IntoView {
@@ -143,7 +118,7 @@ fn render_preview(
 ///
 ///     let handle = use_canvas_interaction(
 ///         canvas_ref,
-///         move |result: TransformResult| {
+///         move |result: PixelTransform| {
 ///             // Convert pixel transform to domain coordinates
 ///             // Trigger expensive full re-render
 ///         },
@@ -168,7 +143,7 @@ pub fn use_canvas_interaction<F>(
     on_interaction_end: F,
 ) -> InteractionHandle
 where
-    F: Fn(TransformResult) + 'static,
+    F: Fn(PixelTransform) + 'static,
 {
     // Interaction state signals
     let is_dragging = create_rw_signal(false);
@@ -188,7 +163,7 @@ where
     let timeout_id = store_value::<Option<i32>>(None);
 
     // Transformation sequence - the source of truth for final result
-    let transform_sequence = store_value::<Vec<Transform>>(Vec::new());
+    let transform_sequence = store_value::<Vec<AffinePrimitive>>(Vec::new());
 
     // Store canvas_ref for multiple closures
     let canvas_ref_stored = store_value(canvas_ref);
@@ -248,7 +223,7 @@ where
         }
     };
 
-    // Stop interaction handler - builds TransformResult and fires callback
+    // Stop interaction handler - builds PixelTransform and fires callback
     let on_interaction_end = store_value(on_interaction_end);
     let stop_interaction = move || {
         // Don't stop if still dragging (use get_untracked since we're in a timeout callback)
@@ -269,7 +244,7 @@ where
             sequence
         )));
 
-        let composed_matrix: Mat3 = compose_affine_transformations(sequence);
+        let composed_matrix: PixelMat3 = compose_affine_transformations(sequence);
 
         // Extract center-relative offset and zoom from the composed matrix
         // The matrix is in the form: [[zoom, 0, offset_x], [0, zoom, offset_y], [0, 0, 1]]
@@ -300,7 +275,7 @@ where
                 (absolute_offset_x, absolute_offset_y)
             };
 
-        let result = TransformResult {
+        let result = PixelTransform {
             offset_x: center_relative_x,
             offset_y: center_relative_y,
             zoom_factor,
@@ -391,7 +366,7 @@ where
         // Add drag transformation to sequence (if there was actual movement)
         if current.0.abs() > 0.01 || current.1.abs() > 0.01 {
             transform_sequence.update_value(|seq| {
-                seq.push(Transform::Translate {
+                seq.push(AffinePrimitive::Translate {
                     dx: current.0,
                     dy: current.1,
                 });
@@ -445,7 +420,7 @@ where
             // The zoom is centered around the mouse position
             // Optimization: if the last transform is a scale at the same point, combine them
             transform_sequence.update_value(|seq| {
-                if let Some(Transform::Scale {
+                if let Some(AffinePrimitive::Scale {
                     factor: last_factor,
                     center_x: last_cx,
                     center_y: last_cy,
@@ -456,7 +431,7 @@ where
                         // Combine: multiply the factors together
                         let combined_factor = last_factor * zoom_multiplier;
                         seq.pop(); // Remove last scale
-                        seq.push(Transform::Scale {
+                        seq.push(AffinePrimitive::Scale {
                             factor: combined_factor,
                             center_x: mouse_x,
                             center_y: mouse_y,
@@ -465,7 +440,7 @@ where
                     }
                 }
                 // Otherwise, add new scale transform
-                seq.push(Transform::Scale {
+                seq.push(AffinePrimitive::Scale {
                     factor: zoom_multiplier,
                     center_x: mouse_x,
                     center_y: mouse_y,
@@ -529,7 +504,7 @@ where
 
             // Add scale transformation to sequence
             transform_sequence.update_value(|seq| {
-                seq.push(Transform::Scale {
+                seq.push(AffinePrimitive::Scale {
                     factor: zoom_multiplier,
                     center_x: mouse_x,
                     center_y: mouse_y,
@@ -701,46 +676,35 @@ mod tests {
 
     #[test]
     fn test_identity_matrix() {
-        let matrix = build_transform_matrix((0.0, 0.0), 1.0, None);
-        assert_eq!(matrix, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0],]);
+        let matrix = PixelMat3::from_scale_and_offset(1.0, (0.0, 0.0), None);
+        assert_eq!(matrix, PixelMat3::identity());
     }
 
     #[test]
     fn test_translation_matrix() {
-        let matrix = build_transform_matrix((100.0, 50.0), 1.0, None);
-        assert_eq!(
-            matrix,
-            [[1.0, 0.0, 100.0], [0.0, 1.0, 50.0], [0.0, 0.0, 1.0],]
-        );
+        let matrix = PixelMat3::from_scale_and_offset(1.0, (100.0, 50.0), None);
+        assert_eq!(matrix, PixelMat3::translation(100.0, 50.0));
     }
 
     #[test]
     fn test_zoom_matrix_no_center() {
-        let matrix = build_transform_matrix((0.0, 0.0), 2.0, None);
-        assert_eq!(matrix, [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 1.0],]);
+        let matrix = PixelMat3::from_scale_and_offset(2.0, (0.0, 0.0), None);
+        assert_eq!(matrix, PixelMat3::scale(2.0));
     }
 
     #[test]
     fn test_zoom_matrix_with_center() {
-        let matrix = build_transform_matrix((0.0, 0.0), 2.0, Some((100.0, 100.0)));
-        // Zoom 2x centered at (100, 100)
-        // Translation should be 100*(1-2) = -100 for both x and y
-        assert_eq!(
-            matrix,
-            [[2.0, 0.0, -100.0], [0.0, 2.0, -100.0], [0.0, 0.0, 1.0],]
-        );
+        let matrix = PixelMat3::from_scale_and_offset(2.0, (0.0, 0.0), Some((100.0, 100.0)));
+        assert_eq!(matrix, PixelMat3::scale_around(2.0, 100.0, 100.0));
     }
 
     #[test]
     fn test_combined_transform() {
-        let matrix = build_transform_matrix((50.0, 30.0), 1.5, Some((200.0, 150.0)));
-        // offset + center*(1-zoom)
-        // x: 50 + 200*(1-1.5) = 50 + 200*(-0.5) = 50 - 100 = -50
-        // y: 30 + 150*(1-1.5) = 30 + 150*(-0.5) = 30 - 75 = -45
-        assert_eq!(
-            matrix,
-            [[1.5, 0.0, -50.0], [0.0, 1.5, -45.0], [0.0, 0.0, 1.0],]
-        );
+        // scale 1.5x around (200, 150), then translate by (50, 30)
+        let matrix = PixelMat3::from_scale_and_offset(1.5, (50.0, 30.0), Some((200.0, 150.0)));
+        let expected = PixelMat3::translation(50.0, 30.0)
+            .multiply(&PixelMat3::scale_around(1.5, 200.0, 150.0));
+        assert_eq!(matrix, expected);
     }
 }
 
