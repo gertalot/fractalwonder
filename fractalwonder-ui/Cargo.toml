@@ -7,15 +7,24 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+fractalwonder-core = { workspace = true }
 leptos = { workspace = true }
 leptos_meta = { workspace = true }
+leptos-use = { workspace = true }
 wasm-bindgen = { workspace = true }
 web-sys = { workspace = true, features = [
+    "AddEventListenerOptions",
     "CanvasRenderingContext2d",
+    "ContextAttributes2d",
     "Document",
+    "DomRect",
     "Element",
+    "Event",
     "HtmlCanvasElement",
     "ImageData",
+    "MouseEvent",
+    "PointerEvent",
+    "WheelEvent",
     "Window",
 ] }
 console_error_panic_hook = { workspace = true }

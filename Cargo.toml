@@ -14,6 +14,7 @@ dashu-float = "0.4"
 # Leptos framework
 leptos = { version = "0.6", features = ["csr"] }
 leptos_meta = { version = "0.6", features = ["csr"] }
+leptos-use = "0.13"
 
 # WASM/JS bindings
 wasm-bindgen = "0.2"

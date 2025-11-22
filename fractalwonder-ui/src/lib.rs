@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 
 mod app;
 mod components;
+pub mod hooks;
 use app::App;
 
 #[wasm_bindgen(start)]
