@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// - `height`: Visible height in fractal space
 ///
 /// At extreme zoom depths (10^2000), width/height are ~10^-2000.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Viewport {
     pub center: (BigFloat, BigFloat),
     pub width: BigFloat,
