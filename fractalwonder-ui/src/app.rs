@@ -1,5 +1,5 @@
 // fractalwonder-ui/src/app.rs
-use fractalwonder_core::{calculate_precision_bits, fit_viewport_to_canvas};
+use fractalwonder_core::{calculate_precision_bits, fit_viewport_to_canvas, Viewport};
 use leptos::*;
 
 use crate::components::{InteractiveCanvas, UIPanel};
@@ -13,32 +13,36 @@ pub fn App() -> impl IntoView {
     // Current fractal configuration
     let (config, _set_config) = create_signal(default_config());
 
-    // Viewport signal - computed from config and canvas size
-    let viewport = create_memo(move |_| {
-        let cfg = config.get();
+    // Viewport signal - now writable for interaction updates
+    let (viewport, set_viewport) = create_signal(Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64));
+
+    // Initialize viewport when canvas size becomes available
+    create_effect(move |prev_size| {
         let size = canvas_size.get();
+        let cfg = config.get();
 
-        // Handle zero-sized canvas (not yet measured)
+        // Only initialize once when size becomes non-zero
         if size.0 == 0 || size.1 == 0 {
-            return cfg.default_viewport(64);
+            return size;
         }
 
-        // Create natural viewport at initial precision (64 bits = f64 equivalent, sufficient up to ~10^14 zoom)
-        let natural = cfg.default_viewport(64);
+        // If this is the first time we have a valid size, initialize viewport
+        if prev_size.map(|(w, h)| w == 0 || h == 0).unwrap_or(true) {
+            let natural = cfg.default_viewport(64);
+            let fitted = fit_viewport_to_canvas(&natural, size);
+            let required_bits = calculate_precision_bits(&fitted, size);
 
-        // Fit to canvas aspect ratio
-        let fitted = fit_viewport_to_canvas(&natural, size);
+            let final_viewport = if required_bits > fitted.precision_bits() {
+                let natural_high_prec = cfg.default_viewport(required_bits);
+                fit_viewport_to_canvas(&natural_high_prec, size)
+            } else {
+                fitted
+            };
 
-        // Calculate required precision
-        let required_bits = calculate_precision_bits(&fitted, size);
-
-        // If we need more precision, recreate with correct precision
-        if required_bits > fitted.precision_bits() {
-            let natural_high_prec = cfg.default_viewport(required_bits);
-            fit_viewport_to_canvas(&natural_high_prec, size)
-        } else {
-            fitted
+            set_viewport.set(final_viewport);
         }
+
+        size
     });
 
     // Precision bits - derived from viewport and canvas
@@ -47,7 +51,7 @@ pub fn App() -> impl IntoView {
         let size = canvas_size.get();
 
         if size.0 == 0 || size.1 == 0 {
-            64 // Default (f64 equivalent)
+            64
         } else {
             calculate_precision_bits(&vp, size)
         }
@@ -57,8 +61,16 @@ pub fn App() -> impl IntoView {
         set_canvas_size.set(size);
     });
 
+    let on_viewport_change = Callback::new(move |new_vp: Viewport| {
+        set_viewport.set(new_vp);
+    });
+
     view! {
-        <InteractiveCanvas on_resize=on_resize />
+        <InteractiveCanvas
+            viewport=viewport.into()
+            on_viewport_change=on_viewport_change
+            on_resize=on_resize
+        />
         <UIPanel
             canvas_size=canvas_size.into()
             viewport=viewport.into()

@@ -1,24 +1,21 @@
 // fractalwonder-ui/src/components/interactive_canvas.rs
+use fractalwonder_core::{apply_pixel_transform_to_viewport, pixel_to_fractal, Viewport};
 use leptos::*;
 use leptos_use::use_window_size;
 use wasm_bindgen::Clamped;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
-/// Calculate gradient color for a pixel position.
-/// R increases left-to-right, G increases top-to-bottom, B constant at 128.
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-fn gradient_color(x: u32, y: u32, width: u32, height: u32) -> [u8; 4] {
-    let r = ((x as f64 / width as f64) * 255.0) as u8;
-    let g = ((y as f64 / height as f64) * 255.0) as u8;
-    let b = 128u8;
-    let a = 255u8;
-    [r, g, b, a]
-}
+use crate::hooks::use_canvas_interaction;
+use crate::rendering::{calculate_tick_params, test_pattern_color};
 
 #[component]
 pub fn InteractiveCanvas(
-    /// Callback fired when canvas dimensions change, receives (width, height)
+    /// Current viewport in fractal space (read-only)
+    viewport: Signal<Viewport>,
+    /// Callback fired when user interaction ends with a new viewport
+    on_viewport_change: Callback<Viewport>,
+    /// Callback fired when canvas dimensions change
     #[prop(optional)]
     on_resize: Option<Callback<(u32, u32)>>,
 ) -> impl IntoView {
@@ -27,92 +24,102 @@ pub fn InteractiveCanvas(
     // Reactive window size - automatically updates on resize
     let window_size = use_window_size();
 
+    // Store canvas size for use in callbacks
+    let canvas_size = create_rw_signal((0u32, 0u32));
+
+    // Wire up interaction hook
+    let _interaction = use_canvas_interaction(canvas_ref, move |transform| {
+        let current_vp = viewport.get_untracked();
+        let size = canvas_size.get_untracked();
+
+        if size.0 > 0 && size.1 > 0 {
+            let precision = current_vp.precision_bits();
+            let new_vp = apply_pixel_transform_to_viewport(&current_vp, &transform, size, precision);
+            on_viewport_change.call(new_vp);
+        }
+    });
+
+    // Effect to handle resize
     create_effect(move |_| {
         let Some(canvas_el) = canvas_ref.get() else {
             return;
         };
         let canvas = canvas_el.unchecked_ref::<HtmlCanvasElement>();
 
-        // Get reactive window dimensions (triggers effect on resize)
         let width = window_size.width.get() as u32;
         let height = window_size.height.get() as u32;
 
-        // Skip if dimensions are zero (not yet measured)
         if width == 0 || height == 0 {
             return;
         }
 
-        // Set canvas dimensions to fill viewport
+        // Update canvas dimensions
         canvas.set_width(width);
         canvas.set_height(height);
+
+        // Store for interaction callback
+        canvas_size.set((width, height));
 
         // Notify parent of dimensions
         if let Some(callback) = on_resize {
             callback.call((width, height));
         }
+    });
 
-        // Get 2D rendering context
+    // Render effect - redraws when viewport changes
+    create_effect(move |_| {
+        let vp = viewport.get();
+        let size = canvas_size.get();
+
+        if size.0 == 0 || size.1 == 0 {
+            return;
+        }
+
+        let Some(canvas_el) = canvas_ref.get() else {
+            return;
+        };
+        let canvas = canvas_el.unchecked_ref::<HtmlCanvasElement>();
+
         let ctx = canvas
             .get_context("2d")
             .unwrap()
             .unwrap()
             .unchecked_into::<CanvasRenderingContext2d>();
 
-        // Create pixel buffer and fill with gradient
+        let (width, height) = size;
+        let precision = vp.precision_bits();
+
+        // Calculate tick parameters from viewport width
+        let tick_params = calculate_tick_params(vp.width.to_f64());
+
+        // Create pixel buffer
         let mut data = vec![0u8; (width * height * 4) as usize];
-        for y in 0..height {
-            for x in 0..width {
-                let idx = ((y * width + x) * 4) as usize;
-                let [r, g, b, a] = gradient_color(x, y, width, height);
-                data[idx] = r;
-                data[idx + 1] = g;
-                data[idx + 2] = b;
-                data[idx + 3] = a;
+
+        for py in 0..height {
+            for px in 0..width {
+                // Convert pixel to fractal coordinates
+                let (fx, fy) = pixel_to_fractal(px as f64, py as f64, &vp, size, precision);
+
+                // Compute color (using f64 for the pattern - ok for visualization)
+                let color = test_pattern_color(fx.to_f64(), fy.to_f64(), &tick_params);
+
+                let idx = ((py * width + px) * 4) as usize;
+                data[idx] = color[0];
+                data[idx + 1] = color[1];
+                data[idx + 2] = color[2];
+                data[idx + 3] = color[3];
             }
         }
 
-        // Create ImageData and draw to canvas
-        let image_data = ImageData::new_with_u8_clamped_array_and_sh(Clamped(&data), width, height)
-            .expect("should create ImageData");
+        // Draw to canvas
+        let image_data =
+            ImageData::new_with_u8_clamped_array_and_sh(Clamped(&data), width, height)
+                .expect("should create ImageData");
         ctx.put_image_data(&image_data, 0.0, 0.0)
             .expect("should put image data");
     });
 
     view! {
         <canvas node_ref=canvas_ref class="block" />
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn gradient_top_left_is_green_blue() {
-        let [r, g, b, a] = gradient_color(0, 0, 100, 100);
-        assert_eq!(r, 0, "top-left red should be 0");
-        assert_eq!(g, 0, "top-left green should be 0");
-        assert_eq!(b, 128, "blue should be constant 128");
-        assert_eq!(a, 255, "alpha should be 255");
-    }
-
-    #[test]
-    fn gradient_bottom_right_is_red_green_blue() {
-        let [r, g, b, a] = gradient_color(99, 99, 100, 100);
-        // 99/100 * 255 = 252.45 -> 252
-        assert_eq!(r, 252, "bottom-right red should be ~252");
-        assert_eq!(g, 252, "bottom-right green should be ~252");
-        assert_eq!(b, 128, "blue should be constant 128");
-        assert_eq!(a, 255, "alpha should be 255");
-    }
-
-    #[test]
-    fn gradient_center_is_half_intensity() {
-        let [r, g, b, a] = gradient_color(50, 50, 100, 100);
-        // 50/100 * 255 = 127.5 -> 127
-        assert_eq!(r, 127, "center red should be ~127");
-        assert_eq!(g, 127, "center green should be ~127");
-        assert_eq!(b, 128, "blue should be constant 128");
-        assert_eq!(a, 255, "alpha should be 255");
     }
 }
