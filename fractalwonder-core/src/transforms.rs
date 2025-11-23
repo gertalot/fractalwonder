@@ -314,6 +314,55 @@ pub fn calculate_aspect_ratio(canvas_width: u32, canvas_height: u32) -> f64 {
     canvas_width as f64 / canvas_height as f64
 }
 
+/// Expand viewport to match canvas aspect ratio.
+///
+/// The viewport is expanded (never shrunk) so the natural bounds remain
+/// fully visible regardless of canvas shape. Center stays fixed.
+///
+/// # Arguments
+/// * `natural_viewport` - The viewport with natural fractal bounds
+/// * `canvas_size` - Canvas dimensions in pixels (width, height)
+///
+/// # Returns
+/// A new viewport with dimensions adjusted to match canvas aspect ratio.
+pub fn fit_viewport_to_canvas(natural_viewport: &Viewport, canvas_size: (u32, u32)) -> Viewport {
+    let canvas_aspect = canvas_size.0 as f64 / canvas_size.1 as f64;
+
+    // Safe at any zoom: ratio of similar-magnitude values gives reasonable f64
+    let viewport_aspect = natural_viewport
+        .width
+        .div(&natural_viewport.height)
+        .to_f64();
+
+    let precision = natural_viewport.precision_bits();
+
+    if canvas_aspect > viewport_aspect {
+        // Canvas wider than viewport: expand width
+        // new_width = height * canvas_aspect
+        let aspect = BigFloat::with_precision(canvas_aspect, precision);
+        let new_width = natural_viewport.height.mul(&aspect);
+
+        Viewport::with_bigfloat(
+            natural_viewport.center.0.clone(),
+            natural_viewport.center.1.clone(),
+            new_width,
+            natural_viewport.height.clone(),
+        )
+    } else {
+        // Canvas taller than viewport: expand height
+        // new_height = width / canvas_aspect
+        let aspect = BigFloat::with_precision(canvas_aspect, precision);
+        let new_height = natural_viewport.width.div(&aspect);
+
+        Viewport::with_bigfloat(
+            natural_viewport.center.0.clone(),
+            natural_viewport.center.1.clone(),
+            natural_viewport.width.clone(),
+            new_height,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -832,5 +881,58 @@ mod tests {
         assert!((calculate_aspect_ratio(1920, 1080) - 1.7777).abs() < 0.001);
         assert!((calculate_aspect_ratio(1080, 1920) - 0.5625).abs() < 0.001);
         assert_eq!(calculate_aspect_ratio(1000, 1000), 1.0);
+    }
+
+    // ============================================================================
+    // fit_viewport_to_canvas tests
+    // ============================================================================
+
+    #[test]
+    fn fit_viewport_expands_width_for_landscape_canvas() {
+        // Square viewport (4x4) on landscape canvas (1920x1080)
+        let natural = Viewport::from_f64(0.0, 0.0, 4.0, 4.0, 128);
+        let fitted = fit_viewport_to_canvas(&natural, (1920, 1080));
+
+        // Width should be expanded: new_width = height * (1920/1080) ≈ 7.11
+        assert!(fitted.width.to_f64() > 4.0);
+        assert!((fitted.height.to_f64() - 4.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn fit_viewport_expands_height_for_portrait_canvas() {
+        // Square viewport (4x4) on portrait canvas (1080x1920)
+        let natural = Viewport::from_f64(0.0, 0.0, 4.0, 4.0, 128);
+        let fitted = fit_viewport_to_canvas(&natural, (1080, 1920));
+
+        // Height should be expanded: new_height = width / (1080/1920) ≈ 7.11
+        assert!((fitted.width.to_f64() - 4.0).abs() < 0.001);
+        assert!(fitted.height.to_f64() > 4.0);
+    }
+
+    #[test]
+    fn fit_viewport_preserves_center() {
+        let natural = Viewport::from_f64(-0.5, 0.3, 4.0, 4.0, 128);
+        let fitted = fit_viewport_to_canvas(&natural, (1920, 1080));
+
+        assert_eq!(fitted.center.0, natural.center.0);
+        assert_eq!(fitted.center.1, natural.center.1);
+    }
+
+    #[test]
+    fn fit_viewport_preserves_precision() {
+        let natural = Viewport::from_f64(0.0, 0.0, 4.0, 4.0, 512);
+        let fitted = fit_viewport_to_canvas(&natural, (1920, 1080));
+
+        assert_eq!(fitted.precision_bits(), 512);
+    }
+
+    #[test]
+    fn fit_viewport_unchanged_for_matching_aspect() {
+        // Viewport with same aspect as canvas
+        let natural = Viewport::from_f64(0.0, 0.0, 16.0, 9.0, 128);
+        let fitted = fit_viewport_to_canvas(&natural, (1920, 1080)); // 16:9
+
+        assert!((fitted.width.to_f64() - 16.0).abs() < 0.001);
+        assert!((fitted.height.to_f64() - 9.0).abs() < 0.001);
     }
 }
