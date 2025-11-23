@@ -6,9 +6,12 @@ use serde::{Deserialize, Serialize};
 /// Estimate log2 from BINARY (base-2) string representation from FBig::to_string().
 /// FBig outputs in base-2 format like "0.00000...001..." where zeros are binary zeros.
 fn estimate_log2_from_binary_string(s: &str) -> f64 {
+    // Strip leading sign if present (log2 of absolute value)
+    let unsigned_str = s.strip_prefix('-').unwrap_or(s);
+
     // Handle small values: "0.000...001..."
     // Count leading zeros after decimal point - each zero is one power of 2
-    if let Some(after_decimal) = s.strip_prefix("0.") {
+    if let Some(after_decimal) = unsigned_str.strip_prefix("0.") {
         let leading_zeros = after_decimal.chars().take_while(|&c| c == '0').count();
         // In binary: 0.000...001 with n zeros = 2^-(n+1)
         // log2(2^-(n+1)) = -(n+1)
@@ -17,8 +20,8 @@ fn estimate_log2_from_binary_string(s: &str) -> f64 {
 
     // Handle large values: count digits before decimal point
     // In binary, n digits before decimal = 2^(n-1) magnitude
-    if let Some(dot_pos) = s.find('.') {
-        let integer_part = &s[..dot_pos];
+    if let Some(dot_pos) = unsigned_str.find('.') {
+        let integer_part = &unsigned_str[..dot_pos];
         // Remove any sign
         let digits: String = integer_part
             .chars()
@@ -29,7 +32,7 @@ fn estimate_log2_from_binary_string(s: &str) -> f64 {
         }
     } else {
         // No decimal point - count all binary digits
-        let digits: String = s.chars().filter(|c| *c == '0' || *c == '1').collect();
+        let digits: String = unsigned_str.chars().filter(|c| *c == '0' || *c == '1').collect();
         if !digits.is_empty() {
             return (digits.len() - 1) as f64;
         }
@@ -455,5 +458,27 @@ mod tests {
         let val = BigFloat::with_precision(1.0, 64);
         let log2 = val.log2_approx();
         assert!(log2.abs() < 0.1);
+    }
+
+    #[test]
+    fn log2_approx_returns_neg_infinity_for_zero() {
+        let val = BigFloat::with_precision(0.0, 64);
+        let log2 = val.log2_approx();
+        assert!(log2 == f64::NEG_INFINITY);
+    }
+
+    #[test]
+    fn log2_approx_handles_negative_input() {
+        let val = BigFloat::with_precision(-8.0, 64);
+        let log2 = val.log2_approx();
+        assert!((log2 - 3.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn log2_approx_works_with_negative_extreme_values() {
+        let val = BigFloat::from_string("-1e-500", 7000).unwrap();
+        let log2 = val.log2_approx();
+        assert!(log2 < -1600.0);
+        assert!(log2 > -1700.0);
     }
 }
