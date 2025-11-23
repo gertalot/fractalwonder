@@ -34,7 +34,8 @@ pub fn InteractiveCanvas(
 
         if size.0 > 0 && size.1 > 0 {
             let precision = current_vp.precision_bits();
-            let new_vp = apply_pixel_transform_to_viewport(&current_vp, &transform, size, precision);
+            let new_vp =
+                apply_pixel_transform_to_viewport(&current_vp, &transform, size, precision);
             on_viewport_change.call(new_vp);
         }
     });
@@ -112,9 +113,8 @@ pub fn InteractiveCanvas(
         }
 
         // Draw to canvas
-        let image_data =
-            ImageData::new_with_u8_clamped_array_and_sh(Clamped(&data), width, height)
-                .expect("should create ImageData");
+        let image_data = ImageData::new_with_u8_clamped_array_and_sh(Clamped(&data), width, height)
+            .expect("should create ImageData");
         ctx.put_image_data(&image_data, 0.0, 0.0)
             .expect("should put image data");
     });
