@@ -3,6 +3,42 @@ use dashu_float::ops::SquareRoot;
 use dashu_float::{DBig, FBig};
 use serde::{Deserialize, Serialize};
 
+/// Estimate log2 from BINARY (base-2) string representation from FBig::to_string().
+/// FBig outputs in base-2 format like "0.00000...001..." where zeros are binary zeros.
+fn estimate_log2_from_binary_string(s: &str) -> f64 {
+    // Handle small values: "0.000...001..."
+    // Count leading zeros after decimal point - each zero is one power of 2
+    if let Some(after_decimal) = s.strip_prefix("0.") {
+        let leading_zeros = after_decimal.chars().take_while(|&c| c == '0').count();
+        // In binary: 0.000...001 with n zeros = 2^-(n+1)
+        // log2(2^-(n+1)) = -(n+1)
+        return -(leading_zeros as f64 + 1.0);
+    }
+
+    // Handle large values: count digits before decimal point
+    // In binary, n digits before decimal = 2^(n-1) magnitude
+    if let Some(dot_pos) = s.find('.') {
+        let integer_part = &s[..dot_pos];
+        // Remove any sign
+        let digits: String = integer_part
+            .chars()
+            .filter(|c| *c == '0' || *c == '1')
+            .collect();
+        if !digits.is_empty() {
+            return (digits.len() - 1) as f64;
+        }
+    } else {
+        // No decimal point - count all binary digits
+        let digits: String = s.chars().filter(|c| *c == '0' || *c == '1').collect();
+        if !digits.is_empty() {
+            return (digits.len() - 1) as f64;
+        }
+    }
+
+    // Last resort
+    0.0
+}
+
 /// Arbitrary precision floating point with explicit precision enforcement
 ///
 /// Uses f64 internally when precision_bits <= 64, FBig otherwise.
@@ -213,6 +249,44 @@ impl BigFloat {
         }
     }
 
+    /// Approximate log2 using exponent extraction.
+    /// Accurate to ~1 bit, sufficient for precision calculation.
+    /// Returns f64::NEG_INFINITY for zero values.
+    pub fn log2_approx(&self) -> f64 {
+        match &self.value {
+            BigFloatValue::F64(v) => {
+                if *v == 0.0 {
+                    f64::NEG_INFINITY
+                } else {
+                    v.abs().log2()
+                }
+            }
+            BigFloatValue::Arbitrary(v) => {
+                // FBig uses base-2 representation internally
+                // log2(value) ≈ exponent (crude but sufficient for precision calc)
+                // For more accuracy, we convert to f64 if possible, else estimate from exponent
+                let f64_val = v.to_f64().value();
+                if f64_val == 0.0 {
+                    // Either actually zero, or underflowed to zero
+                    // FBig::to_string() is base-2, so we need to count BINARY zeros
+                    // and NOT multiply by log2(10)
+                    let s = v.to_string();
+                    if s == "0" || s == "0.0" {
+                        return f64::NEG_INFINITY;
+                    }
+                    // Very small but not zero - estimate from binary string
+                    estimate_log2_from_binary_string(&s)
+                } else if f64_val.is_finite() {
+                    f64_val.abs().log2()
+                } else {
+                    // Value too extreme for f64, estimate from binary string representation
+                    let s = v.to_string();
+                    estimate_log2_from_binary_string(&s)
+                }
+            }
+        }
+    }
+
     /// Convert to FBig for arbitrary precision operations
     fn to_fbig(&self) -> FBig {
         match &self.value {
@@ -350,5 +424,36 @@ mod tests {
         let neg = BigFloat::from_string("-1e-500", 7000).unwrap();
         let pos = BigFloat::from_string("1e-500", 7000).unwrap();
         assert_eq!(neg.abs(), pos);
+    }
+
+    #[test]
+    fn log2_approx_returns_correct_value_for_powers_of_two() {
+        let val = BigFloat::with_precision(8.0, 64); // 2^3
+        let log2 = val.log2_approx();
+        assert!((log2 - 3.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn log2_approx_returns_negative_for_small_values() {
+        let val = BigFloat::with_precision(0.125, 64); // 2^-3
+        let log2 = val.log2_approx();
+        assert!((log2 - (-3.0)).abs() < 0.1);
+    }
+
+    #[test]
+    fn log2_approx_works_with_extreme_values() {
+        // 1e-500 ≈ 2^-1661 (since log2(10) ≈ 3.322)
+        let val = BigFloat::from_string("1e-500", 7000).unwrap();
+        let log2 = val.log2_approx();
+        // Expected: -500 * 3.322 ≈ -1661
+        assert!(log2 < -1600.0);
+        assert!(log2 > -1700.0);
+    }
+
+    #[test]
+    fn log2_approx_handles_values_near_one() {
+        let val = BigFloat::with_precision(1.0, 64);
+        let log2 = val.log2_approx();
+        assert!(log2.abs() < 0.1);
     }
 }
