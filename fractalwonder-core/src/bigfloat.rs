@@ -1,4 +1,4 @@
-use dashu_base::Approximation;
+use dashu_base::{Abs, Approximation};
 use dashu_float::ops::SquareRoot;
 use dashu_float::{DBig, FBig};
 use serde::{Deserialize, Serialize};
@@ -199,6 +199,20 @@ impl BigFloat {
         }
     }
 
+    /// Absolute value
+    pub fn abs(&self) -> Self {
+        match &self.value {
+            BigFloatValue::F64(v) => BigFloat {
+                value: BigFloatValue::F64(v.abs()),
+                precision_bits: self.precision_bits,
+            },
+            BigFloatValue::Arbitrary(v) => BigFloat {
+                value: BigFloatValue::Arbitrary(v.clone().abs()),
+                precision_bits: self.precision_bits,
+            },
+        }
+    }
+
     /// Convert to FBig for arbitrary precision operations
     fn to_fbig(&self) -> FBig {
         match &self.value {
@@ -303,5 +317,38 @@ impl<'de> Deserialize<'de> for BigFloat {
             value,
             precision_bits: serde.precision_bits,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn abs_returns_positive_for_negative_value() {
+        let neg = BigFloat::with_precision(-5.0, 64);
+        let result = neg.abs();
+        assert_eq!(result.to_f64(), 5.0);
+    }
+
+    #[test]
+    fn abs_returns_same_for_positive_value() {
+        let pos = BigFloat::with_precision(3.0, 64);
+        let result = pos.abs();
+        assert_eq!(result.to_f64(), 3.0);
+    }
+
+    #[test]
+    fn abs_preserves_precision() {
+        let neg = BigFloat::with_precision(-5.0, 256);
+        let result = neg.abs();
+        assert_eq!(result.precision_bits(), 256);
+    }
+
+    #[test]
+    fn abs_works_with_arbitrary_precision() {
+        let neg = BigFloat::from_string("-1e-500", 7000).unwrap();
+        let pos = BigFloat::from_string("1e-500", 7000).unwrap();
+        assert_eq!(neg.abs(), pos);
     }
 }
