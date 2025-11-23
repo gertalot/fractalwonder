@@ -14,6 +14,14 @@ pub fn distance_to_nearest_multiple(value: f64, interval: f64) -> f64 {
     remainder.min(interval - remainder)
 }
 
+/// Determine if a point is on a "light" or "dark" checkerboard cell.
+/// Cells are aligned to major tick grid.
+pub fn is_light_cell(fx: f64, fy: f64, major_spacing: f64) -> bool {
+    let cell_x = (fx / major_spacing).floor() as i64;
+    let cell_y = (fy / major_spacing).floor() as i64;
+    (cell_x + cell_y) % 2 == 0
+}
+
 /// Tick spacing parameters for the ruler test pattern.
 /// All values derived from major_spacing.
 #[derive(Debug, Clone, PartialEq)]
@@ -102,5 +110,20 @@ mod tests {
     fn distance_to_nearest_multiple_negative_values() {
         assert!((distance_to_nearest_multiple(-1.0, 1.0) - 0.0).abs() < 0.0001);
         assert!((distance_to_nearest_multiple(-0.3, 1.0) - 0.3).abs() < 0.0001);
+    }
+
+    #[test]
+    fn checkerboard_alternates_at_integer_boundaries() {
+        // With major_spacing=1.0, cells at (0.5, 0.5) and (1.5, 0.5) should differ
+        assert!(is_light_cell(0.5, 0.5, 1.0));
+        assert!(!is_light_cell(1.5, 0.5, 1.0));
+        assert!(!is_light_cell(0.5, 1.5, 1.0));
+        assert!(is_light_cell(1.5, 1.5, 1.0));
+    }
+
+    #[test]
+    fn checkerboard_works_with_negative_coords() {
+        assert!(is_light_cell(-0.5, -0.5, 1.0));
+        assert!(!is_light_cell(-1.5, -0.5, 1.0));
     }
 }
