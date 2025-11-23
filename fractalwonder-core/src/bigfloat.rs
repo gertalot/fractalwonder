@@ -32,7 +32,10 @@ fn estimate_log2_from_binary_string(s: &str) -> f64 {
         }
     } else {
         // No decimal point - count all binary digits
-        let digits: String = unsigned_str.chars().filter(|c| *c == '0' || *c == '1').collect();
+        let digits: String = unsigned_str
+            .chars()
+            .filter(|c| *c == '0' || *c == '1')
+            .collect();
         if !digits.is_empty() {
             return (digits.len() - 1) as f64;
         }
