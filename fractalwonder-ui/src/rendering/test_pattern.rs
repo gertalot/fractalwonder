@@ -49,4 +49,29 @@ mod tests {
         assert!((params.medium_spacing - 0.5).abs() < 0.001);
         assert!((params.minor_spacing - 0.1).abs() < 0.001);
     }
+
+    #[test]
+    fn tick_spacing_at_width_0_04() {
+        let params = calculate_tick_params(0.04);
+        assert!((params.major_spacing - 0.01).abs() < 0.0001);
+    }
+
+    #[test]
+    fn tick_spacing_at_width_40() {
+        let params = calculate_tick_params(40.0);
+        assert!((params.major_spacing - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn tick_spacing_at_width_400() {
+        let params = calculate_tick_params(400.0);
+        assert!((params.major_spacing - 100.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn tick_thresholds_proportional_to_spacing() {
+        let params = calculate_tick_params(4.0);
+        assert!((params.major_threshold - params.major_spacing / 50.0).abs() < 0.0001);
+        assert!((params.axis_threshold - params.major_spacing / 100.0).abs() < 0.0001);
+    }
 }
