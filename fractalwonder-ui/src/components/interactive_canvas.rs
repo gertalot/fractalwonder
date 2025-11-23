@@ -1,5 +1,6 @@
 // fractalwonder-ui/src/components/interactive_canvas.rs
 use leptos::*;
+use leptos_use::use_window_size;
 use wasm_bindgen::Clamped;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
@@ -23,16 +24,25 @@ pub fn InteractiveCanvas(
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
+    // Reactive window size - automatically updates on resize
+    let window_size = use_window_size();
+
     create_effect(move |_| {
         let Some(canvas_el) = canvas_ref.get() else {
             return;
         };
         let canvas = canvas_el.unchecked_ref::<HtmlCanvasElement>();
 
+        // Get reactive window dimensions (triggers effect on resize)
+        let width = window_size.width.get() as u32;
+        let height = window_size.height.get() as u32;
+
+        // Skip if dimensions are zero (not yet measured)
+        if width == 0 || height == 0 {
+            return;
+        }
+
         // Set canvas dimensions to fill viewport
-        let window = web_sys::window().expect("should have window");
-        let width = window.inner_width().unwrap().as_f64().unwrap() as u32;
-        let height = window.inner_height().unwrap().as_f64().unwrap() as u32;
         canvas.set_width(width);
         canvas.set_height(height);
 
