@@ -2,6 +2,7 @@ use leptos::*;
 use wasm_bindgen::prelude::*;
 
 mod app;
+mod components;
 pub mod hooks;
 use app::App;
 
