@@ -20,11 +20,11 @@ pub fn App() -> impl IntoView {
 
         // Handle zero-sized canvas (not yet measured)
         if size.0 == 0 || size.1 == 0 {
-            return cfg.default_viewport(128);
+            return cfg.default_viewport(64);
         }
 
-        // Create natural viewport at initial precision
-        let natural = cfg.default_viewport(128);
+        // Create natural viewport at initial precision (64 bits = f64 equivalent, sufficient up to ~10^14 zoom)
+        let natural = cfg.default_viewport(64);
 
         // Fit to canvas aspect ratio
         let fitted = fit_viewport_to_canvas(&natural, size);
@@ -47,7 +47,7 @@ pub fn App() -> impl IntoView {
         let size = canvas_size.get();
 
         if size.0 == 0 || size.1 == 0 {
-            128 // Default
+            64 // Default (f64 equivalent)
         } else {
             calculate_precision_bits(&vp, size)
         }
