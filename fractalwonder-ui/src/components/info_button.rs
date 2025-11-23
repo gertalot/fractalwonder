@@ -22,9 +22,7 @@ fn GithubIcon() -> impl IntoView {
 }
 
 #[component]
-pub fn InfoButton() -> impl IntoView {
-    let (is_open, set_is_open) = create_signal(false);
-
+pub fn InfoButton(is_open: ReadSignal<bool>, set_is_open: WriteSignal<bool>) -> impl IntoView {
     view! {
         <div class="relative">
             <button

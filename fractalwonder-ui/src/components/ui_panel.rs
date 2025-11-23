@@ -23,6 +23,16 @@ pub fn UIPanel(
         set_is_hovering,
     } = use_ui_visibility();
 
+    // Info panel state - lifted here so we can prevent auto-hide when open
+    let (is_info_open, set_is_info_open) = create_signal(false);
+
+    // Prevent auto-hide when info panel is open
+    create_effect(move |_| {
+        if is_info_open.get() {
+            set_is_hovering.set(true);
+        }
+    });
+
     let opacity_class = move || {
         if is_visible.get() {
             "opacity-100"
@@ -38,12 +48,17 @@ pub fn UIPanel(
                 opacity_class()
             )
             on:mouseenter=move |_| set_is_hovering.set(true)
-            on:mouseleave=move |_| set_is_hovering.set(false)
+            on:mouseleave=move |_| {
+                // Don't set hovering to false if info panel is open
+                if !is_info_open.get() {
+                    set_is_hovering.set(false)
+                }
+            }
         >
             <div class="flex items-center justify-between px-4 py-3 bg-black/50 backdrop-blur-sm">
                 // Left section: info button
                 <div class="flex items-center space-x-2">
-                    <InfoButton />
+                    <InfoButton is_open=is_info_open set_is_open=set_is_info_open />
                 </div>
 
                 // Center section: fractal info
