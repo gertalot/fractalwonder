@@ -103,5 +103,4 @@ mod tests {
         assert_eq!(rect.width, 200);
         assert_eq!(rect.height, 150);
     }
-
 }
