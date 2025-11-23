@@ -20,9 +20,11 @@ Mandelbrot explorer capable of extreme deep zoom (10^2000+).
 
 ---
 
-## Iteration 1: Canvas with Static Pattern
+## ✅ Iteration 1: Canvas with Static Pattern
 
 **Goal:** Prove we can render pixels to a canvas
+
+**Status:** DONE
 
 **Steps:**
 1. Create `InteractiveCanvas` component with an HTML canvas element (reference `_archive/fractalwonder-ui/src/components/` for patterns)
