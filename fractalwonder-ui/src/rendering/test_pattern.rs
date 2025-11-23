@@ -62,6 +62,66 @@ pub fn calculate_tick_params(viewport_width_f64: f64) -> TickParams {
     }
 }
 
+/// Compute the RGBA color for a pixel at fractal coordinates (fx, fy).
+///
+/// Renders:
+/// 1. Checkerboard background aligned to major tick grid
+/// 2. Axis lines at x=0 and y=0
+/// 3. Tick marks at major/medium/minor intervals
+/// 4. Origin marker at (0,0)
+pub fn test_pattern_color(fx: f64, fy: f64, params: &TickParams) -> [u8; 4] {
+    // 1. Check for origin marker (highest priority)
+    let dist_to_origin = (fx * fx + fy * fy).sqrt();
+    if dist_to_origin < params.major_threshold * 2.0 {
+        return ORIGIN_COLOR;
+    }
+
+    // 2. Check for horizontal axis (y ~ 0)
+    let dist_to_x_axis = fy.abs();
+    if dist_to_x_axis < params.axis_threshold {
+        // Check for tick marks along x-axis
+        let dist_to_major = distance_to_nearest_multiple(fx, params.major_spacing);
+        if dist_to_major < params.major_threshold {
+            return MAJOR_TICK_COLOR;
+        }
+        let dist_to_medium = distance_to_nearest_multiple(fx, params.medium_spacing);
+        if dist_to_medium < params.medium_threshold {
+            return MEDIUM_TICK_COLOR;
+        }
+        let dist_to_minor = distance_to_nearest_multiple(fx, params.minor_spacing);
+        if dist_to_minor < params.minor_threshold {
+            return MINOR_TICK_COLOR;
+        }
+        return AXIS_COLOR;
+    }
+
+    // 3. Check for vertical axis (x ~ 0)
+    let dist_to_y_axis = fx.abs();
+    if dist_to_y_axis < params.axis_threshold {
+        // Check for tick marks along y-axis
+        let dist_to_major = distance_to_nearest_multiple(fy, params.major_spacing);
+        if dist_to_major < params.major_threshold {
+            return MAJOR_TICK_COLOR;
+        }
+        let dist_to_medium = distance_to_nearest_multiple(fy, params.medium_spacing);
+        if dist_to_medium < params.medium_threshold {
+            return MEDIUM_TICK_COLOR;
+        }
+        let dist_to_minor = distance_to_nearest_multiple(fy, params.minor_spacing);
+        if dist_to_minor < params.minor_threshold {
+            return MINOR_TICK_COLOR;
+        }
+        return AXIS_COLOR;
+    }
+
+    // 4. Checkerboard background
+    if is_light_cell(fx, fy, params.major_spacing) {
+        BACKGROUND_LIGHT
+    } else {
+        BACKGROUND_DARK
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,5 +185,35 @@ mod tests {
     fn checkerboard_works_with_negative_coords() {
         assert!(is_light_cell(-0.5, -0.5, 1.0));
         assert!(!is_light_cell(-1.5, -0.5, 1.0));
+    }
+
+    #[test]
+    fn test_pattern_axis_detected_near_zero() {
+        let params = calculate_tick_params(4.0);
+        // Point very close to y=0 axis should be axis color (or tick color)
+        let color = test_pattern_color(0.5, 0.001, &params);
+        // Should NOT be background color
+        assert_ne!(color, BACKGROUND_LIGHT);
+        assert_ne!(color, BACKGROUND_DARK);
+    }
+
+    #[test]
+    fn test_pattern_origin_is_red() {
+        let params = calculate_tick_params(4.0);
+        let color = test_pattern_color(0.0, 0.0, &params);
+        assert_eq!(color, ORIGIN_COLOR);
+    }
+
+    #[test]
+    fn test_pattern_background_alternates() {
+        let params = calculate_tick_params(4.0);
+        // Points away from axes should be background
+        let c1 = test_pattern_color(0.5, 0.5, &params);
+        let c2 = test_pattern_color(1.5, 0.5, &params);
+        // Should be different (checkerboard)
+        assert_ne!(c1, c2);
+        // Both should be background colors
+        assert!(c1 == BACKGROUND_LIGHT || c1 == BACKGROUND_DARK);
+        assert!(c2 == BACKGROUND_LIGHT || c2 == BACKGROUND_DARK);
     }
 }
