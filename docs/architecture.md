@@ -85,9 +85,9 @@ to represent and distinguish these tiny differences.
 **Key insight:** There is no separate "zoom" value. The viewport's `width` and `height` (BigFloat) *are* the
 zoom information. At 10^2000× magnification, the viewport dimensions might be `10^-2000` - far beyond f64 range.
 
-### Precision and Zoom Functions
+### Precision Calculation (`precision.rs`)
 
-These functions live in `fractalwonder-core` and are called by the UI layer before rendering:
+The precision calculation function lives in `fractalwonder-core/src/precision.rs`:
 
 ```rust
 /// Calculate required precision bits from viewport and canvas dimensions.
@@ -103,7 +103,14 @@ pub fn calculate_required_precision(viewport: &Viewport, canvas_size: (u32, u32)
     // For pixel_delta = 10^-N, we need ~N × 3.322 bits (log2(10) per decimal digit)
     // Plus safety margin for arithmetic operations
 }
+```
 
+### Zoom Level Functions (`transforms.rs`)
+
+The zoom level functions live in `fractalwonder-core/src/transforms.rs` alongside other
+geometry/coordinate functions:
+
+```rust
 /// Calculate zoom level for UI display.
 ///
 /// Compares current viewport width to a reference width (typically the fractal's

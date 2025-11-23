@@ -29,16 +29,6 @@ impl PixelRect {
     pub fn contains(&self, px: u32, py: u32) -> bool {
         px >= self.x && px < self.x + self.width && py >= self.y && py < self.y + self.height
     }
-
-    /// Create full-canvas rectangle
-    pub fn full_canvas(width: u32, height: u32) -> Self {
-        Self {
-            x: 0,
-            y: 0,
-            width,
-            height,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -114,13 +104,4 @@ mod tests {
         assert_eq!(rect.height, 150);
     }
 
-    #[test]
-    fn test_pixel_rect_full_canvas() {
-        let rect = PixelRect::full_canvas(1920, 1080);
-
-        assert_eq!(rect.x, 0);
-        assert_eq!(rect.y, 0);
-        assert_eq!(rect.width, 1920);
-        assert_eq!(rect.height, 1080);
-    }
 }
