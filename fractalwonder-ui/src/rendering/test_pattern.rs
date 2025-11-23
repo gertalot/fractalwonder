@@ -1,3 +1,19 @@
+/// Colors for the test pattern (RGBA)
+pub const BACKGROUND_LIGHT: [u8; 4] = [245, 245, 245, 255]; // Light grey
+pub const BACKGROUND_DARK: [u8; 4] = [255, 255, 255, 255]; // White
+pub const AXIS_COLOR: [u8; 4] = [100, 100, 100, 255]; // Dark grey
+pub const MAJOR_TICK_COLOR: [u8; 4] = [50, 50, 50, 255]; // Darker grey
+pub const MEDIUM_TICK_COLOR: [u8; 4] = [80, 80, 80, 255];
+pub const MINOR_TICK_COLOR: [u8; 4] = [120, 120, 120, 255];
+pub const ORIGIN_COLOR: [u8; 4] = [255, 0, 0, 255]; // Red
+
+/// Calculate distance to nearest multiple of interval.
+/// Returns a value in [0, interval/2].
+pub fn distance_to_nearest_multiple(value: f64, interval: f64) -> f64 {
+    let remainder = value.rem_euclid(interval);
+    remainder.min(interval - remainder)
+}
+
 /// Tick spacing parameters for the ruler test pattern.
 /// All values derived from major_spacing.
 #[derive(Debug, Clone, PartialEq)]
@@ -73,5 +89,18 @@ mod tests {
         let params = calculate_tick_params(4.0);
         assert!((params.major_threshold - params.major_spacing / 50.0).abs() < 0.0001);
         assert!((params.axis_threshold - params.major_spacing / 100.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn distance_to_nearest_multiple_at_boundary() {
+        assert!((distance_to_nearest_multiple(1.0, 1.0) - 0.0).abs() < 0.0001);
+        assert!((distance_to_nearest_multiple(0.0, 1.0) - 0.0).abs() < 0.0001);
+        assert!((distance_to_nearest_multiple(2.5, 1.0) - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
+    fn distance_to_nearest_multiple_negative_values() {
+        assert!((distance_to_nearest_multiple(-1.0, 1.0) - 0.0).abs() < 0.0001);
+        assert!((distance_to_nearest_multiple(-0.3, 1.0) - 0.3).abs() < 0.0001);
     }
 }
