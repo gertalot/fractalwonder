@@ -1,12 +1,20 @@
 // fractalwonder-ui/src/components/ui_panel.rs
 use crate::components::{FullscreenButton, InfoButton};
+use crate::config::FractalConfig;
 use crate::hooks::{use_ui_visibility, UiVisibility};
+use fractalwonder_core::Viewport;
 use leptos::*;
 
 #[component]
 pub fn UIPanel(
-    /// Canvas dimensions to display, as (width, height)
+    /// Canvas dimensions (width, height)
     canvas_size: Signal<(u32, u32)>,
+    /// Current viewport in fractal space
+    viewport: Signal<Viewport>,
+    /// Current fractal configuration
+    config: Signal<&'static FractalConfig>,
+    /// Calculated precision bits
+    precision_bits: Signal<usize>,
 ) -> impl IntoView {
     let UiVisibility {
         is_visible,
@@ -38,11 +46,23 @@ pub fn UIPanel(
                     <InfoButton />
                 </div>
 
-                // Center section: canvas dimensions
-                <div class="flex-1 text-center text-white text-sm">
+                // Center section: fractal info
+                <div class="flex-1 text-center text-white text-sm font-mono">
                     {move || {
-                        let (w, h) = canvas_size.get();
-                        format!("Canvas: {} × {}", w, h)
+                        let cfg = config.get();
+                        let vp = viewport.get();
+                        let bits = precision_bits.get();
+                        let (canvas_w, canvas_h) = canvas_size.get();
+
+                        let cx = format_coordinate(vp.center.0.to_f64());
+                        let cy = format_coordinate(vp.center.1.to_f64());
+                        let w = format_dimension(vp.width.to_f64());
+                        let h = format_dimension(vp.height.to_f64());
+
+                        format!(
+                            "Fractal: {} | Viewport: ({}, {}) | {} x {} | Precision: {} bits | Canvas: {} x {}",
+                            cfg.display_name, cx, cy, w, h, bits, canvas_w, canvas_h
+                        )
                     }}
                 </div>
 
@@ -52,5 +72,25 @@ pub fn UIPanel(
                 </div>
             </div>
         </div>
+    }
+}
+
+/// Format a coordinate for display (6 significant figures)
+fn format_coordinate(val: f64) -> String {
+    if val.abs() < 0.0001 || val.abs() >= 10000.0 {
+        format!("{:.4e}", val)
+    } else {
+        format!("{:.6}", val)
+    }
+}
+
+/// Format a dimension for display (scientific notation for small values)
+fn format_dimension(val: f64) -> String {
+    if val < 0.001 {
+        format!("{:.2e}", val)
+    } else if val < 1.0 {
+        format!("{:.4}", val)
+    } else {
+        format!("{:.2}", val)
     }
 }
