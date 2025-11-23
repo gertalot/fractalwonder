@@ -120,6 +120,17 @@ pub fn calculate_precision_bits_with_iterations(
         0
     };
 
+    // Zoom depth floor: ensure enough precision to handle panning to any location
+    // at this zoom level. If viewport width is tiny (e.g., 10^-1000), and user pans
+    // to center (1.0, 0), coordinates become 1 + O(10^-1000), requiring ~3320 bits.
+    // zoom_depth_bits = bits to represent pixel_delta relative to unit scale (1.0)
+    let zoom_depth_bits = if log2_min_delta.is_finite() && log2_min_delta < 0.0 {
+        (-log2_min_delta).ceil() as u64
+    } else {
+        0
+    };
+    let bits_from_ratio = bits_from_ratio.max(zoom_depth_bits);
+
     // Integer-safe iteration bits using bit operations
     let iter_bits = ceil_log2_u64(max_iterations);
 

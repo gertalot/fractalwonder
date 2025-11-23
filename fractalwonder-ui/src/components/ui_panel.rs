@@ -1,5 +1,5 @@
 // fractalwonder-ui/src/components/ui_panel.rs
-use crate::components::{FullscreenButton, InfoButton};
+use crate::components::{FullscreenButton, HomeButton, InfoButton};
 use crate::config::FractalConfig;
 use crate::hooks::{use_ui_visibility, UiVisibility};
 use fractalwonder_core::Viewport;
@@ -15,6 +15,8 @@ pub fn UIPanel(
     config: Signal<&'static FractalConfig>,
     /// Calculated precision bits
     precision_bits: Signal<usize>,
+    /// Callback when home button is clicked
+    on_home_click: Callback<()>,
 ) -> impl IntoView {
     let UiVisibility {
         is_visible,
@@ -56,27 +58,28 @@ pub fn UIPanel(
             }
         >
             <div class="flex items-center justify-between px-4 py-3 bg-black/50 backdrop-blur-sm">
-                // Left section: info button
+                // Left section: info button and home button
                 <div class="flex items-center space-x-2">
                     <InfoButton is_open=is_info_open set_is_open=set_is_info_open />
+                    <HomeButton on_click=on_home_click />
                 </div>
 
                 // Center section: fractal info
-                <div class="flex-1 text-center text-white text-sm font-mono">
+                <div class="flex-1 text-center text-white text-xs font-mono">
                     {move || {
                         let cfg = config.get();
                         let vp = viewport.get();
                         let bits = precision_bits.get();
                         let (canvas_w, canvas_h) = canvas_size.get();
 
-                        let cx = format_coordinate(vp.center.0.to_f64());
-                        let cy = format_coordinate(vp.center.1.to_f64());
-                        let w = format_dimension(vp.width.to_f64());
-                        let h = format_dimension(vp.height.to_f64());
+                        let cx = format_coordinate_from_log2(vp.center.0.log2_approx());
+                        let cy = format_coordinate_from_log2(vp.center.1.log2_approx());
+                        let w = format_dimension_from_log2(vp.width.log2_approx());
+                        let h = format_dimension_from_log2(vp.height.log2_approx());
 
                         format!(
-                            "Fractal: {} | Viewport: ({}, {}) | {} x {} | Precision: {} bits | Canvas: {} x {}",
-                            cfg.display_name, cx, cy, w, h, bits, canvas_w, canvas_h
+                            "{} | Center: ({}, {}) | Size: {} x {} | Canvas: {}x{} | Precision: {} bits",
+                            cfg.display_name, cx, cy, w, h, canvas_w, canvas_h, bits
                         )
                     }}
                 </div>
@@ -90,22 +93,60 @@ pub fn UIPanel(
     }
 }
 
-/// Format a coordinate for display (6 significant figures)
-fn format_coordinate(val: f64) -> String {
-    if val.abs() < 0.0001 || val.abs() >= 10000.0 {
-        format!("{:.4e}", val)
+/// Format a coordinate for display using log2 approximation.
+///
+/// For coordinates that are 0 or very close to 0, log2_approx returns -inf.
+/// For extreme values beyond f64 range, we display the exponent directly.
+fn format_coordinate_from_log2(log2_val: f64) -> String {
+    use std::f64::consts::LOG2_10;
+
+    if log2_val.is_infinite() || log2_val.is_nan() {
+        return "0".to_string();
+    }
+
+    // Convert log2 to log10 for display
+    let log10_val = log2_val / LOG2_10;
+
+    // If exponent is in displayable range, show the actual value
+    if log10_val.abs() < 15.0 {
+        // Reconstruct value for display (safe for f64 range)
+        let val = 10.0_f64.powf(log10_val);
+        if val.abs() < 0.0001 || val.abs() >= 10000.0 {
+            format!("{:.4e}", val)
+        } else {
+            format!("{:.6}", val)
+        }
     } else {
-        format!("{:.6}", val)
+        // Extreme value - show as power of 10
+        format!("~10^{:.0}", log10_val)
     }
 }
 
-/// Format a dimension for display (scientific notation for small values)
-fn format_dimension(val: f64) -> String {
-    if val < 0.001 {
-        format!("{:.2e}", val)
-    } else if val < 1.0 {
-        format!("{:.4}", val)
+/// Format a dimension for display using log2 approximation.
+///
+/// Works at any zoom level, including extreme depths beyond f64 range.
+fn format_dimension_from_log2(log2_val: f64) -> String {
+    use std::f64::consts::LOG2_10;
+
+    if log2_val.is_infinite() || log2_val.is_nan() {
+        return "0".to_string();
+    }
+
+    // Convert log2 to log10 for display
+    let log10_val = log2_val / LOG2_10;
+
+    // If exponent is in displayable range, show the actual value
+    if log10_val > -15.0 && log10_val < 15.0 {
+        let val = 10.0_f64.powf(log10_val);
+        if val < 0.001 {
+            format!("{:.2e}", val)
+        } else if val < 1.0 {
+            format!("{:.4}", val)
+        } else {
+            format!("{:.2}", val)
+        }
     } else {
-        format!("{:.2}", val)
+        // Extreme value - show as power of 10
+        format!("~10^{:.0}", log10_val)
     }
 }

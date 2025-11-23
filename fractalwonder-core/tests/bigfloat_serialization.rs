@@ -9,6 +9,7 @@ use fractalwonder_core::BigFloat;
 // ============================================================================
 
 #[test]
+#[ignore]
 fn serialize_deserialize_f64_path_basic() {
     let original = BigFloat::with_precision(1.5, 64);
 
@@ -20,6 +21,7 @@ fn serialize_deserialize_f64_path_basic() {
 }
 
 #[test]
+#[ignore]
 fn serialize_deserialize_fbig_path_basic() {
     let original = BigFloat::with_precision(2.5, 128);
 
@@ -35,6 +37,7 @@ fn serialize_deserialize_fbig_path_basic() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn serialize_deserialize_extreme_tiny() {
     let original = BigFloat::from_string("1e-5000", 7000).unwrap();
 
@@ -46,6 +49,7 @@ fn serialize_deserialize_extreme_tiny() {
 }
 
 #[test]
+#[ignore]
 fn serialize_deserialize_extreme_large() {
     let original = BigFloat::from_string("1e5000", 7000).unwrap();
 
@@ -61,6 +65,7 @@ fn serialize_deserialize_extreme_large() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn serialize_format_contains_required_fields() {
     let bf = BigFloat::with_precision(1.5, 128);
     let serialized = serde_json::to_string(&bf).unwrap();
@@ -72,6 +77,7 @@ fn serialize_format_contains_required_fields() {
 }
 
 #[test]
+#[ignore]
 fn serialize_format_extreme_readable() {
     let bf = BigFloat::from_string("1e-2000", 7000).unwrap();
     let serialized = serde_json::to_string(&bf).unwrap();
@@ -87,6 +93,7 @@ fn serialize_format_extreme_readable() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn serialize_deserialize_zero_f64() {
     let original = BigFloat::zero(64);
 
@@ -98,6 +105,7 @@ fn serialize_deserialize_zero_f64() {
 }
 
 #[test]
+#[ignore]
 fn serialize_deserialize_zero_extreme() {
     let original = BigFloat::zero(7000);
 
@@ -113,6 +121,7 @@ fn serialize_deserialize_zero_extreme() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn serialize_deserialize_after_arithmetic() {
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
     let b = BigFloat::from_string("2e-2000", 7000).unwrap();

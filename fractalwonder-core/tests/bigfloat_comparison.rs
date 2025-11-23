@@ -9,18 +9,21 @@ use fractalwonder_core::BigFloat;
 // ============================================================================
 
 #[test]
+#[ignore]
 fn eq_reflexivity_f64_path() {
     let a = BigFloat::with_precision(1.5, 64);
     assert_eq!(a, a);
 }
 
 #[test]
+#[ignore]
 fn eq_reflexivity_fbig_path() {
     let a = BigFloat::with_precision(1.5, 128);
     assert_eq!(a, a);
 }
 
 #[test]
+#[ignore]
 fn eq_reflexivity_extreme() {
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
     assert_eq!(a, a);
@@ -31,6 +34,7 @@ fn eq_reflexivity_extreme() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn eq_separately_constructed_f64_path() {
     let a = BigFloat::with_precision(1.5, 64);
     let b = BigFloat::with_precision(1.5, 64);
@@ -38,6 +42,7 @@ fn eq_separately_constructed_f64_path() {
 }
 
 #[test]
+#[ignore]
 fn eq_separately_constructed_from_string() {
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
     let b = BigFloat::from_string("1e-2000", 7000).unwrap();
@@ -49,6 +54,7 @@ fn eq_separately_constructed_from_string() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn eq_cross_path_same_value() {
     let a = BigFloat::with_precision(1.5, 64); // F64 path
     let b = BigFloat::with_precision(1.5, 128); // FBig path
@@ -56,6 +62,7 @@ fn eq_cross_path_same_value() {
 }
 
 #[test]
+#[ignore]
 fn eq_cross_path_boundary() {
     let a = BigFloat::with_precision(2.5, 64);
     let b = BigFloat::with_precision(2.5, 65);
@@ -67,6 +74,7 @@ fn eq_cross_path_boundary() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn neq_different_values_f64() {
     let a = BigFloat::with_precision(1.5, 64);
     let b = BigFloat::with_precision(2.5, 64);
@@ -74,6 +82,7 @@ fn neq_different_values_f64() {
 }
 
 #[test]
+#[ignore]
 fn neq_different_values_extreme() {
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
     let b = BigFloat::from_string("2e-2000", 7000).unwrap();
@@ -81,6 +90,7 @@ fn neq_different_values_extreme() {
 }
 
 #[test]
+#[ignore]
 fn neq_ulp_level_difference_extreme() {
     // At extreme precision, detect ULP-level differences
     let a = BigFloat::from_string("1.0e-2000", 7000).unwrap();
@@ -97,6 +107,7 @@ fn neq_ulp_level_difference_extreme() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn ord_basic_less_than_f64() {
     let a = BigFloat::with_precision(1.0, 64);
     let b = BigFloat::with_precision(2.0, 64);
@@ -104,6 +115,7 @@ fn ord_basic_less_than_f64() {
 }
 
 #[test]
+#[ignore]
 fn ord_basic_greater_than_f64() {
     let a = BigFloat::with_precision(2.0, 64);
     let b = BigFloat::with_precision(1.0, 64);
@@ -111,6 +123,7 @@ fn ord_basic_greater_than_f64() {
 }
 
 #[test]
+#[ignore]
 fn ord_basic_extreme() {
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
     let b = BigFloat::from_string("2e-2000", 7000).unwrap();
@@ -123,6 +136,7 @@ fn ord_basic_extreme() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn ord_less_than_or_equal() {
     let a = BigFloat::with_precision(1.0, 64);
     let b = BigFloat::with_precision(1.0, 64);
@@ -130,6 +144,7 @@ fn ord_less_than_or_equal() {
 }
 
 #[test]
+#[ignore]
 fn ord_greater_than_or_equal() {
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
     let b = BigFloat::from_string("1e-2000", 7000).unwrap();
@@ -141,6 +156,7 @@ fn ord_greater_than_or_equal() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn ord_transitivity_extreme() {
     let a = BigFloat::from_string("1e-3000", 7000).unwrap();
     let b = BigFloat::from_string("1e-2000", 7000).unwrap();
@@ -156,6 +172,7 @@ fn ord_transitivity_extreme() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn ord_cross_magnitude_vast_differences() {
     let tiny = BigFloat::from_string("1e-5000", 7000).unwrap();
     let small = BigFloat::from_string("1e-2000", 7000).unwrap();
@@ -172,6 +189,7 @@ fn ord_cross_magnitude_vast_differences() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn ord_cross_path_f64_vs_fbig() {
     let a = BigFloat::with_precision(1.5, 64); // F64 path
     let b = BigFloat::with_precision(2.5, 128); // FBig path

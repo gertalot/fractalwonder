@@ -73,6 +73,30 @@ pub fn App() -> impl IntoView {
         set_viewport.set(new_vp);
     });
 
+    let on_home_click = Callback::new(move |_: ()| {
+        let size = canvas_size.get_untracked();
+        let cfg = config.get_untracked();
+
+        // Skip if invalid canvas size
+        if size.0 == 0 || size.1 == 0 {
+            return;
+        }
+
+        // Reset viewport to config default, fitted to current canvas
+        let natural = cfg.default_viewport(64);
+        let fitted = fit_viewport_to_canvas(&natural, size);
+        let required_bits = calculate_precision_bits(&fitted, size);
+
+        let final_viewport = if required_bits > fitted.precision_bits() {
+            let natural_high_prec = cfg.default_viewport(required_bits);
+            fit_viewport_to_canvas(&natural_high_prec, size)
+        } else {
+            fitted
+        };
+
+        set_viewport.set(final_viewport);
+    });
+
     view! {
         <InteractiveCanvas
             viewport=viewport.into()
@@ -84,6 +108,7 @@ pub fn App() -> impl IntoView {
             viewport=viewport.into()
             config=config.into()
             precision_bits=precision_bits.into()
+            on_home_click=on_home_click
         />
     }
 }

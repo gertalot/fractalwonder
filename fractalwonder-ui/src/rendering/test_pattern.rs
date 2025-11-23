@@ -48,14 +48,25 @@ pub struct TickParams {
     pub minor_tick_length: f64,
 }
 
-/// Calculate tick parameters from viewport width.
+/// Calculate tick parameters from viewport width's log2 value.
 ///
-/// Uses log10 to find appropriate scale, then derives all parameters
-/// from a single major_spacing value.
-pub fn calculate_tick_params(viewport_width_f64: f64) -> TickParams {
-    let log_width = viewport_width_f64.log10();
-    let major_exp = (log_width - 0.5).floor() as i32;
-    let major_spacing = 10.0_f64.powi(major_exp);
+/// Uses log2 to find appropriate scale, then derives all parameters
+/// from a single major_spacing value. Works at any zoom level including
+/// extreme depths where width would underflow f64.
+///
+/// # Arguments
+/// * `log2_width` - The log2 of the viewport width (from BigFloat::log2_approx())
+pub fn calculate_tick_params_from_log2(log2_width: f64) -> TickParams {
+    use std::f64::consts::LOG2_10;
+
+    // Convert log2 to log10: log10(x) = log2(x) / log2(10)
+    let log10_width = log2_width / LOG2_10;
+    let major_exp = (log10_width - 0.5).floor() as i32;
+
+    // major_spacing = 10^major_exp, but we compute it from log2 to avoid overflow/underflow
+    // 10^exp = 2^(exp * log2(10))
+    let major_log2 = major_exp as f64 * LOG2_10;
+    let major_spacing = 2.0_f64.powf(major_log2);
 
     TickParams {
         major_spacing,
@@ -68,6 +79,119 @@ pub fn calculate_tick_params(viewport_width_f64: f64) -> TickParams {
         major_tick_length: major_spacing / 8.0,
         medium_tick_length: major_spacing / 12.0,
         minor_tick_length: major_spacing / 20.0,
+    }
+}
+
+/// Calculate tick parameters from viewport width (f64 version for tests).
+///
+/// Uses log10 to find appropriate scale, then derives all parameters
+/// from a single major_spacing value.
+pub fn calculate_tick_params(viewport_width_f64: f64) -> TickParams {
+    calculate_tick_params_from_log2(viewport_width_f64.log2())
+}
+
+/// Compute the RGBA color for a pixel using NORMALIZED coordinates.
+///
+/// This version works at any zoom level, including extreme depths where
+/// absolute fractal coordinates would underflow f64.
+///
+/// # Arguments
+/// * `norm_x` - Normalized x coordinate in [-0.5, 0.5] (0 = viewport center)
+/// * `norm_y` - Normalized y coordinate in [-0.5, 0.5] (0 = viewport center)
+/// * `origin_norm_x` - Normalized x of the origin (0,0) relative to viewport center
+/// * `origin_norm_y` - Normalized y of the origin (0,0) relative to viewport center
+///
+/// The origin offsets tell us where (0,0) is in normalized viewport space.
+/// At extreme zoom far from origin, these may be very large (origin is far away).
+pub fn test_pattern_color_normalized(
+    norm_x: f64,
+    norm_y: f64,
+    origin_norm_x: f64,
+    origin_norm_y: f64,
+) -> [u8; 4] {
+    // Fixed spacing in normalized coordinates (viewport-relative)
+    // Major ticks at 0.2 intervals = 5 major divisions across viewport
+    const MAJOR_SPACING: f64 = 0.2;
+    const MEDIUM_SPACING: f64 = 0.1;
+    const MINOR_SPACING: f64 = 0.02;
+
+    const MAJOR_THRESHOLD: f64 = 0.004;
+    const MEDIUM_THRESHOLD: f64 = 0.003;
+    const MINOR_THRESHOLD: f64 = 0.002;
+
+    const AXIS_THRESHOLD: f64 = 0.003;
+    const ORIGIN_THRESHOLD: f64 = 0.02;
+
+    const MAJOR_TICK_LENGTH: f64 = 0.04;
+    const MEDIUM_TICK_LENGTH: f64 = 0.03;
+    const MINOR_TICK_LENGTH: f64 = 0.02;
+
+    // Position relative to absolute origin (0,0)
+    // fx = norm_x - origin_norm_x gives position in viewport-normalized units
+    // where fx=0 means we're at the true origin
+    let fx = norm_x - origin_norm_x;
+    let fy = norm_y - origin_norm_y;
+
+    // 1. Check for origin marker (highest priority) - only if origin is visible
+    if origin_norm_x.abs() < 1.0 && origin_norm_y.abs() < 1.0 {
+        let dist_to_origin = (fx * fx + fy * fy).sqrt();
+        if dist_to_origin < ORIGIN_THRESHOLD {
+            return ORIGIN_COLOR;
+        }
+    }
+
+    let dist_to_x_axis = fy.abs();
+    let dist_to_y_axis = fx.abs();
+
+    // 2. Check for tick marks extending from x-axis (only if x-axis is visible)
+    if origin_norm_y.abs() < 1.0 {
+        // Use fx (origin-relative) for tick positions so grid stays anchored to origin
+        let dist_to_major_x = distance_to_nearest_multiple(fx, MAJOR_SPACING);
+        if dist_to_major_x < MAJOR_THRESHOLD && dist_to_x_axis < MAJOR_TICK_LENGTH {
+            return MAJOR_TICK_COLOR;
+        }
+        let dist_to_medium_x = distance_to_nearest_multiple(fx, MEDIUM_SPACING);
+        if dist_to_medium_x < MEDIUM_THRESHOLD && dist_to_x_axis < MEDIUM_TICK_LENGTH {
+            return MEDIUM_TICK_COLOR;
+        }
+        let dist_to_minor_x = distance_to_nearest_multiple(fx, MINOR_SPACING);
+        if dist_to_minor_x < MINOR_THRESHOLD && dist_to_x_axis < MINOR_TICK_LENGTH {
+            return MINOR_TICK_COLOR;
+        }
+
+        // Check for horizontal axis line (y ~ 0)
+        if dist_to_x_axis < AXIS_THRESHOLD {
+            return AXIS_COLOR;
+        }
+    }
+
+    // 3. Check for tick marks extending from y-axis (only if y-axis is visible)
+    if origin_norm_x.abs() < 1.0 {
+        // Use fy (origin-relative) for tick positions so grid stays anchored to origin
+        let dist_to_major_y = distance_to_nearest_multiple(fy, MAJOR_SPACING);
+        if dist_to_major_y < MAJOR_THRESHOLD && dist_to_y_axis < MAJOR_TICK_LENGTH {
+            return MAJOR_TICK_COLOR;
+        }
+        let dist_to_medium_y = distance_to_nearest_multiple(fy, MEDIUM_SPACING);
+        if dist_to_medium_y < MEDIUM_THRESHOLD && dist_to_y_axis < MEDIUM_TICK_LENGTH {
+            return MEDIUM_TICK_COLOR;
+        }
+        let dist_to_minor_y = distance_to_nearest_multiple(fy, MINOR_SPACING);
+        if dist_to_minor_y < MINOR_THRESHOLD && dist_to_y_axis < MINOR_TICK_LENGTH {
+            return MINOR_TICK_COLOR;
+        }
+
+        // Check for vertical axis line (x ~ 0)
+        if dist_to_y_axis < AXIS_THRESHOLD {
+            return AXIS_COLOR;
+        }
+    }
+
+    // 4. Checkerboard background (use fx, fy so grid stays anchored to origin)
+    if is_light_cell(fx, fy, MAJOR_SPACING) {
+        BACKGROUND_LIGHT
+    } else {
+        BACKGROUND_DARK
     }
 }
 

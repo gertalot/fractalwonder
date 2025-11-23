@@ -39,8 +39,8 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         id: "test_image",
         display_name: "Test Pattern",
         default_center: ("0.0", "0.0"),
-        default_width: "4.0",
-        default_height: "4.0",
+        default_width: "4.0e-6",
+        default_height: "4.0e-6",
     },
     FractalConfig {
         id: "mandelbrot",
@@ -58,7 +58,7 @@ pub fn get_config(id: &str) -> Option<&'static FractalConfig> {
 
 /// Get the default fractal configuration.
 pub fn default_config() -> &'static FractalConfig {
-    get_config("mandelbrot").expect("Default config must exist")
+    get_config("test_image").expect("Default config must exist")
 }
 
 #[cfg(test)]
@@ -98,8 +98,8 @@ mod tests {
     }
 
     #[test]
-    fn default_config_returns_mandelbrot() {
+    fn default_config_returns_test_image() {
         let config = default_config();
-        assert_eq!(config.id, "mandelbrot");
+        assert_eq!(config.id, "test_image");
     }
 }

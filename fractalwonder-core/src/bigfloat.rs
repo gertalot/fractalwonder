@@ -3,6 +3,26 @@ use dashu_float::ops::SquareRoot;
 use dashu_float::{DBig, FBig};
 use serde::{Deserialize, Serialize};
 
+/// Check if a string contains an exponent beyond f64's representable range.
+/// f64 can represent values from ~5e-324 to ~1.8e308.
+/// Returns true if the value would overflow or underflow f64.
+fn exceeds_f64_exponent_range(s: &str) -> bool {
+    // Maximum safe exponent magnitude for f64 (conservative)
+    const F64_MAX_EXPONENT: i32 = 307;
+
+    // Look for 'e' or 'E' in scientific notation
+    let lowercase = s.to_lowercase();
+    if let Some(e_pos) = lowercase.find('e') {
+        // Skip the 'e' and any sign
+        let exp_str = &s[e_pos + 1..];
+        if let Ok(exp) = exp_str.parse::<i32>() {
+            return exp.abs() > F64_MAX_EXPONENT;
+        }
+    }
+
+    false
+}
+
 /// Estimate log2 from BINARY (base-2) string representation from FBig::to_string().
 /// FBig outputs in base-2 format like "0.00000...001..." where zeros are binary zeros.
 fn estimate_log2_from_binary_string(s: &str) -> f64 {
@@ -114,19 +134,42 @@ impl BigFloat {
     ///
     /// Allows creating values beyond f64 range (e.g., "1e1000").
     /// Uses atomic base conversion with target precision to avoid precision loss.
+    ///
+    /// # Automatic precision upgrade
+    /// If the string contains an exponent beyond f64's range (~10^308), the value
+    /// is automatically parsed with arbitrary precision regardless of precision_bits.
+    /// This prevents underflow/overflow when parsing extreme values like "4.0e-1000".
     pub fn from_string(val: &str, precision_bits: usize) -> Result<Self, String> {
-        if precision_bits <= 64 {
+        // Check if exponent exceeds f64 range (e.g., "4.0e-1000")
+        let extreme_exponent = exceeds_f64_exponent_range(val);
+
+        // Use f64 only if:
+        // 1. Requested precision is 64 bits or less, AND
+        // 2. The value's exponent is within f64's representable range
+        let use_f64 = precision_bits <= 64 && !extreme_exponent;
+
+        if use_f64 {
             val.parse::<f64>()
                 .map(|f| Self::with_precision(f, precision_bits))
                 .map_err(|e| format!("Failed to parse f64: {}", e))
         } else {
+            // Use arbitrary precision parsing
+            // For extreme exponents, use minimum 256 bits to avoid precision loss
+            // For normal values, use the requested precision
+            let effective_precision = if extreme_exponent {
+                precision_bits.max(256)
+            } else {
+                precision_bits
+            };
+
             // Parse as decimal, then convert to binary with atomic precision specification
             val.parse::<DBig>()
                 .map_err(|e| format!("Failed to parse DBig: {}", e))
                 .map(|dbig| {
                     // Use with_base_and_precision for atomic conversion with target precision
                     // Returns Approximation enum, extract value using match
-                    let fbig_halfaway = match dbig.with_base_and_precision::<2>(precision_bits) {
+                    let fbig_halfaway = match dbig.with_base_and_precision::<2>(effective_precision)
+                    {
                         Approximation::Exact(v) => v,
                         Approximation::Inexact(v, _) => v,
                     };
@@ -135,7 +178,7 @@ impl BigFloat {
                         fbig_halfaway.with_rounding::<dashu_float::round::mode::Zero>();
                     Self {
                         value: BigFloatValue::Arbitrary(fbig_with_prec),
-                        precision_bits,
+                        precision_bits: effective_precision,
                     }
                 })
         }
@@ -483,5 +526,35 @@ mod tests {
         let log2 = val.log2_approx();
         assert!(log2 < -1600.0);
         assert!(log2 > -1700.0);
+    }
+
+    #[test]
+    fn from_string_with_extreme_exponent_auto_upgrades_precision() {
+        // When parsing "4.0e-1000" with 64 bits, it should auto-upgrade
+        // to 256 bits (minimum) to avoid f64 underflow
+        let val = BigFloat::from_string("4.0e-1000", 64).unwrap();
+        let log2 = val.log2_approx();
+
+        // Should NOT be -inf (which would indicate f64 underflow)
+        assert!(log2.is_finite(), "log2 should be finite, not -inf");
+
+        // Should be approximately -1000 * log2(10) ≈ -3322
+        assert!(log2 < -3300.0, "log2 should be around -3322");
+        assert!(log2 > -3350.0, "log2 should be around -3322");
+
+        // Precision should be upgraded to at least 256 bits
+        assert!(
+            val.precision_bits() >= 256,
+            "precision should be at least 256, got {}",
+            val.precision_bits()
+        );
+    }
+
+    #[test]
+    fn from_string_with_normal_exponent_uses_f64_when_low_precision() {
+        // Normal values should still use f64 path when precision <= 64
+        let val = BigFloat::from_string("2.5", 64).unwrap();
+        assert_eq!(val.precision_bits(), 64);
+        assert!((val.to_f64() - 2.5).abs() < 0.0001);
     }
 }

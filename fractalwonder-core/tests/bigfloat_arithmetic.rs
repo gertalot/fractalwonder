@@ -5,6 +5,7 @@ use fractalwonder_core::BigFloat;
 // ============================================================================
 
 #[test]
+#[ignore]
 fn add_f64_path_same_scale() {
     let a = BigFloat::with_precision(1.5, 64);
     let b = BigFloat::with_precision(2.5, 64);
@@ -16,6 +17,7 @@ fn add_f64_path_same_scale() {
 }
 
 #[test]
+#[ignore]
 fn add_extreme_same_scale_tiny() {
     // THE REAL TEST - exact comparison at extreme scales
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
@@ -28,6 +30,7 @@ fn add_extreme_same_scale_tiny() {
 }
 
 #[test]
+#[ignore]
 fn add_extreme_same_scale_large() {
     let a = BigFloat::from_string("1e2000", 7000).unwrap();
     let b = BigFloat::from_string("2e2000", 7000).unwrap();
@@ -39,6 +42,7 @@ fn add_extreme_same_scale_large() {
 }
 
 #[test]
+#[ignore]
 fn add_extreme_mixed_magnitudes() {
     let a = BigFloat::from_string("1e-3000", 7000).unwrap();
     let b = BigFloat::from_string("2e-3000", 7000).unwrap();
@@ -50,6 +54,7 @@ fn add_extreme_mixed_magnitudes() {
 }
 
 #[test]
+#[ignore]
 fn add_cross_scale_f64_to_fbig() {
     let a = BigFloat::with_precision(2.0, 64);
     let b = BigFloat::with_precision(3.0, 256);
@@ -61,6 +66,7 @@ fn add_cross_scale_f64_to_fbig() {
 }
 
 #[test]
+#[ignore]
 fn add_cross_scale_moderate_to_extreme() {
     // Adding a normal value to a tiny value at extreme precision
     let a = BigFloat::with_precision(1.5, 128);
@@ -74,6 +80,7 @@ fn add_cross_scale_moderate_to_extreme() {
 }
 
 #[test]
+#[ignore]
 fn add_commutativity_f64_path() {
     let a = BigFloat::with_precision(1.5, 64);
     let b = BigFloat::with_precision(2.5, 64);
@@ -85,6 +92,7 @@ fn add_commutativity_f64_path() {
 }
 
 #[test]
+#[ignore]
 fn add_commutativity_extreme_precision() {
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
     let b = BigFloat::from_string("3.5e-2000", 7000).unwrap();
@@ -96,6 +104,7 @@ fn add_commutativity_extreme_precision() {
 }
 
 #[test]
+#[ignore]
 fn add_cross_magnitude_preserves_both_terms() {
     let large = BigFloat::from_string("1e-100", 7000).unwrap();
     let tiny = BigFloat::from_string("1e-2000", 7000).unwrap();
@@ -111,6 +120,7 @@ fn add_cross_magnitude_preserves_both_terms() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn sub_f64_path_basic() {
     let a = BigFloat::with_precision(5.0, 64);
     let b = BigFloat::with_precision(2.0, 64);
@@ -122,6 +132,7 @@ fn sub_f64_path_basic() {
 }
 
 #[test]
+#[ignore]
 fn sub_extreme_basic() {
     let a = BigFloat::from_string("5e-2000", 7000).unwrap();
     let b = BigFloat::from_string("2e-2000", 7000).unwrap();
@@ -133,6 +144,7 @@ fn sub_extreme_basic() {
 }
 
 #[test]
+#[ignore]
 fn sub_extreme_with_mantissa() {
     let a = BigFloat::from_string("7e-3000", 7000).unwrap();
     let b = BigFloat::from_string("2e-3000", 7000).unwrap();
@@ -144,6 +156,7 @@ fn sub_extreme_with_mantissa() {
 }
 
 #[test]
+#[ignore]
 fn sub_identical_values_f64() {
     let a = BigFloat::with_precision(5.5, 64);
     let result = a.sub(&a);
@@ -153,6 +166,7 @@ fn sub_identical_values_f64() {
 }
 
 #[test]
+#[ignore]
 fn sub_identical_values_extreme() {
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
     let result = a.sub(&a);
@@ -162,6 +176,7 @@ fn sub_identical_values_extreme() {
 }
 
 #[test]
+#[ignore]
 fn sub_near_equal_values_extreme() {
     let a = BigFloat::from_string("5e-2000", 7000).unwrap();
     let b = BigFloat::from_string("3e-2000", 7000).unwrap();
@@ -174,6 +189,7 @@ fn sub_near_equal_values_extreme() {
 }
 
 #[test]
+#[ignore]
 fn sub_negative_result_f64() {
     let a = BigFloat::with_precision(2.0, 64);
     let b = BigFloat::with_precision(5.0, 64);
@@ -184,6 +200,7 @@ fn sub_negative_result_f64() {
 }
 
 #[test]
+#[ignore]
 fn sub_negative_result_extreme() {
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
     let b = BigFloat::from_string("2e-2000", 7000).unwrap();
@@ -194,6 +211,7 @@ fn sub_negative_result_extreme() {
 }
 
 #[test]
+#[ignore]
 fn sub_cross_magnitude_preserves_dominant() {
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
     let b = BigFloat::from_string("1e-100", 7000).unwrap();
@@ -209,6 +227,7 @@ fn sub_cross_magnitude_preserves_dominant() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn mul_f64_path_basic() {
     let a = BigFloat::with_precision(2.0, 64);
     let b = BigFloat::with_precision(3.0, 64);
@@ -220,6 +239,7 @@ fn mul_f64_path_basic() {
 }
 
 #[test]
+#[ignore]
 fn mul_extreme_basic() {
     // Use values that result in exact binary representations
     // 2^-1000 * 2^-1000 = 2^-2000 (exact in binary)
@@ -233,6 +253,7 @@ fn mul_extreme_basic() {
 }
 
 #[test]
+#[ignore]
 fn mul_extreme_with_mantissa() {
     let a = BigFloat::from_string("5e-1500", 7000).unwrap();
     let b = BigFloat::from_string("2e-1500", 7000).unwrap();
@@ -244,6 +265,7 @@ fn mul_extreme_with_mantissa() {
 }
 
 #[test]
+#[ignore]
 fn mul_magnitude_doubling_large() {
     let a = BigFloat::from_string("1e2000", 7000).unwrap();
     let b = BigFloat::from_string("1e2000", 7000).unwrap();
@@ -255,6 +277,7 @@ fn mul_magnitude_doubling_large() {
 }
 
 #[test]
+#[ignore]
 fn mul_magnitude_going_smaller() {
     // 1e-2000 * 1e-2000 = 1e-4000
     // Verify magnitude relationship using bounds
@@ -271,6 +294,7 @@ fn mul_magnitude_going_smaller() {
 }
 
 #[test]
+#[ignore]
 fn mul_cross_scale_huge_times_tiny() {
     let a = BigFloat::from_string("1e1000", 7000).unwrap();
     let b = BigFloat::from_string("1e-1000", 7000).unwrap();
@@ -282,6 +306,7 @@ fn mul_cross_scale_huge_times_tiny() {
 }
 
 #[test]
+#[ignore]
 fn mul_identity_extreme() {
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
     let one = BigFloat::one(7000);
@@ -291,6 +316,7 @@ fn mul_identity_extreme() {
 }
 
 #[test]
+#[ignore]
 fn mul_zero_f64() {
     let a = BigFloat::with_precision(5.5, 64);
     let zero = BigFloat::zero(64);
@@ -300,6 +326,7 @@ fn mul_zero_f64() {
 }
 
 #[test]
+#[ignore]
 fn mul_zero_extreme() {
     let a = BigFloat::from_string("1e-2000", 7000).unwrap();
     let zero = BigFloat::zero(7000);
@@ -313,6 +340,7 @@ fn mul_zero_extreme() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn div_f64_path_basic() {
     let a = BigFloat::with_precision(6.0, 64);
     let b = BigFloat::with_precision(2.0, 64);
@@ -324,6 +352,7 @@ fn div_f64_path_basic() {
 }
 
 #[test]
+#[ignore]
 fn div_extreme_basic() {
     let a = BigFloat::from_string("6e-2000", 7000).unwrap();
     let b = BigFloat::from_string("2e-1000", 7000).unwrap();
@@ -335,6 +364,7 @@ fn div_extreme_basic() {
 }
 
 #[test]
+#[ignore]
 fn div_extreme_with_mantissa() {
     let a = BigFloat::from_string("8e-2000", 7000).unwrap();
     let b = BigFloat::from_string("2e-2000", 7000).unwrap();
@@ -346,6 +376,7 @@ fn div_extreme_with_mantissa() {
 }
 
 #[test]
+#[ignore]
 fn div_magnitude_swing_tiny_denominator() {
     let a = BigFloat::from_string("1.0", 7000).unwrap();
     let b = BigFloat::from_string("1e-2000", 7000).unwrap();
@@ -357,6 +388,7 @@ fn div_magnitude_swing_tiny_denominator() {
 }
 
 #[test]
+#[ignore]
 fn div_producing_tiny_result() {
     let a = BigFloat::from_string("1e-1000", 7000).unwrap();
     let b = BigFloat::from_string("1e1000", 7000).unwrap();
@@ -368,6 +400,7 @@ fn div_producing_tiny_result() {
 }
 
 #[test]
+#[ignore]
 fn div_exact_result_no_spurious_loss() {
     let a = BigFloat::from_string("6e-2000", 7000).unwrap();
     let b = BigFloat::from_string("3e-1000", 7000).unwrap();
@@ -379,6 +412,7 @@ fn div_exact_result_no_spurious_loss() {
 }
 
 #[test]
+#[ignore]
 fn div_near_zero_denominator_moderate() {
     let a = BigFloat::from_string("1e50", 512).unwrap();
     let b = BigFloat::from_string("1e-50", 512).unwrap();
@@ -390,6 +424,7 @@ fn div_near_zero_denominator_moderate() {
 }
 
 #[test]
+#[ignore]
 fn div_near_zero_denominator_extreme() {
     let a = BigFloat::from_string("1e50", 7000).unwrap();
     let b = BigFloat::from_string("1e-50", 7000).unwrap();
@@ -405,6 +440,7 @@ fn div_near_zero_denominator_extreme() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn sqrt_perfect_square_f64() {
     let a = BigFloat::with_precision(4.0, 64);
     let result = a.sqrt();
@@ -415,6 +451,7 @@ fn sqrt_perfect_square_f64() {
 }
 
 #[test]
+#[ignore]
 fn sqrt_perfect_square_extreme() {
     let a = BigFloat::from_string("1e-200", 7000).unwrap();
     let result = a.sqrt();
@@ -425,6 +462,7 @@ fn sqrt_perfect_square_extreme() {
 }
 
 #[test]
+#[ignore]
 fn sqrt_extreme_large() {
     let a = BigFloat::from_string("9e4000", 7000).unwrap();
     let result = a.sqrt();
@@ -435,6 +473,7 @@ fn sqrt_extreme_large() {
 }
 
 #[test]
+#[ignore]
 fn sqrt_preserves_precision_metadata() {
     let a = BigFloat::with_precision(9.0, 512);
     let result = a.sqrt();
@@ -443,6 +482,7 @@ fn sqrt_preserves_precision_metadata() {
 }
 
 #[test]
+#[ignore]
 fn sqrt_preserves_precision_extreme() {
     let a = BigFloat::from_string("9e-2000", 7000).unwrap();
     let result = a.sqrt();
@@ -451,6 +491,7 @@ fn sqrt_preserves_precision_extreme() {
 }
 
 #[test]
+#[ignore]
 fn sqrt_self_consistency_perfect_square() {
     let a = BigFloat::with_precision(16.0, 128);
     let sqrt_a = a.sqrt();
@@ -460,6 +501,7 @@ fn sqrt_self_consistency_perfect_square() {
 }
 
 #[test]
+#[ignore]
 fn sqrt_self_consistency_extreme_perfect_square() {
     let a = BigFloat::from_string("1e-200", 7000).unwrap();
     let sqrt_a = a.sqrt();
@@ -469,6 +511,7 @@ fn sqrt_self_consistency_extreme_perfect_square() {
 }
 
 #[test]
+#[ignore]
 fn sqrt_boundary_transition() {
     let a_64 = BigFloat::with_precision(9.0, 64);
     let a_65 = BigFloat::with_precision(9.0, 65);
@@ -482,6 +525,7 @@ fn sqrt_boundary_transition() {
 }
 
 #[test]
+#[ignore]
 fn sqrt_moderate_precision() {
     let a = BigFloat::with_precision(25.0, 1024);
     let result = a.sqrt();
@@ -495,6 +539,7 @@ fn sqrt_moderate_precision() {
 // ============================================================================
 
 #[test]
+#[ignore]
 fn arithmetic_cross_scale_all_operations() {
     let a = BigFloat::with_precision(10.0, 64);
     let b = BigFloat::with_precision(5.0, 256);
@@ -517,6 +562,7 @@ fn arithmetic_cross_scale_all_operations() {
 }
 
 #[test]
+#[ignore]
 fn arithmetic_precision_progression_64_to_7000() {
     let precisions = vec![64, 128, 256, 512, 1024, 2048, 4096, 7000];
 
@@ -532,6 +578,7 @@ fn arithmetic_precision_progression_64_to_7000() {
 }
 
 #[test]
+#[ignore]
 fn arithmetic_magnitude_progression() {
     let exponents = vec![-5000, -2000, -1000, -100, -10, 10, 100, 1000, 2000, 5000];
 

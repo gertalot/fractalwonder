@@ -1,5 +1,5 @@
 // fractalwonder-ui/src/components/interactive_canvas.rs
-use fractalwonder_core::{apply_pixel_transform_to_viewport, pixel_to_fractal, Viewport};
+use fractalwonder_core::{apply_pixel_transform_to_viewport, pixel_to_fractal, BigFloat, Viewport};
 use leptos::*;
 use leptos_use::use_window_size;
 use wasm_bindgen::Clamped;
@@ -7,7 +7,7 @@ use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
 use crate::hooks::use_canvas_interaction;
-use crate::rendering::{calculate_tick_params, test_pattern_color};
+use crate::rendering::test_pattern_color_normalized;
 
 #[component]
 pub fn InteractiveCanvas(
@@ -36,6 +36,7 @@ pub fn InteractiveCanvas(
             let precision = current_vp.precision_bits();
             let new_vp =
                 apply_pixel_transform_to_viewport(&current_vp, &transform, size, precision);
+
             on_viewport_change.call(new_vp);
         }
     });
@@ -90,19 +91,32 @@ pub fn InteractiveCanvas(
         let (width, height) = size;
         let precision = vp.precision_bits();
 
-        // Calculate tick parameters from viewport width
-        let tick_params = calculate_tick_params(vp.width.to_f64());
+        // Pre-compute origin offset in normalized viewport coordinates.
+        // CRITICAL: Normalize both x and y by the SAME dimension (height) to preserve
+        // aspect ratio. This ensures equal normalized distances represent equal fractal
+        // distances, so grid cells appear square on screen.
+        let zero = BigFloat::zero(precision);
+        let origin_norm_x = zero.sub(&vp.center.0).div(&vp.height).to_f64();
+        let origin_norm_y = zero.sub(&vp.center.1).div(&vp.height).to_f64();
 
         // Create pixel buffer
         let mut data = vec![0u8; (width * height * 4) as usize];
 
         for py in 0..height {
             for px in 0..width {
-                // Convert pixel to fractal coordinates
+                // CRITICAL: Use pixel_to_fractal to test the BigFloat coordinate pipeline!
+                // This is the same transformation the Mandelbrot renderer will use.
                 let (fx, fy) = pixel_to_fractal(px as f64, py as f64, &vp, size, precision);
 
-                // Compute color (using f64 for the pattern - ok for visualization)
-                let color = test_pattern_color(fx.to_f64(), fy.to_f64(), &tick_params);
+                // Convert to viewport-center-relative normalized coordinates.
+                // CRITICAL: Subtract center first, then normalize by HEIGHT.
+                // This gives coordinates in [-0.5, 0.5] range where 0 = viewport center.
+                let norm_x = fx.sub(&vp.center.0).div(&vp.height).to_f64();
+                let norm_y = fy.sub(&vp.center.1).div(&vp.height).to_f64();
+
+                // Compute color using normalized coordinates
+                let color =
+                    test_pattern_color_normalized(norm_x, norm_y, origin_norm_x, origin_norm_y);
 
                 let idx = ((py * width + px) * 4) as usize;
                 data[idx] = color[0];
