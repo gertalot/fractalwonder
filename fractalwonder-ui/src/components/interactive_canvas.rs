@@ -1,3 +1,4 @@
+// fractalwonder-ui/src/components/interactive_canvas.rs
 use leptos::*;
 use wasm_bindgen::Clamped;
 use wasm_bindgen::JsCast;
@@ -15,7 +16,11 @@ fn gradient_color(x: u32, y: u32, width: u32, height: u32) -> [u8; 4] {
 }
 
 #[component]
-pub fn InteractiveCanvas() -> impl IntoView {
+pub fn InteractiveCanvas(
+    /// Callback fired when canvas dimensions change, receives (width, height)
+    #[prop(optional)]
+    on_resize: Option<Callback<(u32, u32)>>,
+) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
     create_effect(move |_| {
@@ -30,6 +35,11 @@ pub fn InteractiveCanvas() -> impl IntoView {
         let height = window.inner_height().unwrap().as_f64().unwrap() as u32;
         canvas.set_width(width);
         canvas.set_height(height);
+
+        // Notify parent of dimensions
+        if let Some(callback) = on_resize {
+            callback.call((width, height));
+        }
 
         // Get 2D rendering context
         let ctx = canvas
