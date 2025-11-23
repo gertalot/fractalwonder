@@ -41,7 +41,7 @@ Mandelbrot explorer capable of extreme deep zoom (10^2000+).
 
 ---
 
-## Iteration 2: UI Panel
+## ✅ Iteration 2: UI Panel
 
 **Goal:** Adopt the UI infrastructure from archive
 
@@ -69,6 +69,8 @@ Mandelbrot explorer capable of extreme deep zoom (10^2000+).
 ## Iteration 3: Config, Precision & Viewport Fitting
 
 **Goal:** Implement fractal configuration, precision calculation, and viewport aspect ratio fitting
+
+Make sure you read `docs/architecture.md` and the code in `_archive` to understand what to do.
 
 **Steps:**
 1. Implement `calculate_required_precision(viewport, canvas_size)` in `precision.rs`
