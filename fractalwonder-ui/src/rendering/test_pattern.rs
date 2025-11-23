@@ -40,6 +40,12 @@ pub struct TickParams {
     pub minor_threshold: f64,
     /// Threshold for detecting axis lines (major / 100)
     pub axis_threshold: f64,
+    /// Length of major tick marks perpendicular to axis (major / 8)
+    pub major_tick_length: f64,
+    /// Length of medium tick marks perpendicular to axis (major / 12)
+    pub medium_tick_length: f64,
+    /// Length of minor tick marks perpendicular to axis (major / 20)
+    pub minor_tick_length: f64,
 }
 
 /// Calculate tick parameters from viewport width.
@@ -59,6 +65,9 @@ pub fn calculate_tick_params(viewport_width_f64: f64) -> TickParams {
         medium_threshold: major_spacing / 75.0,
         minor_threshold: major_spacing / 100.0,
         axis_threshold: major_spacing / 100.0,
+        major_tick_length: major_spacing / 8.0,
+        medium_tick_length: major_spacing / 12.0,
+        minor_tick_length: major_spacing / 20.0,
     }
 }
 
@@ -67,7 +76,7 @@ pub fn calculate_tick_params(viewport_width_f64: f64) -> TickParams {
 /// Renders:
 /// 1. Checkerboard background aligned to major tick grid
 /// 2. Axis lines at x=0 and y=0
-/// 3. Tick marks at major/medium/minor intervals
+/// 3. Tick marks at major/medium/minor intervals (extending perpendicular to axis)
 /// 4. Origin marker at (0,0)
 pub fn test_pattern_color(fx: f64, fy: f64, params: &TickParams) -> [u8; 4] {
     // 1. Check for origin marker (highest priority)
@@ -76,45 +85,49 @@ pub fn test_pattern_color(fx: f64, fy: f64, params: &TickParams) -> [u8; 4] {
         return ORIGIN_COLOR;
     }
 
-    // 2. Check for horizontal axis (y ~ 0)
     let dist_to_x_axis = fy.abs();
-    if dist_to_x_axis < params.axis_threshold {
-        // Check for tick marks along x-axis
-        let dist_to_major = distance_to_nearest_multiple(fx, params.major_spacing);
-        if dist_to_major < params.major_threshold {
-            return MAJOR_TICK_COLOR;
-        }
-        let dist_to_medium = distance_to_nearest_multiple(fx, params.medium_spacing);
-        if dist_to_medium < params.medium_threshold {
-            return MEDIUM_TICK_COLOR;
-        }
-        let dist_to_minor = distance_to_nearest_multiple(fx, params.minor_spacing);
-        if dist_to_minor < params.minor_threshold {
-            return MINOR_TICK_COLOR;
-        }
-        return AXIS_COLOR;
-    }
-
-    // 3. Check for vertical axis (x ~ 0)
     let dist_to_y_axis = fx.abs();
-    if dist_to_y_axis < params.axis_threshold {
-        // Check for tick marks along y-axis
-        let dist_to_major = distance_to_nearest_multiple(fy, params.major_spacing);
-        if dist_to_major < params.major_threshold {
-            return MAJOR_TICK_COLOR;
-        }
-        let dist_to_medium = distance_to_nearest_multiple(fy, params.medium_spacing);
-        if dist_to_medium < params.medium_threshold {
-            return MEDIUM_TICK_COLOR;
-        }
-        let dist_to_minor = distance_to_nearest_multiple(fy, params.minor_spacing);
-        if dist_to_minor < params.minor_threshold {
-            return MINOR_TICK_COLOR;
-        }
+
+    // 2. Check for tick marks extending from x-axis (vertical ticks at x positions)
+    // Ticks extend perpendicular to axis: check if within tick length of axis
+    let dist_to_major_x = distance_to_nearest_multiple(fx, params.major_spacing);
+    if dist_to_major_x < params.major_threshold && dist_to_x_axis < params.major_tick_length {
+        return MAJOR_TICK_COLOR;
+    }
+    let dist_to_medium_x = distance_to_nearest_multiple(fx, params.medium_spacing);
+    if dist_to_medium_x < params.medium_threshold && dist_to_x_axis < params.medium_tick_length {
+        return MEDIUM_TICK_COLOR;
+    }
+    let dist_to_minor_x = distance_to_nearest_multiple(fx, params.minor_spacing);
+    if dist_to_minor_x < params.minor_threshold && dist_to_x_axis < params.minor_tick_length {
+        return MINOR_TICK_COLOR;
+    }
+
+    // 3. Check for tick marks extending from y-axis (horizontal ticks at y positions)
+    let dist_to_major_y = distance_to_nearest_multiple(fy, params.major_spacing);
+    if dist_to_major_y < params.major_threshold && dist_to_y_axis < params.major_tick_length {
+        return MAJOR_TICK_COLOR;
+    }
+    let dist_to_medium_y = distance_to_nearest_multiple(fy, params.medium_spacing);
+    if dist_to_medium_y < params.medium_threshold && dist_to_y_axis < params.medium_tick_length {
+        return MEDIUM_TICK_COLOR;
+    }
+    let dist_to_minor_y = distance_to_nearest_multiple(fy, params.minor_spacing);
+    if dist_to_minor_y < params.minor_threshold && dist_to_y_axis < params.minor_tick_length {
+        return MINOR_TICK_COLOR;
+    }
+
+    // 4. Check for horizontal axis line (y ~ 0)
+    if dist_to_x_axis < params.axis_threshold {
         return AXIS_COLOR;
     }
 
-    // 4. Checkerboard background
+    // 5. Check for vertical axis line (x ~ 0)
+    if dist_to_y_axis < params.axis_threshold {
+        return AXIS_COLOR;
+    }
+
+    // 6. Checkerboard background
     if is_light_cell(fx, fy, params.major_spacing) {
         BACKGROUND_LIGHT
     } else {

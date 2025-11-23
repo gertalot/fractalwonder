@@ -16,18 +16,20 @@ pub fn App() -> impl IntoView {
     // Viewport signal - now writable for interaction updates
     let (viewport, set_viewport) = create_signal(Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64));
 
-    // Initialize viewport when canvas size becomes available
-    create_effect(move |prev_size| {
+    // Initialize and adjust viewport when canvas size changes
+    create_effect(move |prev_size: Option<(u32, u32)>| {
         let size = canvas_size.get();
         let cfg = config.get();
 
-        // Only initialize once when size becomes non-zero
+        // Skip if invalid size
         if size.0 == 0 || size.1 == 0 {
             return size;
         }
 
-        // If this is the first time we have a valid size, initialize viewport
-        if prev_size.map(|(w, h)| w == 0 || h == 0).unwrap_or(true) {
+        let was_valid = prev_size.map(|(w, h)| w > 0 && h > 0).unwrap_or(false);
+
+        if !was_valid {
+            // First time we have a valid size: initialize viewport from config
             let natural = cfg.default_viewport(64);
             let fitted = fit_viewport_to_canvas(&natural, size);
             let required_bits = calculate_precision_bits(&fitted, size);
@@ -40,6 +42,12 @@ pub fn App() -> impl IntoView {
             };
 
             set_viewport.set(final_viewport);
+        } else if prev_size != Some(size) {
+            // Canvas resized: adjust viewport to maintain aspect ratio
+            // Keep the same center and vertical extent, adjust horizontal to match new aspect
+            let current_vp = viewport.get_untracked();
+            let fitted = fit_viewport_to_canvas(&current_vp, size);
+            set_viewport.set(fitted);
         }
 
         size

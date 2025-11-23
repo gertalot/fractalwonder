@@ -276,6 +276,10 @@ pub fn fractal_to_pixel(
 /// PixelTransform contains RELATIVE zoom_factor (2.0 = zoom in 2x from current).
 /// Uses BigFloat arithmetic to preserve precision at extreme depths.
 ///
+/// The transform's offset is **center-relative**: (0, 0) means the transformation
+/// is centered at the canvas center. This function converts to absolute coordinates
+/// for proper zoom-point handling.
+///
 /// - zoom_factor > 1: zooming in, width/height shrink
 /// - zoom_factor < 1: zooming out, width/height grow
 pub fn apply_pixel_transform_to_viewport(
@@ -284,27 +288,84 @@ pub fn apply_pixel_transform_to_viewport(
     canvas_size: (u32, u32),
     precision_bits: usize,
 ) -> Viewport {
-    let zoom_factor_bf = BigFloat::with_precision(transform.zoom_factor, precision_bits);
+    let (canvas_width, canvas_height) = canvas_size;
+    let canvas_center_x = canvas_width as f64 / 2.0;
+    let canvas_center_y = canvas_height as f64 / 2.0;
 
-    // Zooming in = smaller visible region: new_width = old_width / zoom_factor
+    // Convert center-relative offset to absolute offset (pixel space)
+    // This is critical for proper zoom-point handling
+    let absolute_offset_x = transform.offset_x + canvas_center_x * (1.0 - transform.zoom_factor);
+    let absolute_offset_y = transform.offset_y + canvas_center_y * (1.0 - transform.zoom_factor);
+
+    // Calculate new viewport dimensions: zooming in = smaller visible region
+    let zoom_factor_bf = BigFloat::with_precision(transform.zoom_factor, precision_bits);
     let new_width = viewport.width.div(&zoom_factor_bf);
     let new_height = viewport.height.div(&zoom_factor_bf);
 
-    // Convert pixel offset to fractal offset using current viewport dimensions
-    let offset_x_norm = BigFloat::with_precision(transform.offset_x, precision_bits).div(
-        &BigFloat::with_precision(canvas_size.0 as f64, precision_bits),
-    );
-    let offset_y_norm = BigFloat::with_precision(transform.offset_y, precision_bits).div(
-        &BigFloat::with_precision(canvas_size.1 as f64, precision_bits),
+    // Special case: pure translation (zoom ≈ 1.0)
+    // When zoom_factor = 1.0, there's no fixed point - offset directly translates viewport
+    if (transform.zoom_factor - 1.0).abs() < 1e-10 {
+        // Pure pan: offset moves pixels, so viewport moves in opposite direction
+        let offset_x_norm = BigFloat::with_precision(absolute_offset_x, precision_bits).div(
+            &BigFloat::with_precision(canvas_width as f64, precision_bits),
+        );
+        let offset_y_norm = BigFloat::with_precision(absolute_offset_y, precision_bits).div(
+            &BigFloat::with_precision(canvas_height as f64, precision_bits),
+        );
+
+        let dx = offset_x_norm.mul(&viewport.width);
+        let dy = offset_y_norm.mul(&viewport.height);
+
+        // Viewport moves opposite to pixel offset (dragging right = looking left)
+        let new_center = (viewport.center.0.sub(&dx), viewport.center.1.sub(&dy));
+
+        return Viewport {
+            center: new_center,
+            width: new_width,
+            height: new_height,
+        };
+    }
+
+    // General case: transformation with zoom
+    //
+    // Strategy: Track where the canvas center's image point moves during transformation,
+    // then calculate new viewport center so that point appears at the new pixel position.
+    //
+    // The transformation represents how pixels in the CAPTURED canvas are transformed:
+    // new_pixel_pos = old_pixel_pos * zoom_factor + absolute_offset
+
+    // What fractal point is at canvas center in the CURRENT viewport?
+    let image_at_center = pixel_to_fractal(
+        canvas_center_x,
+        canvas_center_y,
+        viewport,
+        canvas_size,
+        precision_bits,
     );
 
-    let dx = offset_x_norm.mul(&viewport.width);
-    let dy = offset_y_norm.mul(&viewport.height);
+    // During the preview transformation, the pixel at canvas_center moves to:
+    let new_center_px = canvas_center_x * transform.zoom_factor + absolute_offset_x;
+    let new_center_py = canvas_center_y * transform.zoom_factor + absolute_offset_y;
 
-    let new_center = (viewport.center.0.add(&dx), viewport.center.1.add(&dy));
+    // We want: image_at_center appears at pixel (new_center_px, new_center_py) in new viewport
+    //
+    // Formula: fractal_coord = viewport_center + (pixel/canvas - 0.5) * viewport_width
+    // Rearranging: viewport_center = fractal_coord - (pixel/canvas - 0.5) * viewport_width
+    //
+    // For new_center_px: new_viewport_center = image_at_center - (new_center_px/canvas_width - 0.5) * new_width
+
+    let pixel_ratio_x =
+        BigFloat::with_precision(new_center_px / canvas_width as f64, precision_bits)
+            .sub(&BigFloat::with_precision(0.5, precision_bits));
+    let pixel_ratio_y =
+        BigFloat::with_precision(new_center_py / canvas_height as f64, precision_bits)
+            .sub(&BigFloat::with_precision(0.5, precision_bits));
+
+    let new_center_x = image_at_center.0.sub(&pixel_ratio_x.mul(&new_width));
+    let new_center_y = image_at_center.1.sub(&pixel_ratio_y.mul(&new_height));
 
     Viewport {
-        center: new_center,
+        center: (new_center_x, new_center_y),
         width: new_width,
         height: new_height,
     }
@@ -745,8 +806,8 @@ mod tests {
     fn apply_transform_pan_shifts_center() {
         let viewport = Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 128);
         let transform = PixelTransform {
-            offset_x: 100.0, // Pan right 100 pixels
-            offset_y: -50.0, // Pan up 50 pixels
+            offset_x: 100.0, // Image moved right 100 pixels on screen
+            offset_y: -50.0, // Image moved up 50 pixels on screen
             zoom_factor: 1.0,
             matrix: [[1.0, 0.0, 100.0], [0.0, 1.0, -50.0], [0.0, 0.0, 1.0]],
         };
@@ -758,11 +819,13 @@ mod tests {
         assert_eq!(new_vp.width, viewport.width);
         assert_eq!(new_vp.height, viewport.height);
 
-        // Center should shift: x: 100/800 * 4.0 = 0.5, y: -50/600 * 3.0 = -0.25
-        let expected_x = BigFloat::with_precision(100.0, 128)
+        // When image moves RIGHT on screen, we see LEFT part of fractal,
+        // so viewport center moves LEFT (negative offset applied)
+        // x: -100/800 * 4.0 = -0.5, y: +50/600 * 3.0 = +0.25
+        let expected_x = BigFloat::with_precision(-100.0, 128)
             .div(&BigFloat::with_precision(800.0, 128))
             .mul(&viewport.width);
-        let expected_y = BigFloat::with_precision(-50.0, 128)
+        let expected_y = BigFloat::with_precision(50.0, 128)
             .div(&BigFloat::with_precision(600.0, 128))
             .mul(&viewport.height);
 
@@ -774,8 +837,8 @@ mod tests {
     fn apply_transform_combined_zoom_and_pan() {
         let viewport = Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 128);
         let transform = PixelTransform {
-            offset_x: 100.0,
-            offset_y: 50.0,
+            offset_x: 100.0, // Image moved right on screen
+            offset_y: 50.0,  // Image moved down on screen
             zoom_factor: 2.0,
             matrix: [[2.0, 0.0, -300.0], [0.0, 2.0, -250.0], [0.0, 0.0, 1.0]],
         };
@@ -789,9 +852,9 @@ mod tests {
         assert_eq!(new_vp.width, expected_width);
         assert_eq!(new_vp.height, expected_height);
 
-        // Center should have shifted positive in both directions
-        assert!(new_vp.center.0 > BigFloat::zero(128));
-        assert!(new_vp.center.1 > BigFloat::zero(128));
+        // When image moves RIGHT/DOWN on screen, viewport center moves LEFT/UP (negative)
+        assert!(new_vp.center.0 < BigFloat::zero(128));
+        assert!(new_vp.center.1 < BigFloat::zero(128));
     }
 
     #[test]
@@ -859,7 +922,7 @@ mod tests {
         );
 
         let transform = PixelTransform {
-            offset_x: 100.0, // Pan 100 pixels
+            offset_x: 100.0, // Image moved right 100 pixels on screen
             offset_y: 0.0,
             zoom_factor: 1.0,
             matrix: [[1.0, 0.0, 100.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
@@ -868,12 +931,12 @@ mod tests {
 
         let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size, 7000);
 
-        // Center should have moved slightly positive
-        assert!(new_vp.center.0 > BigFloat::zero(7000));
+        // When image moves RIGHT on screen, viewport center moves LEFT (negative)
+        assert!(new_vp.center.0 < BigFloat::zero(7000));
 
-        // The offset should be extremely tiny
-        let tiny_threshold = BigFloat::from_string("1e-300", 7000).unwrap();
-        assert!(new_vp.center.0 < tiny_threshold);
+        // The offset should be extremely tiny (but negative)
+        let tiny_threshold = BigFloat::from_string("-1e-300", 7000).unwrap();
+        assert!(new_vp.center.0 > tiny_threshold);
     }
 
     #[test]
