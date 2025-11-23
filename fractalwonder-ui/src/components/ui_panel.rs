@@ -26,7 +26,7 @@ pub fn UIPanel(
     view! {
         <div
             class=move || format!(
-                "fixed inset-x-0 bottom-0 transition-opacity duration-300 {}",
+                "fixed inset-x-0 bottom-0 z-50 transition-opacity duration-300 {}",
                 opacity_class()
             )
             on:mouseenter=move |_| set_is_hovering.set(true)
