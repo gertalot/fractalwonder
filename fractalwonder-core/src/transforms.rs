@@ -424,6 +424,27 @@ pub fn fit_viewport_to_canvas(natural_viewport: &Viewport, canvas_size: (u32, u3
     }
 }
 
+/// Calculate maximum iterations based on viewport width relative to reference width.
+///
+/// Takes the current viewport width and reference (default) width as BigFloat.
+/// Internally computes zoom level and derives appropriate iteration count.
+/// Deeper zoom requires more iterations to resolve fine detail at the boundary.
+pub fn calculate_max_iterations(viewport_width: &BigFloat, reference_width: &BigFloat) -> u32 {
+    // zoom = reference_width / viewport_width
+    // log2(zoom) = log2(reference_width) - log2(viewport_width)
+    let log2_zoom = reference_width.log2_approx() - viewport_width.log2_approx();
+
+    // Convert log2 to log10 for the iteration formula
+    let log10_zoom = log2_zoom / std::f64::consts::LOG2_10;
+
+    let base = 50.0;
+    let k = 100.0;
+    let power = 1.5;
+
+    let iterations = base + k * log10_zoom.max(0.0).powf(power);
+    iterations.clamp(50.0, 10000.0) as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -997,5 +1018,58 @@ mod tests {
 
         assert!((fitted.width.to_f64() - 16.0).abs() < 0.001);
         assert!((fitted.height.to_f64() - 9.0).abs() < 0.001);
+    }
+
+    // ============================================================================
+    // calculate_max_iterations tests
+    // ============================================================================
+
+    #[test]
+    fn max_iterations_at_1x_zoom() {
+        // At 1x zoom, viewport_width == reference_width
+        let width = BigFloat::with_precision(4.0, 128);
+        let result = calculate_max_iterations(&width, &width);
+        // base = 50, log10(1) = 0, so result = 50
+        assert_eq!(result, 50);
+    }
+
+    #[test]
+    fn max_iterations_at_10x_zoom() {
+        let viewport_width = BigFloat::with_precision(0.4, 128);
+        let reference_width = BigFloat::with_precision(4.0, 128);
+        let result = calculate_max_iterations(&viewport_width, &reference_width);
+        // zoom = 10, log10(10) = 1, iterations = 50 + 100 * 1^1.5 = 150
+        assert_eq!(result, 150);
+    }
+
+    #[test]
+    fn max_iterations_at_1000x_zoom() {
+        let viewport_width = BigFloat::with_precision(0.004, 128);
+        let reference_width = BigFloat::with_precision(4.0, 128);
+        let result = calculate_max_iterations(&viewport_width, &reference_width);
+        // zoom = 1000, log10(1000) = 3, iterations = 50 + 100 * 3^1.5 ≈ 570
+        assert!(
+            result > 500 && result < 600,
+            "Expected ~570, got {}",
+            result
+        );
+    }
+
+    #[test]
+    fn max_iterations_clamped_to_minimum() {
+        // When zoomed out (viewport > reference), iterations should be clamped to 50
+        let viewport_width = BigFloat::with_precision(40.0, 128);
+        let reference_width = BigFloat::with_precision(4.0, 128);
+        let result = calculate_max_iterations(&viewport_width, &reference_width);
+        assert_eq!(result, 50);
+    }
+
+    #[test]
+    fn max_iterations_clamped_to_maximum() {
+        // At extreme zoom, should clamp to 10000
+        let viewport_width = BigFloat::from_string("4e-100", 256).unwrap();
+        let reference_width = BigFloat::with_precision(4.0, 256);
+        let result = calculate_max_iterations(&viewport_width, &reference_width);
+        assert_eq!(result, 10000);
     }
 }
