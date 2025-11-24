@@ -2,8 +2,5 @@ pub mod colorizers;
 mod test_pattern;
 
 pub use colorizers::colorize_test_image;
-pub use test_pattern::{
-    calculate_tick_params, distance_to_nearest_multiple, is_light_cell, test_pattern_color,
-    test_pattern_color_normalized, TickParams, AXIS_COLOR, BACKGROUND_DARK, BACKGROUND_LIGHT,
-    MAJOR_TICK_COLOR, MEDIUM_TICK_COLOR, MINOR_TICK_COLOR, ORIGIN_COLOR,
-};
+// Only export what's still needed for tests
+pub use test_pattern::{calculate_tick_params, calculate_tick_params_from_log2, TickParams};

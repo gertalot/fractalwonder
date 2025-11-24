@@ -1,22 +1,22 @@
-/// Colors for the test pattern (RGBA)
-pub const BACKGROUND_LIGHT: [u8; 4] = [245, 245, 245, 255]; // Light grey
-pub const BACKGROUND_DARK: [u8; 4] = [255, 255, 255, 255]; // White
-pub const AXIS_COLOR: [u8; 4] = [100, 100, 100, 255]; // Dark grey
-pub const MAJOR_TICK_COLOR: [u8; 4] = [50, 50, 50, 255]; // Darker grey
-pub const MEDIUM_TICK_COLOR: [u8; 4] = [80, 80, 80, 255];
-pub const MINOR_TICK_COLOR: [u8; 4] = [120, 120, 120, 255];
-pub const ORIGIN_COLOR: [u8; 4] = [255, 0, 0, 255]; // Red
+/// Colors for the test pattern (RGBA) - used by tests
+const BACKGROUND_LIGHT: [u8; 4] = [245, 245, 245, 255]; // Light grey
+const BACKGROUND_DARK: [u8; 4] = [255, 255, 255, 255]; // White
+const AXIS_COLOR: [u8; 4] = [100, 100, 100, 255]; // Dark grey
+const MAJOR_TICK_COLOR: [u8; 4] = [50, 50, 50, 255]; // Darker grey
+const MEDIUM_TICK_COLOR: [u8; 4] = [80, 80, 80, 255];
+const MINOR_TICK_COLOR: [u8; 4] = [120, 120, 120, 255];
+const ORIGIN_COLOR: [u8; 4] = [255, 0, 0, 255]; // Red
 
 /// Calculate distance to nearest multiple of interval.
 /// Returns a value in [0, interval/2].
-pub fn distance_to_nearest_multiple(value: f64, interval: f64) -> f64 {
+fn distance_to_nearest_multiple(value: f64, interval: f64) -> f64 {
     let remainder = value.rem_euclid(interval);
     remainder.min(interval - remainder)
 }
 
 /// Determine if a point is on a "light" or "dark" checkerboard cell.
 /// Cells are aligned to major tick grid.
-pub fn is_light_cell(fx: f64, fy: f64, major_spacing: f64) -> bool {
+fn is_light_cell(fx: f64, fy: f64, major_spacing: f64) -> bool {
     let cell_x = (fx / major_spacing).floor() as i64;
     let cell_y = (fy / major_spacing).floor() as i64;
     (cell_x + cell_y) % 2 == 0
@@ -103,7 +103,8 @@ pub fn calculate_tick_params(viewport_width_f64: f64) -> TickParams {
 ///
 /// The origin offsets tell us where (0,0) is in normalized viewport space.
 /// At extreme zoom far from origin, these may be very large (origin is far away).
-pub fn test_pattern_color_normalized(
+#[allow(dead_code)] // Kept for reference/potential future use
+fn test_pattern_color_normalized(
     norm_x: f64,
     norm_y: f64,
     origin_norm_x: f64,
@@ -202,7 +203,8 @@ pub fn test_pattern_color_normalized(
 /// 2. Axis lines at x=0 and y=0
 /// 3. Tick marks at major/medium/minor intervals (extending perpendicular to axis)
 /// 4. Origin marker at (0,0)
-pub fn test_pattern_color(fx: f64, fy: f64, params: &TickParams) -> [u8; 4] {
+#[cfg(test)]
+fn test_pattern_color(fx: f64, fy: f64, params: &TickParams) -> [u8; 4] {
     // 1. Check for origin marker (highest priority)
     let dist_to_origin = (fx * fx + fy * fy).sqrt();
     if dist_to_origin < params.major_threshold * 2.0 {
