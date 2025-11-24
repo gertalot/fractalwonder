@@ -146,7 +146,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 6: Compute Crate & Renderer Trait
+## ✅ Iteration 6: Compute Crate & Renderer Trait
 
 **Goal:** Create the compute layer foundation following the architecture
 
