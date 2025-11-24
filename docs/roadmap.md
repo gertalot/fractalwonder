@@ -122,7 +122,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 5: Zoom Level Display
+## ✅ Iteration 5: Zoom Level Display
 
 **Goal:** Show current zoom level in UI
 
@@ -152,7 +152,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 **Steps:**
 1. Create `fractalwonder-compute` crate
-2. Define data types: `TestImageData`, `ComputeData` enum (start with just TestImage variant)
+2. Define data types: `TestImageData` in a  `ComputeData` enum (start with just TestImage variant)
 3. Define `Renderer` trait: `render(region: &Viewport, resolution: (u32, u32)) -> Vec<Self::Data>`
 4. Implement `TestImageRenderer` (formalizes the test pattern from Iteration 4)
 5. Create basic `Colorizer` type in UI: `fn(&ComputeData) -> (u8, u8, u8, u8)`
