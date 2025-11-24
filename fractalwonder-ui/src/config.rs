@@ -39,8 +39,8 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         id: "test_image",
         display_name: "Test Pattern",
         default_center: ("0.0", "0.0"),
-        default_width: "4.0e-6",
-        default_height: "4.0e-6",
+        default_width: "4.0e-10",
+        default_height: "4.0e-10",
     },
     FractalConfig {
         id: "mandelbrot",

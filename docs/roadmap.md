@@ -95,7 +95,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 4: Viewport-Driven Rendering
+## ✅ Iteration 4: Viewport-Driven Rendering
 
 **Goal:** Prove coordinate transforms work end-to-end
 

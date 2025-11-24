@@ -72,14 +72,19 @@ pub fn UIPanel(
                         let bits = precision_bits.get();
                         let (canvas_w, canvas_h) = canvas_size.get();
 
+                        // Calculate zoom: reference_width / current_width via log subtraction
+                        let reference_width = cfg.default_viewport(bits).width;
+                        let zoom_log2 = reference_width.log2_approx() - vp.width.log2_approx();
+                        let zoom = format_zoom_from_log2(zoom_log2);
+
                         let cx = format_coordinate_from_log2(vp.center.0.log2_approx());
                         let cy = format_coordinate_from_log2(vp.center.1.log2_approx());
                         let w = format_dimension_from_log2(vp.width.log2_approx());
                         let h = format_dimension_from_log2(vp.height.log2_approx());
 
                         format!(
-                            "{} | Center: ({}, {}) | Size: {} x {} | Canvas: {}x{} | Precision: {} bits",
-                            cfg.display_name, cx, cy, w, h, canvas_w, canvas_h, bits
+                            "{} | Zoom: {} | Center: ({}, {}) | Size: {} x {} | Canvas: {}x{} | {} bits",
+                            cfg.display_name, zoom, cx, cy, w, h, canvas_w, canvas_h, bits
                         )
                     }}
                 </div>
@@ -122,6 +127,33 @@ fn format_coordinate_from_log2(log2_val: f64) -> String {
     }
 }
 
+/// Format a zoom level for display using log2 approximation.
+///
+/// Produces: "1×", "150×", "1.50 × 10^3", "10^2000"
+fn format_zoom_from_log2(log2_val: f64) -> String {
+    use std::f64::consts::LOG2_10;
+
+    if log2_val.is_nan() || log2_val.is_infinite() {
+        return "1×".to_string();
+    }
+
+    let log10_val = log2_val / LOG2_10;
+    let exponent = log10_val.floor() as i64;
+    let mantissa = 10.0_f64.powf(log10_val - exponent as f64);
+
+    if exponent < 3 {
+        // Simple format: "1×", "150×"
+        let zoom = 10.0_f64.powf(log10_val);
+        format!("{:.0}×", zoom)
+    } else if mantissa < 1.05 {
+        // Drop mantissa when ≈1: "10^3", "10^2000"
+        format!("10^{}", exponent)
+    } else {
+        // Scientific: "1.50 × 10^3"
+        format!("{:.2} × 10^{}", mantissa, exponent)
+    }
+}
+
 /// Format a dimension for display using log2 approximation.
 ///
 /// Works at any zoom level, including extreme depths beyond f64 range.
@@ -148,5 +180,54 @@ fn format_dimension_from_log2(log2_val: f64) -> String {
     } else {
         // Extreme value - show as power of 10
         format!("~10^{:.0}", log10_val)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::f64::consts::LOG2_10;
+
+    #[test]
+    fn format_zoom_1x() {
+        assert_eq!(format_zoom_from_log2(0.0), "1×");
+    }
+
+    #[test]
+    fn format_zoom_10x() {
+        assert_eq!(format_zoom_from_log2(LOG2_10), "10×");
+    }
+
+    #[test]
+    fn format_zoom_100x() {
+        assert_eq!(format_zoom_from_log2(2.0 * LOG2_10), "100×");
+    }
+
+    #[test]
+    fn format_zoom_1000x_becomes_scientific() {
+        assert_eq!(format_zoom_from_log2(3.0 * LOG2_10), "10^3");
+    }
+
+    #[test]
+    fn format_zoom_with_mantissa() {
+        // 1.5 × 10^3 = 1500
+        let log2_1500 = (1500.0_f64).log2();
+        assert_eq!(format_zoom_from_log2(log2_1500), "1.50 × 10^3");
+    }
+
+    #[test]
+    fn format_zoom_extreme() {
+        // 10^2000
+        assert_eq!(format_zoom_from_log2(2000.0 * LOG2_10), "10^2000");
+    }
+
+    #[test]
+    fn format_zoom_nan_returns_1x() {
+        assert_eq!(format_zoom_from_log2(f64::NAN), "1×");
+    }
+
+    #[test]
+    fn format_zoom_infinity_returns_1x() {
+        assert_eq!(format_zoom_from_log2(f64::INFINITY), "1×");
     }
 }
