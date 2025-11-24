@@ -1,10 +1,11 @@
 [workspace]
-members = ["fractalwonder-core", "fractalwonder-ui"]
+members = ["fractalwonder-core", "fractalwonder-compute", "fractalwonder-ui"]
 resolver = "2"
 
 [workspace.dependencies]
 # Core crates
 fractalwonder-core = { path = "./fractalwonder-core" }
+fractalwonder-compute = { path = "./fractalwonder-compute" }
 
 # Arbitrary precision
 dashu = "0.4"

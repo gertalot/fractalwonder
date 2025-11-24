@@ -468,6 +468,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fractalwonder-compute"
+version = "0.1.0"
+dependencies = [
+ "fractalwonder-core",
+]
+
+[[package]]
 name = "fractalwonder-core"
 version = "0.1.0"
 dependencies = [

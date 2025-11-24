@@ -1,0 +1,7 @@
+[package]
+name = "fractalwonder-compute"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fractalwonder-core = { path = "../fractalwonder-core" }
