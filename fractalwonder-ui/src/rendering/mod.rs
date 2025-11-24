@@ -1,5 +1,7 @@
+pub mod colorizers;
 mod test_pattern;
 
+pub use colorizers::colorize_test_image;
 pub use test_pattern::{
     calculate_tick_params, distance_to_nearest_multiple, is_light_cell, test_pattern_color,
     test_pattern_color_normalized, TickParams, AXIS_COLOR, BACKGROUND_DARK, BACKGROUND_LIGHT,
