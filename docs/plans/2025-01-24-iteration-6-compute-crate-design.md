@@ -2,7 +2,10 @@
 
 ## Goal
 
-Create the compute layer foundation with proper separation of computation from colorization. All fractal-space computations use BigFloat with no `.to_f64()` conversions in the compute layer.
+Create the compute layer foundation with proper separation of computation from colorization.
+
+**Key insight:** TestImage uses viewport-relative (normalized) coordinates, while Mandelbrot uses
+fractal-space (BigFloat) coordinates. These are fundamentally different coordinate systems.
 
 ## Crate Structure
 
@@ -13,10 +16,9 @@ fractalwonder-core/     (existing + new types)
 fractalwonder-compute/  NEW CRATE
   ├── lib.rs
   ├── renderer.rs       Renderer trait
-  ├── point_computer.rs ImagePointComputer trait
-  ├── pixel_renderer.rs render_viewport() function
-  └── computers/
-      └── test_image.rs TestImageComputer
+  ├── point_computer.rs ImagePointComputer trait (BigFloat, for Mandelbrot)
+  └── renderers/
+      └── test_image.rs TestImageRenderer (normalized coords)
 
 fractalwonder-ui/       (existing + refactored)
   └── rendering/
@@ -42,7 +44,7 @@ The UI layer imports only types from core. It does not call compute functions di
 
 ```rust
 /// Data computed for a test image pixel.
-/// All fields are bools derived from BigFloat comparisons.
+/// All fields are bools derived from normalized coordinate comparisons.
 #[derive(Clone, Debug)]
 pub struct TestImageData {
     pub is_on_origin: bool,
@@ -67,21 +69,6 @@ pub enum ComputeData {
 
 ## Compute Layer (fractalwonder-compute)
 
-### ImagePointComputer Trait
-
-```rust
-use fractalwonder_core::BigFloat;
-
-/// Computes data for a single point in fractal space.
-pub trait ImagePointComputer {
-    type Data;
-
-    /// Compute data for point (x, y) in fractal space.
-    /// Coordinates are BigFloat - no .to_f64() allowed.
-    fn compute(&self, x: &BigFloat, y: &BigFloat) -> Self::Data;
-}
-```
-
 ### Renderer Trait
 
 ```rust
@@ -95,86 +82,86 @@ pub trait Renderer {
 }
 ```
 
-### render_viewport Function
+### ImagePointComputer Trait (for fractal-space renderers like Mandelbrot)
 
 ```rust
-use fractalwonder_core::{Viewport, pixel_to_fractal};
+use fractalwonder_core::BigFloat;
 
-pub fn render_viewport<C: ImagePointComputer>(
-    computer: &C,
-    viewport: &Viewport,
-    canvas_size: (u32, u32),
-) -> Vec<C::Data> {
-    let (width, height) = canvas_size;
-    (0..height).flat_map(|py| {
-        (0..width).map(move |px| {
-            let (fx, fy) = pixel_to_fractal(px as f64, py as f64, viewport, canvas_size);
-            computer.compute(&fx, &fy)
-        })
-    }).collect()
+/// Computes data for a single point in fractal space.
+/// Used by fractals that operate in absolute fractal coordinates (e.g., Mandelbrot).
+/// NOT used by TestImage (which uses normalized viewport coordinates).
+pub trait ImagePointComputer {
+    type Data;
+
+    fn compute(&self, x: &BigFloat, y: &BigFloat) -> Self::Data;
 }
 ```
 
-### TestImageComputer
+### TestImageRenderer (normalized coordinates)
+
+TestImage is fundamentally viewport-relative, not fractal-space. At 10^-1000 zoom, the
+checkerboard cells would have 1000-digit indices in fractal space - impossible to handle.
+Instead, we work in normalized viewport coordinates where spacing is always 0.2.
 
 ```rust
-use fractalwonder_core::{BigFloat, TestImageData};
+use fractalwonder_core::{Viewport, TestImageData};
 
-pub struct TestImageComputer {
-    // Thresholds as BigFloat for comparison
-    origin_threshold: BigFloat,
-    axis_threshold: BigFloat,
-    major_spacing: BigFloat,
-    major_threshold: BigFloat,
-    medium_spacing: BigFloat,
-    medium_threshold: BigFloat,
-    minor_spacing: BigFloat,
-    minor_threshold: BigFloat,
-    major_tick_length: BigFloat,
-    medium_tick_length: BigFloat,
-    minor_tick_length: BigFloat,
-}
+pub struct TestImageRenderer;
 
-impl TestImageComputer {
-    pub fn new(viewport: &Viewport) -> Self {
-        // Derive thresholds from viewport dimensions
-        // All values as BigFloat
-    }
-}
-
-impl ImagePointComputer for TestImageComputer {
+impl Renderer for TestImageRenderer {
     type Data = TestImageData;
 
-    fn compute(&self, x: &BigFloat, y: &BigFloat) -> TestImageData {
-        // All comparisons in BigFloat, return bools
-        let x_abs = x.abs();
-        let y_abs = y.abs();
+    fn render(&self, viewport: &Viewport, canvas_size: (u32, u32)) -> Vec<TestImageData> {
+        let (width, height) = canvas_size;
 
-        TestImageData {
-            is_on_origin: &x_abs < &self.origin_threshold
-                       && &y_abs < &self.origin_threshold,
-            is_on_x_axis: &y_abs < &self.axis_threshold,
-            is_on_y_axis: &x_abs < &self.axis_threshold,
-            is_on_major_tick_x: is_near_grid_line(x, &self.major_spacing, &self.major_threshold)
-                             && &y_abs < &self.major_tick_length,
-            // ... remaining fields
-            is_light_cell: is_light_cell_bf(x, y, &self.major_spacing),
-        }
+        // Compute origin position in normalized coords (SAFE: result is small value)
+        // origin_norm_x = (0 - center_x) / viewport_width
+        let origin_norm_x = compute_origin_norm_x(viewport);
+        let origin_norm_y = compute_origin_norm_y(viewport);
+
+        (0..height).flat_map(|py| {
+            (0..width).map(move |px| {
+                // Pixel to normalized coords (pure f64 arithmetic)
+                let norm_x = (px as f64 / width as f64) - 0.5;
+                let norm_y = (py as f64 / height as f64) - 0.5;
+
+                compute_test_image_data(norm_x, norm_y, origin_norm_x, origin_norm_y)
+            })
+        }).collect()
     }
 }
 
-/// Check if value is near a multiple of spacing.
-fn is_near_grid_line(value: &BigFloat, spacing: &BigFloat, threshold: &BigFloat) -> bool {
-    let remainder = value.rem_euclid(spacing);
-    let distance = remainder.min(&(spacing.sub(&remainder)));
-    &distance < threshold
+/// Compute origin's normalized x position.
+/// Returns (0 - viewport.center_x) / viewport.width as f64.
+/// SAFE: Result is a small normalized value, not an extreme BigFloat.
+fn compute_origin_norm_x(viewport: &Viewport) -> f64 {
+    let zero = BigFloat::zero(viewport.center().0.precision_bits());
+    let offset = zero.sub(&viewport.center().0);
+    let normalized = offset.div(&viewport.width());
+    normalized.to_f64()  // SAFE: normalized position is small
 }
 
-/// Determine checkerboard cell color.
-fn is_light_cell_bf(x: &BigFloat, y: &BigFloat, spacing: &BigFloat) -> bool {
-    let cell_x = x.div(spacing).floor_to_i64();
-    let cell_y = y.div(spacing).floor_to_i64();
-    (cell_x + cell_y) % 2 == 0
+fn compute_test_image_data(
+    norm_x: f64,
+    norm_y: f64,
+    origin_norm_x: f64,
+    origin_norm_y: f64,
+) -> TestImageData {
+    // Position relative to origin
+    let fx = norm_x - origin_norm_x;
+    let fy = norm_y - origin_norm_y;
+
+    // Fixed spacing in normalized coords
+    const MAJOR_SPACING: f64 = 0.2;
+    const AXIS_THRESHOLD: f64 = 0.003;
+    const ORIGIN_THRESHOLD: f64 = 0.02;
+    // ... other constants
+
+    TestImageData {
+        is_on_origin: origin_visible && dist_to_origin < ORIGIN_THRESHOLD,
+        is_on_x_axis: y_axis_visible && fy.abs() < AXIS_THRESHOLD,
+        // ... remaining fields (same logic as current test_pattern.rs)
+    }
 }
 ```
 
@@ -223,18 +210,19 @@ for (i, pixel_data) in data.iter().enumerate() {
 
 ## Data Flow
 
+**TestImage (normalized coordinates):**
 ```
 Pixel (px, py)
     │
     ▼
-pixel_to_fractal(px, py, viewport, canvas_size)
+Normalized coords: norm_x = px/width - 0.5  (pure f64)
     │
     ▼
-BigFloat (fx, fy)
+Origin position: origin_norm = -center/width  (BigFloat→f64, SAFE: small value)
     │
     ▼
-ImagePointComputer::compute(&fx, &fy)
-    │  (all comparisons in BigFloat)
+compute_test_image_data(norm_x, norm_y, origin_norm_x, origin_norm_y)
+    │
     ▼
 TestImageData { is_on_origin: bool, is_light_cell: bool, ... }
     │
@@ -245,32 +233,53 @@ Colorizer(data) → [u8; 4]
 Canvas ImageData
 ```
 
+**Mandelbrot (BigFloat coordinates, iteration 7):**
+```
+Pixel (px, py)
+    │
+    ▼
+pixel_to_fractal(px, py, viewport, canvas_size)
+    │
+    ▼
+BigFloat (fx, fy)
+    │
+    ▼
+MandelbrotComputer::compute(&fx, &fy)  (all math in BigFloat)
+    │
+    ▼
+MandelbrotData { iterations: u32, escaped: bool }
+    │
+    ▼
+Colorizer(data) → [u8; 4]
+```
+
 ## Key Design Decisions
 
-1. **No `.to_f64()` in compute layer:** All fractal-space math uses BigFloat.
+1. **TestImage uses normalized coordinates:** Viewport-relative, not fractal-space. Avoids impossible cell indices at extreme zoom.
 
-2. **Bool-based data:** TestImageData contains bools from BigFloat comparisons. No floating-point values that could lose precision.
+2. **Safe `.to_f64()` for normalized positions:** Converting `(0 - center) / width` to f64 is safe because the result is a small normalized value.
 
-3. **Composed architecture:** `ImagePointComputer` computes single points; `render_viewport()` handles the pixel loop.
+3. **ImagePointComputer is for fractal-space renderers:** Mandelbrot uses it (BigFloat coords). TestImage doesn't (uses normalized coords directly).
 
 4. **Data types in core:** Keeps UI independent of compute; both import shared types.
 
 5. **No `natural_bounds()` on Renderer:** `FractalConfig` handles default viewports.
 
-6. **Typed colorizers:** Each data type has its own colorizer signature. The render loop matches on `ComputeData` to call the appropriate colorizer.
+6. **Typed colorizers:** Each data type has its own colorizer signature.
 
 ## Testing
 
-- `TestImageComputer::compute()` returns correct bools for known BigFloat inputs
-- `is_near_grid_line()` works at extreme precision
-- `is_light_cell_bf()` produces consistent checkerboard
+- `TestImageRenderer::render()` produces correct TestImageData for known viewport
+- `compute_test_image_data()` matches current test_pattern_color_normalized() behavior
+- Origin position calculation works at extreme zoom (origin far from viewport)
 - Colorizer maps TestImageData to expected colors
-- Round-trip: same visual output as current test_pattern.rs
+- Visual output matches current test_pattern.rs exactly
 
 ## Migration
 
-1. Create compute crate with traits and TestImageComputer
-2. Create colorizers in UI
-3. Update InteractiveCanvas to use compute pipeline
-4. Verify visual output matches
-5. Remove old test_pattern.rs code
+1. Create compute crate with Renderer trait and TestImageRenderer
+2. Add TestImageData and ComputeData to core
+3. Create colorizers in UI
+4. Update InteractiveCanvas to use compute pipeline
+5. Verify visual output matches
+6. Remove old test_pattern.rs code
