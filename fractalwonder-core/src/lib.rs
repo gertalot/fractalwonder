@@ -1,10 +1,12 @@
 pub mod bigfloat;
+pub mod compute_data;
 pub mod pixel_rect;
 pub mod precision;
 pub mod transforms;
 pub mod viewport;
 
 pub use bigfloat::BigFloat;
+pub use compute_data::{ComputeData, TestImageData};
 pub use pixel_rect::PixelRect;
 pub use precision::calculate_precision_bits;
 pub use transforms::{
