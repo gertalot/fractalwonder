@@ -33,9 +33,20 @@ impl Default for TestImageData {
     }
 }
 
+/// Data computed for a Mandelbrot pixel.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MandelbrotData {
+    /// Number of iterations before escape (or max_iterations if didn't escape)
+    pub iterations: u32,
+    /// Maximum iterations used for this computation (for colorizer normalization)
+    pub max_iterations: u32,
+    /// Whether the point escaped the set
+    pub escaped: bool,
+}
+
 /// Unified enum for all compute results.
 #[derive(Clone, Debug)]
 pub enum ComputeData {
     TestImage(TestImageData),
-    // Mandelbrot(MandelbrotData),  // iteration 7
+    Mandelbrot(MandelbrotData),
 }
