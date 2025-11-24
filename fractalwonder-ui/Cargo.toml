@@ -8,6 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 fractalwonder-core = { workspace = true }
+fractalwonder-compute = { workspace = true }
 leptos = { workspace = true }
 leptos_meta = { workspace = true }
 leptos-use = { workspace = true }
