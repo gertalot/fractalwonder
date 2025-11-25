@@ -1,7 +1,9 @@
+mod mandelbrot;
 mod test_image;
 
 use fractalwonder_core::Viewport;
 
+pub use mandelbrot::MandelbrotRenderer;
 pub use test_image::TestImageRenderer;
 
 /// Renders a viewport to a grid of computed data.
