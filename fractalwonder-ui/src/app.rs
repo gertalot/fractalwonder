@@ -3,15 +3,32 @@ use fractalwonder_core::{calculate_precision_bits, fit_viewport_to_canvas, Viewp
 use leptos::*;
 
 use crate::components::{InteractiveCanvas, UIPanel};
-use crate::config::default_config;
+use crate::config::{default_config, get_config, FRACTAL_CONFIGS};
 
 #[component]
 pub fn App() -> impl IntoView {
     // Canvas size signal (updated by InteractiveCanvas on resize)
     let (canvas_size, set_canvas_size) = create_signal((0u32, 0u32));
 
-    // Current fractal configuration
-    let (config, _set_config) = create_signal(default_config());
+    // Selected renderer (fractal type)
+    let (selected_config_id, set_selected_config_id) = create_signal("mandelbrot".to_string());
+
+    // Derive config from selected ID
+    let config =
+        create_memo(move |_| get_config(&selected_config_id.get()).unwrap_or_else(default_config));
+
+    // Build renderer options from FRACTAL_CONFIGS
+    let renderer_options = Signal::derive(move || {
+        FRACTAL_CONFIGS
+            .iter()
+            .map(|c| (c.id.to_string(), c.display_name.to_string()))
+            .collect::<Vec<_>>()
+    });
+
+    // Colorizer options (single default for now)
+    let colorizer_options =
+        Signal::derive(move || vec![("default".to_string(), "Default".to_string())]);
+    let selected_colorizer_id = Signal::derive(move || "default".to_string());
 
     // Viewport signal - now writable for interaction updates
     let (viewport, set_viewport) = create_signal(Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64));
@@ -51,6 +68,26 @@ pub fn App() -> impl IntoView {
         }
 
         size
+    });
+
+    // Reset viewport when config changes
+    create_effect(move |prev_id: Option<String>| {
+        let current_id = selected_config_id.get();
+        if let Some(prev) = prev_id {
+            if prev != current_id {
+                // Config changed - reset to default viewport
+                if let Some(cfg) = get_config(&current_id) {
+                    let size = canvas_size.get();
+                    if size.0 > 0 && size.1 > 0 {
+                        let precision = calculate_precision_bits(&cfg.default_viewport(128), size);
+                        let natural_vp = cfg.default_viewport(precision);
+                        let fitted_vp = fit_viewport_to_canvas(&natural_vp, size);
+                        set_viewport.set(fitted_vp);
+                    }
+                }
+            }
+        }
+        current_id
     });
 
     // Precision bits - derived from viewport and canvas
@@ -101,6 +138,7 @@ pub fn App() -> impl IntoView {
         <InteractiveCanvas
             viewport=viewport.into()
             on_viewport_change=on_viewport_change
+            config=config.into()
             on_resize=on_resize
         />
         <UIPanel
@@ -109,6 +147,14 @@ pub fn App() -> impl IntoView {
             config=config.into()
             precision_bits=precision_bits.into()
             on_home_click=on_home_click
+            renderer_options=renderer_options
+            selected_renderer_id=Signal::derive(move || selected_config_id.get())
+            on_renderer_select=Callback::new(move |id: String| set_selected_config_id.set(id))
+            colorizer_options=colorizer_options
+            selected_colorizer_id=selected_colorizer_id
+            on_colorizer_select=Callback::new(move |_: String| {
+                // No-op for now - colorizer selection in Iteration 8
+            })
         />
     }
 }

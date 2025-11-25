@@ -5,7 +5,7 @@
 use fractalwonder_core::Viewport;
 
 /// Configuration for a fractal type.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FractalConfig {
     /// Unique identifier (matches renderer ID in compute layer)
     pub id: &'static str,
