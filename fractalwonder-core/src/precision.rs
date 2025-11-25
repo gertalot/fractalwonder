@@ -156,7 +156,18 @@ pub fn calculate_precision_bits_with_iterations(
         total_bits as usize
     };
 
-    total_usize.max(64)
+    let result = total_usize.max(64);
+
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::log_1(
+        &format!(
+            "[Precision] bits_from_ratio={}, iter_bits={}, safety_bits={}, total={}, result={}",
+            bits_from_ratio, iter_bits, safety_bits, total_bits, result
+        )
+        .into(),
+    );
+
+    result
 }
 
 #[cfg(test)]

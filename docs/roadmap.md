@@ -227,7 +227,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 9: Worker Infrastructure
+## ✅ Iteration 9: Worker Infrastructure
 
 **Goal:** Distribute tiles across workers for parallel computation
 

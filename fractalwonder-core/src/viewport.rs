@@ -79,6 +79,20 @@ impl Viewport {
     pub fn precision_bits(&self) -> usize {
         self.width.precision_bits()
     }
+
+    /// Convert viewport to a different precision.
+    ///
+    /// All components (center, width, height) are converted to the new precision.
+    pub fn to_precision(&self, precision_bits: usize) -> Self {
+        Self {
+            center: (
+                self.center.0.to_precision(precision_bits),
+                self.center.1.to_precision(precision_bits),
+            ),
+            width: self.width.to_precision(precision_bits),
+            height: self.height.to_precision(precision_bits),
+        }
+    }
 }
 
 #[cfg(test)]

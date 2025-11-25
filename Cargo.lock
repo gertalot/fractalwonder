@@ -490,6 +490,7 @@ dependencies = [
  "serde",
  "serde_json",
  "wasm-bindgen-test",
+ "web-sys",
 ]
 
 [[package]]

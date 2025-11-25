@@ -121,6 +121,31 @@ impl BigFloat {
         self.precision_bits
     }
 
+    /// Convert to a different precision.
+    ///
+    /// If reducing precision, this may lose information.
+    /// If increasing precision, the value is preserved but stored with more bits.
+    pub fn to_precision(&self, precision_bits: usize) -> Self {
+        if precision_bits == self.precision_bits {
+            return self.clone();
+        }
+
+        if precision_bits <= 64 {
+            // Downsample to f64
+            Self {
+                value: BigFloatValue::F64(self.to_f64()),
+                precision_bits,
+            }
+        } else {
+            // Convert to arbitrary precision
+            let fbig = self.to_fbig().with_precision(precision_bits).unwrap();
+            Self {
+                value: BigFloatValue::Arbitrary(fbig),
+                precision_bits,
+            }
+        }
+    }
+
     /// Convert to f64 (for display/colorization only)
     /// May lose precision for values requiring > 64 bits
     pub fn to_f64(&self) -> f64 {

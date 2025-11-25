@@ -38,6 +38,7 @@ fn performance_now() -> f64 {
 }
 
 fn create_workers(count: usize, pool: Rc<RefCell<WorkerPool>>) -> Result<Vec<Worker>, JsValue> {
+    web_sys::console::log_1(&format!("[WorkerPool] Creating {} workers", count).into());
     let mut workers = Vec::with_capacity(count);
 
     for worker_id in 0..count {
@@ -155,6 +156,17 @@ impl WorkerPool {
                 compute_time_ms,
             } => {
                 if render_id == self.current_render_id {
+                    // let progress = self.progress.get_untracked();
+                    // web_sys::console::log_1(
+                    //     &format!(
+                    //         "[WorkerPool] Tile complete: render #{}, {}/{} tiles, {:.0}ms",
+                    //         render_id,
+                    //         progress.completed_tiles + 1,
+                    //         progress.total_tiles,
+                    //         compute_time_ms
+                    //     )
+                    //     .into(),
+                    // );
                     // Update progress
                     let elapsed = self
                         .render_start_time
@@ -173,6 +185,14 @@ impl WorkerPool {
                         data,
                         compute_time_ms,
                     });
+                } else {
+                    web_sys::console::warn_1(
+                        &format!(
+                            "[WorkerPool] Ignoring stale tile from render #{} (current: #{})",
+                            render_id, self.current_render_id
+                        )
+                        .into(),
+                    );
                 }
             }
 
@@ -222,6 +242,15 @@ impl WorkerPool {
         tiles: Vec<PixelRect>,
     ) {
         self.current_render_id = self.current_render_id.wrapping_add(1);
+        web_sys::console::log_1(
+            &format!(
+                "[WorkerPool] Starting render #{} with {} tiles, precision={} bits",
+                self.current_render_id,
+                tiles.len(),
+                viewport.precision_bits()
+            )
+            .into(),
+        );
         self.current_viewport = Some(viewport);
         self.canvas_size = canvas_size;
         self.pending_tiles = tiles.into();
@@ -237,6 +266,14 @@ impl WorkerPool {
     }
 
     pub fn cancel(&mut self) {
+        web_sys::console::log_1(
+            &format!(
+                "[WorkerPool] Cancelling render #{}, {} tiles pending",
+                self.current_render_id,
+                self.pending_tiles.len()
+            )
+            .into(),
+        );
         // Terminate all workers
         for worker in &self.workers {
             worker.terminate();

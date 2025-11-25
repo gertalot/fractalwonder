@@ -46,9 +46,9 @@ pub fn tile_to_viewport(
 ///
 /// Uses smaller tiles at deep zoom for more frequent progress updates.
 pub fn calculate_tile_size(zoom_factor: f64) -> u32 {
-    const DEEP_ZOOM_THRESHOLD: f64 = 1e10;
-    const NORMAL_TILE_SIZE: u32 = 128;
-    const DEEP_ZOOM_TILE_SIZE: u32 = 64;
+    const DEEP_ZOOM_THRESHOLD: f64 = 1e7;
+    const NORMAL_TILE_SIZE: u32 = 256;
+    const DEEP_ZOOM_TILE_SIZE: u32 = 32;
 
     if zoom_factor >= DEEP_ZOOM_THRESHOLD {
         DEEP_ZOOM_TILE_SIZE
@@ -99,15 +99,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn normal_zoom_uses_128px_tiles() {
-        assert_eq!(calculate_tile_size(1.0), 128);
-        assert_eq!(calculate_tile_size(1e9), 128);
+    fn normal_zoom_uses_256px_tiles() {
+        assert_eq!(calculate_tile_size(1.0), 256);
+        assert_eq!(calculate_tile_size(1e6), 256);
     }
 
     #[test]
-    fn deep_zoom_uses_64px_tiles() {
-        assert_eq!(calculate_tile_size(1e10), 64);
-        assert_eq!(calculate_tile_size(1e50), 64);
+    fn deep_zoom_uses_32px_tiles() {
+        assert_eq!(calculate_tile_size(1e7), 32);
+        assert_eq!(calculate_tile_size(1e50), 32);
     }
 
     #[test]

@@ -78,6 +78,7 @@ fn handle_message(renderer: &Rc<RefCell<Option<BoxedRenderer>>>, data: JsValue) 
 
     match msg {
         MainToWorker::Initialize { renderer_id } => {
+            web_sys::console::log_1(&format!("[Worker] Initialize with renderer: {}", renderer_id).into());
             match create_renderer(&renderer_id) {
                 Some(r) => {
                     *renderer.borrow_mut() = Some(r);
@@ -122,7 +123,6 @@ fn handle_message(renderer: &Rc<RefCell<Option<BoxedRenderer>>>, data: JsValue) 
             let data = r.render(&viewport, (tile.width, tile.height));
 
             let compute_time_ms = Date::now() - start_time;
-
             // Send result
             post_message(&WorkerToMain::TileComplete {
                 render_id,
@@ -142,6 +142,7 @@ fn handle_message(renderer: &Rc<RefCell<Option<BoxedRenderer>>>, data: JsValue) 
         }
 
         MainToWorker::Terminate => {
+            web_sys::console::log_1(&"[Worker] Terminating".into());
             let global: web_sys::DedicatedWorkerGlobalScope =
                 js_sys::global().dyn_into().expect("Not in worker context");
             global.close();
@@ -153,6 +154,8 @@ fn handle_message(renderer: &Rc<RefCell<Option<BoxedRenderer>>>, data: JsValue) 
 #[wasm_bindgen]
 pub fn init_message_worker() {
     console_error_panic_hook::set_once();
+
+    web_sys::console::log_1(&"[Worker] Started".into());
 
     let renderer: Rc<RefCell<Option<BoxedRenderer>>> = Rc::new(RefCell::new(None));
 
