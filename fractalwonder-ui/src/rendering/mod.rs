@@ -1,9 +1,11 @@
+mod async_progressive_renderer;
 mod canvas_utils;
 pub mod colorizers;
 mod render_progress;
 mod test_pattern;
 mod tiles;
 
+pub use async_progressive_renderer::AsyncProgressiveRenderer;
 pub use canvas_utils::{draw_pixels_to_canvas, get_2d_context, performance_now, yield_to_browser};
 pub use colorizers::{colorize, colorize_mandelbrot, colorize_test_image, Colorizer};
 pub use render_progress::RenderProgress;
