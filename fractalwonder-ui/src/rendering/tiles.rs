@@ -6,7 +6,7 @@ use fractalwonder_core::PixelRect;
 pub fn calculate_tile_size(zoom_factor: f64) -> u32 {
     const DEEP_ZOOM_THRESHOLD: f64 = 1e10;
     const NORMAL_TILE_SIZE: u32 = 128;
-    const DEEP_ZOOM_TILE_SIZE: u32 = 64;
+    const DEEP_ZOOM_TILE_SIZE: u32 = 32;
 
     if zoom_factor >= DEEP_ZOOM_THRESHOLD {
         DEEP_ZOOM_TILE_SIZE

@@ -200,7 +200,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 8: Tiled Rendering
+## ✅ Iteration 8: Tiled Rendering
 
 **Goal:** Progressive tile-by-tile display (still main thread)
 
