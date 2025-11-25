@@ -1,7 +1,9 @@
 use crate::config::FractalConfig;
+use crate::rendering::canvas_utils::{
+    draw_pixels_to_canvas, get_2d_context, performance_now, yield_to_browser,
+};
 use crate::rendering::colorizers::colorize;
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
-use crate::rendering::canvas_utils::{draw_pixels_to_canvas, get_2d_context, performance_now, yield_to_browser};
 use crate::rendering::RenderProgress;
 use fractalwonder_compute::{MandelbrotRenderer, Renderer, TestImageRenderer};
 use fractalwonder_core::{calculate_max_iterations, BigFloat, ComputeData, PixelRect, Viewport};
@@ -59,7 +61,10 @@ impl AsyncProgressiveRenderer {
         self.render_id.set(render_id);
 
         // Calculate tile size (smaller at deep zoom for progress feedback)
-        let reference_width = self.config.default_viewport(viewport.precision_bits()).width;
+        let reference_width = self
+            .config
+            .default_viewport(viewport.precision_bits())
+            .width;
         let zoom = reference_width.to_f64() / viewport.width.to_f64();
         let tile_size = calculate_tile_size(zoom);
 
@@ -98,14 +103,16 @@ impl AsyncProgressiveRenderer {
                 let computed_data: Vec<ComputeData> = match config_id {
                     "test_image" => {
                         let renderer = TestImageRenderer;
-                        renderer.render(&tile_viewport, tile_size)
+                        renderer
+                            .render(&tile_viewport, tile_size)
                             .into_iter()
                             .map(ComputeData::TestImage)
                             .collect()
                     }
                     "mandelbrot" => {
                         let renderer = MandelbrotRenderer::new(max_iters);
-                        renderer.render(&tile_viewport, tile_size)
+                        renderer
+                            .render(&tile_viewport, tile_size)
                             .into_iter()
                             .map(ComputeData::Mandelbrot)
                             .collect()
@@ -114,13 +121,11 @@ impl AsyncProgressiveRenderer {
                 };
 
                 // Colorize
-                let pixels: Vec<u8> = computed_data
-                    .iter()
-                    .flat_map(colorize)
-                    .collect();
+                let pixels: Vec<u8> = computed_data.iter().flat_map(colorize).collect();
 
                 // Draw to canvas
-                let _ = draw_pixels_to_canvas(&ctx, &pixels, tile.width, tile.x as f64, tile.y as f64);
+                let _ =
+                    draw_pixels_to_canvas(&ctx, &pixels, tile.width, tile.x as f64, tile.y as f64);
 
                 // Update progress
                 progress.update(|p| {
@@ -147,8 +152,12 @@ fn tile_to_viewport(tile: &PixelRect, viewport: &Viewport, canvas_size: (u32, u3
     let precision = viewport.precision_bits();
 
     // Calculate fractal-space dimensions per pixel
-    let pixel_width = viewport.width.div(&BigFloat::with_precision(canvas_width as f64, precision));
-    let pixel_height = viewport.height.div(&BigFloat::with_precision(canvas_height as f64, precision));
+    let pixel_width = viewport
+        .width
+        .div(&BigFloat::with_precision(canvas_width as f64, precision));
+    let pixel_height = viewport
+        .height
+        .div(&BigFloat::with_precision(canvas_height as f64, precision));
 
     // Calculate tile center in fractal space
     // Tile pixel center relative to canvas center
@@ -164,10 +173,10 @@ fn tile_to_viewport(tile: &PixelRect, viewport: &Viewport, canvas_size: (u32, u3
     let offset_x_bf = pixel_width.mul(&BigFloat::with_precision(offset_x, precision));
     let offset_y_bf = pixel_height.mul(&BigFloat::with_precision(offset_y, precision));
 
-    // Note: In fractal space, Y increases upward, but in pixel space Y increases downward
-    // So we negate the Y offset
+    // Both pixel space and the renderer use Y-down convention (py=0 is top, maps to lower fy)
+    // So we do NOT invert Y
     let center_x = viewport.center.0.add(&offset_x_bf);
-    let center_y = viewport.center.1.sub(&offset_y_bf);
+    let center_y = viewport.center.1.add(&offset_y_bf);
 
     // Tile dimensions in fractal space
     let tile_width = pixel_width.mul(&BigFloat::with_precision(tile.width as f64, precision));
@@ -208,10 +217,11 @@ mod tests {
 
         let tile_vp = tile_to_viewport(&tile, &vp, canvas_size);
 
-        // Center should be at (-1, 1) - left and up from origin
+        // Center should be at (-1, -1) - left and up in pixel space
         // Pixel center is at (50, 50), canvas center at (100, 100)
-        // Offset: (-50, -50) pixels = (-1, +1) in fractal space (Y inverted)
+        // Offset: (-50, -50) pixels = (-1, -1) in fractal space (Y NOT inverted)
+        // The renderer uses Y-down convention, so top of screen = lower fractal y
         assert!((tile_vp.center.0.to_f64() - (-1.0)).abs() < 0.001);
-        assert!((tile_vp.center.1.to_f64() - 1.0).abs() < 0.001);
+        assert!((tile_vp.center.1.to_f64() - (-1.0)).abs() < 0.001);
     }
 }
