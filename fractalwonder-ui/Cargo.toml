@@ -31,6 +31,8 @@ web-sys = { workspace = true, features = [
     "WheelEvent",
     "Window",
     "Worker",
+    "WorkerOptions",
+    "WorkerType",
 ] }
 console_error_panic_hook = { workspace = true }
 console_log = { workspace = true }

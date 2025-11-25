@@ -36,7 +36,8 @@ pub fn InteractiveCanvas(
         Ok(r) => store_value(r),
         Err(e) => {
             web_sys::console::error_1(&e);
-            return view! { <div class="text-red-500">"Failed to initialize renderer"</div> }.into_view();
+            return view! { <div class="text-red-500">"Failed to initialize renderer"</div> }
+                .into_view();
         }
     };
 
@@ -124,5 +125,6 @@ pub fn InteractiveCanvas(
 
     view! {
         <canvas node_ref=canvas_ref class="block" />
-    }.into_view()
+    }
+    .into_view()
 }

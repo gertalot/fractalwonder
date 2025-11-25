@@ -2,10 +2,10 @@ use crate::rendering::RenderProgress;
 use fractalwonder_core::{ComputeData, MainToWorker, PixelRect, Viewport, WorkerToMain};
 use leptos::*;
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::rc::{Rc, Weak};
 use wasm_bindgen::prelude::*;
-use web_sys::{MessageEvent, Worker};
+use web_sys::{MessageEvent, Worker, WorkerOptions, WorkerType};
 
 const WORKER_SCRIPT_PATH: &str = "./message-compute-worker.js";
 
@@ -19,7 +19,7 @@ pub struct TileResult {
 pub struct WorkerPool {
     workers: Vec<Worker>,
     renderer_id: String,
-    initialized_count: usize,
+    initialized_workers: HashSet<usize>,
     pending_tiles: VecDeque<PixelRect>,
     current_render_id: u32,
     current_viewport: Option<Viewport>,
@@ -41,7 +41,10 @@ fn create_workers(count: usize, pool: Rc<RefCell<WorkerPool>>) -> Result<Vec<Wor
     let mut workers = Vec::with_capacity(count);
 
     for worker_id in 0..count {
-        let worker = Worker::new(WORKER_SCRIPT_PATH)?;
+        // Create worker as ES module to support import statements
+        let options = WorkerOptions::new();
+        options.set_type(WorkerType::Module);
+        let worker = Worker::new_with_options(WORKER_SCRIPT_PATH, &options)?;
 
         let pool_clone = Rc::clone(&pool);
         let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
@@ -89,7 +92,7 @@ impl WorkerPool {
         let pool = Rc::new(RefCell::new(Self {
             workers: Vec::new(),
             renderer_id: renderer_id.to_string(),
-            initialized_count: 0,
+            initialized_workers: HashSet::new(),
             pending_tiles: VecDeque::new(),
             current_render_id: 0,
             current_viewport: None,
@@ -127,9 +130,9 @@ impl WorkerPool {
             }
 
             WorkerToMain::RequestWork { render_id } => {
-                // Track initialization
+                // Track initialization - first RequestWork after Initialize has render_id: None
                 if render_id.is_none() {
-                    self.initialized_count += 1;
+                    self.initialized_workers.insert(worker_id);
                 }
 
                 // Only send work if render_id matches or is None (just initialized)
@@ -183,6 +186,11 @@ impl WorkerPool {
     }
 
     fn dispatch_work(&mut self, worker_id: usize) {
+        // Only send work to initialized workers
+        if !self.initialized_workers.contains(&worker_id) {
+            return;
+        }
+
         if let Some(tile) = self.pending_tiles.pop_front() {
             // Compute tile-specific viewport
             let tile_viewport = self
@@ -235,7 +243,7 @@ impl WorkerPool {
         }
 
         self.pending_tiles.clear();
-        self.initialized_count = 0;
+        self.initialized_workers.clear();
 
         // Recreate workers
         if let Some(pool_rc) = self.self_ref.upgrade() {
