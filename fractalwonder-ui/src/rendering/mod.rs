@@ -5,7 +5,7 @@ mod test_pattern;
 mod tiles;
 
 pub use canvas_utils::{draw_pixels_to_canvas, get_2d_context, performance_now, yield_to_browser};
-pub use colorizers::{colorize_mandelbrot, colorize_test_image};
+pub use colorizers::{colorize, colorize_mandelbrot, colorize_test_image, Colorizer};
 pub use render_progress::RenderProgress;
 // Only export what's still needed for tests
 pub use test_pattern::{calculate_tick_params, calculate_tick_params_from_log2, TickParams};
