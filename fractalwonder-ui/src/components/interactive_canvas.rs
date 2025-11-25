@@ -1,14 +1,15 @@
 // fractalwonder-ui/src/components/interactive_canvas.rs
-use fractalwonder_compute::{Renderer, TestImageRenderer};
-use fractalwonder_core::{apply_pixel_transform_to_viewport, Viewport};
+use fractalwonder_compute::{MandelbrotRenderer, Renderer, TestImageRenderer};
+use fractalwonder_core::{apply_pixel_transform_to_viewport, calculate_max_iterations, Viewport};
 use leptos::*;
 use leptos_use::use_window_size;
 use wasm_bindgen::Clamped;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
+use crate::config::FractalConfig;
 use crate::hooks::use_canvas_interaction;
-use crate::rendering::colorize_test_image;
+use crate::rendering::{colorize_mandelbrot, colorize_test_image};
 
 #[component]
 pub fn InteractiveCanvas(
@@ -16,6 +17,8 @@ pub fn InteractiveCanvas(
     viewport: Signal<Viewport>,
     /// Callback fired when user interaction ends with a new viewport
     on_viewport_change: Callback<Viewport>,
+    /// Current fractal configuration
+    config: Signal<&'static FractalConfig>,
     /// Callback fired when canvas dimensions change
     #[prop(optional)]
     on_resize: Option<Callback<(u32, u32)>>,
@@ -69,9 +72,10 @@ pub fn InteractiveCanvas(
         }
     });
 
-    // Render effect - redraws when viewport changes
+    // Render effect - redraws when viewport or config changes
     create_effect(move |_| {
         let vp = viewport.get();
+        let cfg = config.get();
         let size = canvas_size.get();
 
         if size.0 == 0 || size.1 == 0 {
@@ -91,20 +95,46 @@ pub fn InteractiveCanvas(
 
         let (width, height) = size;
 
-        // Use compute pipeline: Renderer -> Colorizer
-        let renderer = TestImageRenderer;
-        let computed_data = renderer.render(&vp, size);
-
-        // Create pixel buffer
+        // Dispatch to renderer based on config.id
         let mut data = vec![0u8; (width * height * 4) as usize];
 
-        for (i, pixel_data) in computed_data.iter().enumerate() {
-            let color = colorize_test_image(pixel_data);
-            let idx = i * 4;
-            data[idx] = color[0];
-            data[idx + 1] = color[1];
-            data[idx + 2] = color[2];
-            data[idx + 3] = color[3];
+        match cfg.id {
+            "test_image" => {
+                let renderer = TestImageRenderer;
+                let computed = renderer.render(&vp, size);
+                for (i, pixel_data) in computed.iter().enumerate() {
+                    let color = colorize_test_image(pixel_data);
+                    let idx = i * 4;
+                    data[idx] = color[0];
+                    data[idx + 1] = color[1];
+                    data[idx + 2] = color[2];
+                    data[idx + 3] = color[3];
+                }
+            }
+            "mandelbrot" => {
+                let reference_width = cfg.default_viewport(vp.precision_bits()).width;
+                let max_iters = calculate_max_iterations(&vp.width, &reference_width);
+                let renderer = MandelbrotRenderer::new(max_iters);
+                let computed = renderer.render(&vp, size);
+                for (i, pixel_data) in computed.iter().enumerate() {
+                    let color = colorize_mandelbrot(pixel_data);
+                    let idx = i * 4;
+                    data[idx] = color[0];
+                    data[idx + 1] = color[1];
+                    data[idx + 2] = color[2];
+                    data[idx + 3] = color[3];
+                }
+            }
+            _ => {
+                // Unknown renderer - fill with magenta for visibility
+                for i in 0..(width * height) as usize {
+                    let idx = i * 4;
+                    data[idx] = 255;
+                    data[idx + 1] = 0;
+                    data[idx + 2] = 255;
+                    data[idx + 3] = 255;
+                }
+            }
         }
 
         // Draw to canvas
