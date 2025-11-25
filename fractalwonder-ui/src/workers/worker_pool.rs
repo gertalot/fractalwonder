@@ -185,9 +185,10 @@ impl WorkerPool {
     fn dispatch_work(&mut self, worker_id: usize) {
         if let Some(tile) = self.pending_tiles.pop_front() {
             // Compute tile-specific viewport
-            let tile_viewport = self.current_viewport.as_ref().map(|vp| {
-                crate::rendering::tile_to_viewport(&tile, vp, self.canvas_size)
-            });
+            let tile_viewport = self
+                .current_viewport
+                .as_ref()
+                .map(|vp| crate::rendering::tile_to_viewport(&tile, vp, self.canvas_size));
 
             let viewport_json = tile_viewport
                 .and_then(|v| serde_json::to_string(&v).ok())
@@ -206,7 +207,12 @@ impl WorkerPool {
         }
     }
 
-    pub fn start_render(&mut self, viewport: Viewport, canvas_size: (u32, u32), tiles: Vec<PixelRect>) {
+    pub fn start_render(
+        &mut self,
+        viewport: Viewport,
+        canvas_size: (u32, u32),
+        tiles: Vec<PixelRect>,
+    ) {
         self.current_render_id = self.current_render_id.wrapping_add(1);
         self.current_viewport = Some(viewport);
         self.canvas_size = canvas_size;

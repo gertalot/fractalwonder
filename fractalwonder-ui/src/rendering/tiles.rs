@@ -1,7 +1,11 @@
 use fractalwonder_core::{BigFloat, PixelRect, Viewport};
 
 /// Convert a pixel-space tile to its corresponding fractal-space viewport.
-pub fn tile_to_viewport(tile: &PixelRect, viewport: &Viewport, canvas_size: (u32, u32)) -> Viewport {
+pub fn tile_to_viewport(
+    tile: &PixelRect,
+    viewport: &Viewport,
+    canvas_size: (u32, u32),
+) -> Viewport {
     let (canvas_width, canvas_height) = canvas_size;
     let precision = viewport.precision_bits();
 
