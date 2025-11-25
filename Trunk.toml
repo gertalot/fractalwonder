@@ -18,3 +18,9 @@ Cross-Origin-Embedder-Policy = "require-corp"
 
 [tools]
 tailwindcss = "4.1.10"
+
+# Build worker WASM before main build
+[[hooks]]
+stage = "pre_build"
+command = "wasm-pack"
+command_arguments = ["build", "fractalwonder-compute", "--target", "web", "--out-dir", "../worker-pkg", "--out-name", "fractalwonder_compute"]
