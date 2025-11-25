@@ -1,7 +1,7 @@
 // fractalwonder-ui/src/components/interactive_canvas.rs
 use crate::config::FractalConfig;
 use crate::hooks::use_canvas_interaction;
-use crate::rendering::AsyncProgressiveRenderer;
+use crate::rendering::ParallelRenderer;
 use fractalwonder_core::{apply_pixel_transform_to_viewport, Viewport};
 use leptos::*;
 use leptos_use::use_window_size;
@@ -31,18 +31,28 @@ pub fn InteractiveCanvas(
     // Store canvas size for use in callbacks
     let canvas_size = create_rw_signal((0u32, 0u32));
 
-    // Create renderer - store value and track config changes separately
-    let renderer = store_value(AsyncProgressiveRenderer::new(config.get_untracked()));
+    // Create renderer - handle Result since ParallelRenderer::new can fail
+    let renderer = match ParallelRenderer::new(config.get_untracked()) {
+        Ok(r) => store_value(r),
+        Err(e) => {
+            web_sys::console::error_1(&e);
+            return view! { <div class="text-red-500">"Failed to initialize renderer"</div> }.into_view();
+        }
+    };
 
     // Notify parent of progress signal
     if let Some(callback) = on_progress_signal {
         renderer.with_value(|r| callback.call(r.progress()));
     }
 
-    // Recreate renderer when config changes
+    // Switch renderer when config changes
     create_effect(move |_| {
         let cfg = config.get();
-        renderer.set_value(AsyncProgressiveRenderer::new(cfg));
+        renderer.update_value(|r| {
+            if let Err(e) = r.switch_config(cfg) {
+                web_sys::console::error_1(&e);
+            }
+        });
 
         // Notify parent of new progress signal
         if let Some(callback) = on_progress_signal {
@@ -114,5 +124,5 @@ pub fn InteractiveCanvas(
 
     view! {
         <canvas node_ref=canvas_ref class="block" />
-    }
+    }.into_view()
 }
