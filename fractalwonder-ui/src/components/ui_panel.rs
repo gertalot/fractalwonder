@@ -1,5 +1,5 @@
 // fractalwonder-ui/src/components/ui_panel.rs
-use crate::components::{FullscreenButton, HomeButton, InfoButton};
+use crate::components::{DropdownMenu, FullscreenButton, HomeButton, InfoButton};
 use crate::config::FractalConfig;
 use crate::hooks::{use_ui_visibility, UiVisibility};
 use fractalwonder_core::Viewport;
@@ -17,6 +17,18 @@ pub fn UIPanel(
     precision_bits: Signal<usize>,
     /// Callback when home button is clicked
     on_home_click: Callback<()>,
+    /// Renderer selection options (id, display_name)
+    renderer_options: Signal<Vec<(String, String)>>,
+    /// Currently selected renderer ID
+    selected_renderer_id: Signal<String>,
+    /// Callback when renderer is selected
+    on_renderer_select: Callback<String>,
+    /// Colorizer selection options (id, display_name)
+    colorizer_options: Signal<Vec<(String, String)>>,
+    /// Currently selected colorizer ID
+    selected_colorizer_id: Signal<String>,
+    /// Callback when colorizer is selected
+    on_colorizer_select: Callback<String>,
 ) -> impl IntoView {
     let UiVisibility {
         is_visible,
@@ -58,10 +70,22 @@ pub fn UIPanel(
             }
         >
             <div class="flex items-center justify-between px-4 py-3 bg-black/50 backdrop-blur-sm">
-                // Left section: info button and home button
+                // Left section: info button, home button, and dropdowns
                 <div class="flex items-center space-x-2">
                     <InfoButton is_open=is_info_open set_is_open=set_is_info_open />
                     <HomeButton on_click=on_home_click />
+                    <DropdownMenu
+                        label="Function".to_string()
+                        options=renderer_options
+                        selected_id=selected_renderer_id
+                        on_select=move |id| on_renderer_select.call(id)
+                    />
+                    <DropdownMenu
+                        label="Colors".to_string()
+                        options=colorizer_options
+                        selected_id=selected_colorizer_id
+                        on_select=move |id| on_colorizer_select.call(id)
+                    />
                 </div>
 
                 // Center section: fractal info
