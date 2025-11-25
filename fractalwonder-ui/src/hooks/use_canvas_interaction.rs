@@ -118,6 +118,9 @@ fn render_preview(
 ///
 ///     let handle = use_canvas_interaction(
 ///         canvas_ref,
+///         move || {
+///             // Cancel ongoing render
+///         },
 ///         move |result: PixelTransform| {
 ///             // Convert pixel transform to domain coordinates
 ///             // Trigger expensive full re-render
@@ -133,17 +136,20 @@ fn render_preview(
 /// # Arguments
 ///
 /// * `canvas_ref` - Leptos NodeRef to canvas element
+/// * `on_interaction_start` - Callback fired when interaction starts
 /// * `on_interaction_end` - Callback fired when interaction ends (1.5s inactivity)
 ///
 /// # Returns
 ///
 /// `InteractionHandle` with interaction state signal. All event listeners are attached internally.
-pub fn use_canvas_interaction<F>(
+pub fn use_canvas_interaction<F, G>(
     canvas_ref: NodeRef<leptos::html::Canvas>,
+    on_interaction_start: G,
     on_interaction_end: F,
 ) -> InteractionHandle
 where
     F: Fn(PixelTransform) + 'static,
+    G: Fn() + 'static,
 {
     // Interaction state signals
     let is_dragging = create_rw_signal(false);
@@ -167,6 +173,10 @@ where
 
     // Store canvas_ref for multiple closures
     let canvas_ref_stored = store_value(canvas_ref);
+
+    // Store callbacks for use in closures
+    let on_interaction_start = store_value(on_interaction_start);
+    let on_interaction_end = store_value(on_interaction_end);
 
     // Animation loop for preview rendering
     use_raf_fn(move |_| {
@@ -219,12 +229,14 @@ where
                 accumulated_zoom.set_value(1.0);
                 zoom_center.set_value(None);
                 transform_sequence.set_value(Vec::new());
+
+                // Fire interaction start callback
+                on_interaction_start.with_value(|cb| cb());
             }
         }
     };
 
     // Stop interaction handler - builds PixelTransform and fires callback
-    let on_interaction_end = store_value(on_interaction_end);
     let stop_interaction = move || {
         // Don't stop if still dragging (use get_untracked since we're in a timeout callback)
         if is_dragging.get_untracked() {
@@ -720,9 +732,15 @@ mod browser_tests {
         let canvas_ref = create_node_ref::<leptos::html::Canvas>();
         let callback_fired = create_rw_signal(false);
 
-        let handle = use_canvas_interaction(canvas_ref, move |_result| {
-            callback_fired.set(true);
-        });
+        let handle = use_canvas_interaction(
+            canvas_ref,
+            move || {
+                // Start callback
+            },
+            move |_result| {
+                callback_fired.set(true);
+            },
+        );
 
         assert!(!handle.is_interacting.get());
     }

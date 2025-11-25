@@ -32,16 +32,24 @@ pub fn InteractiveCanvas(
     let canvas_size = create_rw_signal((0u32, 0u32));
 
     // Wire up interaction hook
-    let _interaction = use_canvas_interaction(canvas_ref, move |transform| {
-        let current_vp = viewport.get_untracked();
-        let size = canvas_size.get_untracked();
+    let _interaction = use_canvas_interaction(
+        canvas_ref,
+        move || {
+            // Cancel render on interaction start (placeholder for now)
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str("Interaction started - would cancel render"));
+        },
+        move |transform| {
+            let current_vp = viewport.get_untracked();
+            let size = canvas_size.get_untracked();
 
-        if size.0 > 0 && size.1 > 0 {
-            // Precision is calculated internally by apply_pixel_transform_to_viewport
-            let new_vp = apply_pixel_transform_to_viewport(&current_vp, &transform, size);
-            on_viewport_change.call(new_vp);
-        }
-    });
+            if size.0 > 0 && size.1 > 0 {
+                // Precision is calculated internally by apply_pixel_transform_to_viewport
+                let new_vp = apply_pixel_transform_to_viewport(&current_vp, &transform, size);
+                on_viewport_change.call(new_vp);
+            }
+        },
+    );
 
     // Effect to handle resize
     create_effect(move |_| {
