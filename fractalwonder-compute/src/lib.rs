@@ -1,5 +1,6 @@
 mod mandelbrot;
 mod test_image;
+pub mod worker;
 
 use fractalwonder_core::Viewport;
 
