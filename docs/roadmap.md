@@ -253,7 +253,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 10: Render Cancellation
+## ✅ Iteration 10: Render Cancellation
 
 **Goal:** Cancel in-progress renders on new interaction
 
