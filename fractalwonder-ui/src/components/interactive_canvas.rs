@@ -37,10 +37,8 @@ pub fn InteractiveCanvas(
         let size = canvas_size.get_untracked();
 
         if size.0 > 0 && size.1 > 0 {
-            let precision = current_vp.precision_bits();
-            let new_vp =
-                apply_pixel_transform_to_viewport(&current_vp, &transform, size, precision);
-
+            // Precision is calculated internally by apply_pixel_transform_to_viewport
+            let new_vp = apply_pixel_transform_to_viewport(&current_vp, &transform, size);
             on_viewport_change.call(new_vp);
         }
     });

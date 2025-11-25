@@ -172,7 +172,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 7: MandelbrotRenderer
+## ✅ Iteration 7: MandelbrotRenderer
 
 **Goal:** Add Mandelbrot computation following the Renderer trait
 
@@ -200,33 +200,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 8: Colorizer System
-
-**Goal:** Multiple color schemes with UI selection
-
-**Steps:**
-1. Create `ColorizerInfo` struct and colorizer registry per the architecture
-2. Implement multiple Mandelbrot colorizers (grayscale, fire, ocean, rainbow)
-3. Add colorizer dropdown to UI panel
-4. Cache computed `MandelbrotData`, re-colorize without recomputing on colorizer change
-
-**Deliverable:** Switch between color schemes instantly
-
-**Browser Test:**
-- Dropdown shows available colorizers for current renderer
-- Select "Fire", colors change instantly (no re-render delay)
-- Select "Ocean", colors change instantly
-- Same fractal structure, different appearance
-- Pan/zoom recomputes, then applies current colorizer
-
-**Unit Tests:**
-- Each colorizer produces distinct colors for same iteration count
-- Colorizer registry returns correct colorizers for "mandelbrot" renderer_id
-- Cache hit: changing colorizer doesn't trigger recompute
-
----
-
-## Iteration 9: Tiled Rendering
+## Iteration 8: Tiled Rendering
 
 **Goal:** Progressive tile-by-tile display (still main thread)
 
@@ -253,7 +227,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 10: Worker Infrastructure
+## Iteration 9: Worker Infrastructure
 
 **Goal:** Distribute tiles across workers for parallel computation
 
@@ -279,7 +253,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 11: Render Cancellation
+## Iteration 10: Render Cancellation
 
 **Goal:** Cancel in-progress renders on new interaction
 
@@ -304,7 +278,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 12: Progress Indication
+## Iteration 11: Progress Indication
 
 **Goal:** Rich progress feedback during rendering
 
@@ -329,7 +303,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 13: Perturbation Theory Rendering
+## Iteration 12: Perturbation Theory Rendering
 
 **Goal:** Enable extreme deep zoom (10^1000+) with reasonable performance
 
@@ -356,6 +330,33 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 - Subdivision produces correct sub-regions
 
 ---
+
+## Iteration 13: Colorizer System
+
+**Goal:** Multiple color schemes with UI selection
+
+**Steps:**
+1. Create `ColorizerInfo` struct and colorizer registry per the architecture
+2. Implement multiple Mandelbrot colorizers (grayscale, fire, ocean, rainbow)
+3. Add colorizer dropdown to UI panel
+4. Cache computed `MandelbrotData`, re-colorize without recomputing on colorizer change
+
+**Deliverable:** Switch between color schemes instantly
+
+**Browser Test:**
+- Dropdown shows available colorizers for current renderer
+- Select "Fire", colors change instantly (no re-render delay)
+- Select "Ocean", colors change instantly
+- Same fractal structure, different appearance
+- Pan/zoom recomputes, then applies current colorizer
+
+**Unit Tests:**
+- Each colorizer produces distinct colors for same iteration count
+- Colorizer registry returns correct colorizers for "mandelbrot" renderer_id
+- Cache hit: changing colorizer doesn't trigger recompute
+
+---
+
 
 ## Summary
 

@@ -1,3 +1,4 @@
+use crate::precision::calculate_precision_bits;
 use crate::{BigFloat, Viewport};
 use serde::{Deserialize, Serialize};
 
@@ -280,32 +281,50 @@ pub fn fractal_to_pixel(
 /// is centered at the canvas center. This function converts to absolute coordinates
 /// for proper zoom-point handling.
 ///
+/// Precision is calculated automatically based on the resulting viewport dimensions
+/// and canvas size. This ensures the returned viewport always has adequate precision
+/// for pixel-accurate rendering.
+///
 /// - zoom_factor > 1: zooming in, width/height shrink
 /// - zoom_factor < 1: zooming out, width/height grow
 pub fn apply_pixel_transform_to_viewport(
     viewport: &Viewport,
     transform: &PixelTransform,
     canvas_size: (u32, u32),
-    precision_bits: usize,
 ) -> Viewport {
     let (canvas_width, canvas_height) = canvas_size;
     let canvas_center_x = canvas_width as f64 / 2.0;
     let canvas_center_y = canvas_height as f64 / 2.0;
 
     // Convert center-relative offset to absolute offset (pixel space)
-    // This is critical for proper zoom-point handling
     let absolute_offset_x = transform.offset_x + canvas_center_x * (1.0 - transform.zoom_factor);
     let absolute_offset_y = transform.offset_y + canvas_center_y * (1.0 - transform.zoom_factor);
 
-    // Calculate new viewport dimensions: zooming in = smaller visible region
+    // Step 1: Estimate new dimensions at current precision to calculate required precision
+    let current_precision = viewport.precision_bits();
+    let zoom_factor_estimate = BigFloat::with_precision(transform.zoom_factor, current_precision);
+    let estimated_width = viewport.width.div(&zoom_factor_estimate);
+    let estimated_height = viewport.height.div(&zoom_factor_estimate);
+
+    // Step 2: Create temporary viewport to calculate required precision
+    let temp_viewport = Viewport::with_bigfloat(
+        viewport.center.0.clone(),
+        viewport.center.1.clone(),
+        estimated_width,
+        estimated_height,
+    );
+    let required_precision = calculate_precision_bits(&temp_viewport, canvas_size);
+
+    // Step 3: Use max of current and required precision for all calculations
+    let precision_bits = current_precision.max(required_precision);
+
+    // Step 4: Calculate new viewport dimensions at final precision
     let zoom_factor_bf = BigFloat::with_precision(transform.zoom_factor, precision_bits);
     let new_width = viewport.width.div(&zoom_factor_bf);
     let new_height = viewport.height.div(&zoom_factor_bf);
 
     // Special case: pure translation (zoom ≈ 1.0)
-    // When zoom_factor = 1.0, there's no fixed point - offset directly translates viewport
     if (transform.zoom_factor - 1.0).abs() < 1e-10 {
-        // Pure pan: offset moves pixels, so viewport moves in opposite direction
         let offset_x_norm = BigFloat::with_precision(absolute_offset_x, precision_bits).div(
             &BigFloat::with_precision(canvas_width as f64, precision_bits),
         );
@@ -316,7 +335,6 @@ pub fn apply_pixel_transform_to_viewport(
         let dx = offset_x_norm.mul(&viewport.width);
         let dy = offset_y_norm.mul(&viewport.height);
 
-        // Viewport moves opposite to pixel offset (dragging right = looking left)
         let new_center = (viewport.center.0.sub(&dx), viewport.center.1.sub(&dy));
 
         return Viewport {
@@ -327,14 +345,6 @@ pub fn apply_pixel_transform_to_viewport(
     }
 
     // General case: transformation with zoom
-    //
-    // Strategy: Track where the canvas center's image point moves during transformation,
-    // then calculate new viewport center so that point appears at the new pixel position.
-    //
-    // The transformation represents how pixels in the CAPTURED canvas are transformed:
-    // new_pixel_pos = old_pixel_pos * zoom_factor + absolute_offset
-
-    // What fractal point is at canvas center in the CURRENT viewport?
     let image_at_center = pixel_to_fractal(
         canvas_center_x,
         canvas_center_y,
@@ -343,16 +353,8 @@ pub fn apply_pixel_transform_to_viewport(
         precision_bits,
     );
 
-    // During the preview transformation, the pixel at canvas_center moves to:
     let new_center_px = canvas_center_x * transform.zoom_factor + absolute_offset_x;
     let new_center_py = canvas_center_y * transform.zoom_factor + absolute_offset_y;
-
-    // We want: image_at_center appears at pixel (new_center_px, new_center_py) in new viewport
-    //
-    // Formula: fractal_coord = viewport_center + (pixel/canvas - 0.5) * viewport_width
-    // Rearranging: viewport_center = fractal_coord - (pixel/canvas - 0.5) * viewport_width
-    //
-    // For new_center_px: new_viewport_center = image_at_center - (new_center_px/canvas_width - 0.5) * new_width
 
     let pixel_ratio_x =
         BigFloat::with_precision(new_center_px / canvas_width as f64, precision_bits)
@@ -810,7 +812,7 @@ mod tests {
         };
         let canvas_size = (800, 600);
 
-        let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size, 128);
+        let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size);
 
         // Width/height should halve: 4.0/2 = 2.0, 3.0/2 = 1.5
         let expected_width = BigFloat::with_precision(2.0, 128);
@@ -834,7 +836,7 @@ mod tests {
         };
         let canvas_size = (800, 600);
 
-        let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size, 128);
+        let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size);
 
         // Dimensions unchanged
         assert_eq!(new_vp.width, viewport.width);
@@ -865,7 +867,7 @@ mod tests {
         };
         let canvas_size = (800, 600);
 
-        let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size, 128);
+        let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size);
 
         // Dimensions should halve
         let expected_width = BigFloat::with_precision(2.0, 128);
@@ -879,8 +881,9 @@ mod tests {
     }
 
     #[test]
-    fn apply_transform_preserves_precision_metadata() {
-        let viewport = Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 7000);
+    fn apply_transform_uses_adequate_precision() {
+        // At 1x zoom with small canvas, precision is calculated automatically
+        let viewport = Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 128);
         let transform = PixelTransform {
             offset_x: 10.0,
             offset_y: 10.0,
@@ -889,12 +892,18 @@ mod tests {
         };
         let canvas_size = (800, 600);
 
-        let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size, 7000);
+        let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size);
 
-        assert_eq!(new_vp.center.0.precision_bits(), 7000);
-        assert_eq!(new_vp.center.1.precision_bits(), 7000);
-        assert_eq!(new_vp.width.precision_bits(), 7000);
-        assert_eq!(new_vp.height.precision_bits(), 7000);
+        // Precision should be at least 64 bits (minimum) and consistent across all fields
+        assert!(new_vp.center.0.precision_bits() >= 64);
+        assert_eq!(
+            new_vp.center.0.precision_bits(),
+            new_vp.center.1.precision_bits()
+        );
+        assert_eq!(
+            new_vp.width.precision_bits(),
+            new_vp.height.precision_bits()
+        );
     }
 
     #[test]
@@ -917,7 +926,7 @@ mod tests {
         };
         let canvas_size = (800, 600);
 
-        let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size, 7000);
+        let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size);
 
         // Dimensions should halve
         let expected_width = BigFloat::from_string("5e-2001", 7000).unwrap();
@@ -950,7 +959,7 @@ mod tests {
         };
         let canvas_size = (800, 600);
 
-        let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size, 7000);
+        let new_vp = apply_pixel_transform_to_viewport(&viewport, &transform, canvas_size);
 
         // When image moves RIGHT on screen, viewport center moves LEFT (negative)
         assert!(new_vp.center.0 < BigFloat::zero(7000));

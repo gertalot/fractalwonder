@@ -24,13 +24,8 @@ impl Renderer for MandelbrotRenderer {
         (0..height)
             .flat_map(|py| {
                 (0..width).map(move |px| {
-                    let (cx, cy) = pixel_to_fractal(
-                        px as f64,
-                        py as f64,
-                        viewport,
-                        canvas_size,
-                        precision,
-                    );
+                    let (cx, cy) =
+                        pixel_to_fractal(px as f64, py as f64, viewport, canvas_size, precision);
                     self.compute_point(cx, cy, precision)
                 })
             })
@@ -137,7 +132,10 @@ mod tests {
         let result = renderer.compute_point(cx, cy, precision);
         // This point eventually escapes but takes many iterations
         assert!(result.escaped);
-        assert!(result.iterations > 10, "Boundary point should take many iterations");
+        assert!(
+            result.iterations > 10,
+            "Boundary point should take many iterations"
+        );
     }
 
     #[test]
