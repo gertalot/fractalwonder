@@ -1,8 +1,10 @@
 // fractalwonder-core/src/compute_data.rs
 
+use serde::{Deserialize, Serialize};
+
 /// Data computed for a test image pixel.
 /// All fields are bools derived from normalized coordinate comparisons.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TestImageData {
     pub is_on_origin: bool,
     pub is_on_x_axis: bool,
@@ -34,7 +36,7 @@ impl Default for TestImageData {
 }
 
 /// Data computed for a Mandelbrot pixel.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MandelbrotData {
     /// Number of iterations before escape (or max_iterations if didn't escape)
     pub iterations: u32,
@@ -45,7 +47,7 @@ pub struct MandelbrotData {
 }
 
 /// Unified enum for all compute results.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ComputeData {
     TestImage(TestImageData),
     Mandelbrot(MandelbrotData),
