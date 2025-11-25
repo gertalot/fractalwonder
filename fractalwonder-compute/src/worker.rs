@@ -12,7 +12,9 @@ type BoxedRenderer = Box<dyn Renderer<Data = ComputeData>>;
 fn create_renderer(renderer_id: &str) -> Option<BoxedRenderer> {
     match renderer_id {
         "test_image" => Some(Box::new(TestImageRendererWrapper)),
-        "mandelbrot" => Some(Box::new(MandelbrotRendererWrapper { max_iterations: 1000 })),
+        "mandelbrot" => Some(Box::new(MandelbrotRendererWrapper {
+            max_iterations: 1000,
+        })),
         _ => None,
     }
 }
