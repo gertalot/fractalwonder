@@ -2,6 +2,7 @@
 use crate::components::{DropdownMenu, FullscreenButton, HomeButton, InfoButton};
 use crate::config::FractalConfig;
 use crate::hooks::{use_ui_visibility, UiVisibility};
+use crate::rendering::RenderProgress;
 use fractalwonder_core::Viewport;
 use leptos::*;
 
@@ -29,6 +30,8 @@ pub fn UIPanel(
     selected_colorizer_id: Signal<String>,
     /// Callback when colorizer is selected
     on_colorizer_select: Callback<String>,
+    /// Render progress signal
+    render_progress: Signal<RwSignal<RenderProgress>>,
 ) -> impl IntoView {
     let UiVisibility {
         is_visible,
@@ -90,27 +93,46 @@ pub fn UIPanel(
 
                 // Center section: fractal info
                 <div class="flex-1 text-center text-white text-xs font-mono">
-                    {move || {
-                        let cfg = config.get();
-                        let vp = viewport.get();
-                        let bits = precision_bits.get();
-                        let (canvas_w, canvas_h) = canvas_size.get();
+                    <div>
+                        {move || {
+                            let cfg = config.get();
+                            let vp = viewport.get();
+                            let bits = precision_bits.get();
+                            let (canvas_w, canvas_h) = canvas_size.get();
 
-                        // Calculate zoom: reference_width / current_width via log subtraction
-                        let reference_width = cfg.default_viewport(bits).width;
-                        let zoom_log2 = reference_width.log2_approx() - vp.width.log2_approx();
-                        let zoom = format_zoom_from_log2(zoom_log2);
+                            // Calculate zoom: reference_width / current_width via log subtraction
+                            let reference_width = cfg.default_viewport(bits).width;
+                            let zoom_log2 = reference_width.log2_approx() - vp.width.log2_approx();
+                            let zoom = format_zoom_from_log2(zoom_log2);
 
-                        let cx = format_coordinate_from_log2(vp.center.0.log2_approx());
-                        let cy = format_coordinate_from_log2(vp.center.1.log2_approx());
-                        let w = format_dimension_from_log2(vp.width.log2_approx());
-                        let h = format_dimension_from_log2(vp.height.log2_approx());
+                            let cx = format_coordinate_from_log2(vp.center.0.log2_approx());
+                            let cy = format_coordinate_from_log2(vp.center.1.log2_approx());
+                            let w = format_dimension_from_log2(vp.width.log2_approx());
+                            let h = format_dimension_from_log2(vp.height.log2_approx());
 
-                        format!(
-                            "{} | Zoom: {} | Center: ({}, {}) | Size: {} x {} | Canvas: {}x{} | {} bits",
-                            cfg.display_name, zoom, cx, cy, w, h, canvas_w, canvas_h, bits
-                        )
-                    }}
+                            format!(
+                                "{} | Zoom: {} | Center: ({}, {}) | Size: {} x {} | Canvas: {}x{} | {} bits",
+                                cfg.display_name, zoom, cx, cy, w, h, canvas_w, canvas_h, bits
+                            )
+                        }}
+                    </div>
+                    <div class="mt-1">
+                        {move || {
+                            let progress_signal = render_progress.get();
+                            let progress = progress_signal.get();
+
+                            if progress.total_tiles > 0 && !progress.is_complete {
+                                format!(
+                                    "Rendering: {:.1}% ({}/{} tiles)",
+                                    progress.percentage(),
+                                    progress.completed_tiles,
+                                    progress.total_tiles
+                                )
+                            } else {
+                                String::new()
+                            }
+                        }}
+                    </div>
                 </div>
 
                 // Right section: fullscreen

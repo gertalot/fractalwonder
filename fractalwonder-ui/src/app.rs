@@ -4,11 +4,16 @@ use leptos::*;
 
 use crate::components::{InteractiveCanvas, UIPanel};
 use crate::config::{default_config, get_config, FRACTAL_CONFIGS};
+use crate::rendering::RenderProgress;
 
 #[component]
 pub fn App() -> impl IntoView {
     // Canvas size signal (updated by InteractiveCanvas on resize)
     let (canvas_size, set_canvas_size) = create_signal((0u32, 0u32));
+
+    // Render progress signal (updated by renderer)
+    let (render_progress, set_render_progress) =
+        create_signal(RwSignal::new(RenderProgress::default()));
 
     // Selected renderer (fractal type)
     let (selected_config_id, set_selected_config_id) = create_signal("mandelbrot".to_string());
@@ -134,12 +139,17 @@ pub fn App() -> impl IntoView {
         set_viewport.set(final_viewport);
     });
 
+    let on_progress_signal = Callback::new(move |progress_signal: RwSignal<RenderProgress>| {
+        set_render_progress.set(progress_signal);
+    });
+
     view! {
         <InteractiveCanvas
             viewport=viewport.into()
             on_viewport_change=on_viewport_change
             config=config.into()
             on_resize=on_resize
+            on_progress_signal=on_progress_signal
         />
         <UIPanel
             canvas_size=canvas_size.into()
@@ -155,6 +165,7 @@ pub fn App() -> impl IntoView {
             on_colorizer_select=Callback::new(move |_: String| {
                 // No-op for now - colorizer selection in Iteration 8
             })
+            render_progress=render_progress.into()
         />
     }
 }

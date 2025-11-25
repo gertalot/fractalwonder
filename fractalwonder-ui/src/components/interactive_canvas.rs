@@ -19,6 +19,9 @@ pub fn InteractiveCanvas(
     /// Callback fired when canvas dimensions change
     #[prop(optional)]
     on_resize: Option<Callback<(u32, u32)>>,
+    /// Callback fired with progress signal when renderer is created
+    #[prop(optional)]
+    on_progress_signal: Option<Callback<RwSignal<crate::rendering::RenderProgress>>>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
@@ -31,10 +34,20 @@ pub fn InteractiveCanvas(
     // Create renderer - store value and track config changes separately
     let renderer = store_value(AsyncProgressiveRenderer::new(config.get_untracked()));
 
+    // Notify parent of progress signal
+    if let Some(callback) = on_progress_signal {
+        renderer.with_value(|r| callback.call(r.progress()));
+    }
+
     // Recreate renderer when config changes
     create_effect(move |_| {
         let cfg = config.get();
         renderer.set_value(AsyncProgressiveRenderer::new(cfg));
+
+        // Notify parent of new progress signal
+        if let Some(callback) = on_progress_signal {
+            renderer.with_value(|r| callback.call(r.progress()));
+        }
     });
 
     // Wire up interaction hook with cancel on start
