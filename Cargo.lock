@@ -494,6 +494,7 @@ dependencies = [
  "console_log",
  "fractalwonder-compute",
  "fractalwonder-core",
+ "futures",
  "leptos",
  "leptos-use",
  "leptos_meta",

@@ -37,7 +37,9 @@ pub fn InteractiveCanvas(
         move || {
             // Cancel render on interaction start (placeholder for now)
             #[cfg(target_arch = "wasm32")]
-            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str("Interaction started - would cancel render"));
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(
+                "Interaction started - would cancel render",
+            ));
         },
         move |transform| {
             let current_vp = viewport.get_untracked();
