@@ -1,4 +1,42 @@
-use fractalwonder_core::PixelRect;
+use fractalwonder_core::{BigFloat, PixelRect, Viewport};
+
+/// Convert a pixel-space tile to its corresponding fractal-space viewport.
+pub fn tile_to_viewport(tile: &PixelRect, viewport: &Viewport, canvas_size: (u32, u32)) -> Viewport {
+    let (canvas_width, canvas_height) = canvas_size;
+    let precision = viewport.precision_bits();
+
+    // Calculate fractal-space dimensions per pixel
+    let pixel_width = viewport
+        .width
+        .div(&BigFloat::with_precision(canvas_width as f64, precision));
+    let pixel_height = viewport
+        .height
+        .div(&BigFloat::with_precision(canvas_height as f64, precision));
+
+    // Calculate tile center in fractal space
+    // Tile pixel center relative to canvas center
+    let canvas_center_x = canvas_width as f64 / 2.0;
+    let canvas_center_y = canvas_height as f64 / 2.0;
+    let tile_center_x = tile.x as f64 + tile.width as f64 / 2.0;
+    let tile_center_y = tile.y as f64 + tile.height as f64 / 2.0;
+
+    let offset_x = tile_center_x - canvas_center_x;
+    let offset_y = tile_center_y - canvas_center_y;
+
+    // Convert pixel offsets to fractal-space offsets
+    let offset_x_bf = pixel_width.mul(&BigFloat::with_precision(offset_x, precision));
+    let offset_y_bf = pixel_height.mul(&BigFloat::with_precision(offset_y, precision));
+
+    // Calculate tile center in fractal space
+    let center_x = viewport.center.0.add(&offset_x_bf);
+    let center_y = viewport.center.1.add(&offset_y_bf);
+
+    // Calculate tile dimensions in fractal space
+    let tile_width = pixel_width.mul(&BigFloat::with_precision(tile.width as f64, precision));
+    let tile_height = pixel_height.mul(&BigFloat::with_precision(tile.height as f64, precision));
+
+    Viewport::with_bigfloat(center_x, center_y, tile_width, tile_height)
+}
 
 /// Calculate tile size based on zoom level.
 ///
@@ -6,7 +44,7 @@ use fractalwonder_core::PixelRect;
 pub fn calculate_tile_size(zoom_factor: f64) -> u32 {
     const DEEP_ZOOM_THRESHOLD: f64 = 1e10;
     const NORMAL_TILE_SIZE: u32 = 128;
-    const DEEP_ZOOM_TILE_SIZE: u32 = 32;
+    const DEEP_ZOOM_TILE_SIZE: u32 = 64;
 
     if zoom_factor >= DEEP_ZOOM_THRESHOLD {
         DEEP_ZOOM_TILE_SIZE

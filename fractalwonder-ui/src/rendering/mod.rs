@@ -11,4 +11,4 @@ pub use colorizers::{colorize, colorize_mandelbrot, colorize_test_image, Coloriz
 pub use render_progress::RenderProgress;
 // Only export what's still needed for tests
 pub use test_pattern::{calculate_tick_params, calculate_tick_params_from_log2, TickParams};
-pub use tiles::{calculate_tile_size, generate_tiles};
+pub use tiles::{calculate_tile_size, generate_tiles, tile_to_viewport};

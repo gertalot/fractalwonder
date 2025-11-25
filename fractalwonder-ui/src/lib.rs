@@ -6,6 +6,7 @@ mod components;
 pub mod config;
 pub mod hooks;
 pub mod rendering;
+pub mod workers;
 
 pub use config::{default_config, get_config, FractalConfig, FRACTAL_CONFIGS};
 

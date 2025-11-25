@@ -20,18 +20,22 @@ web-sys = { workspace = true, features = [
     "Document",
     "DomRect",
     "Element",
+    "ErrorEvent",
     "Event",
     "HtmlCanvasElement",
     "ImageData",
+    "MessageEvent",
     "MouseEvent",
     "Performance",
     "PointerEvent",
     "WheelEvent",
     "Window",
+    "Worker",
 ] }
 console_error_panic_hook = { workspace = true }
 console_log = { workspace = true }
 log = { workspace = true }
+serde_json = { workspace = true }
 futures = "0.3"
 
 [dev-dependencies]
