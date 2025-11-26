@@ -448,6 +448,18 @@ pub fn calculate_max_iterations(viewport_width: &BigFloat, reference_width: &Big
     iterations.clamp(50.0, 10000.0) as u32
 }
 
+/// Calculate maximum iterations for perturbation rendering based on zoom exponent.
+///
+/// Uses empirical formula: 50 * zoom_exp^1.25
+/// Clamped to [1000, 10_000_000] for practical bounds.
+///
+/// At deep zoom (10^1000), this returns ~281,000 iterations.
+/// At extreme zoom (10^2000), this returns ~669,000 iterations.
+pub fn calculate_max_iterations_perturbation(zoom_exponent: f64) -> u32 {
+    let iterations = 50.0 * zoom_exponent.abs().max(1.0).powf(1.25);
+    iterations.clamp(1000.0, 10_000_000.0) as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1087,5 +1099,76 @@ mod tests {
         let reference_width = BigFloat::with_precision(4.0, 256);
         let result = calculate_max_iterations(&viewport_width, &reference_width);
         assert_eq!(result, 10000);
+    }
+
+    // ============================================================================
+    // calculate_max_iterations_perturbation tests
+    // ============================================================================
+
+    #[test]
+    fn perturbation_max_iterations_at_low_zoom() {
+        // zoom_exp = 1 (10^1 zoom)
+        let result = calculate_max_iterations_perturbation(1.0);
+        // 50 * 1^1.25 = 50, clamped to 1000
+        assert_eq!(result, 1000);
+    }
+
+    #[test]
+    fn perturbation_max_iterations_at_10x_zoom() {
+        // zoom_exp = 10 (10^10 zoom)
+        let result = calculate_max_iterations_perturbation(10.0);
+        // 50 * 10^1.25 ≈ 890
+        // Clamped to minimum 1000
+        assert_eq!(result, 1000);
+    }
+
+    #[test]
+    fn perturbation_max_iterations_at_100x_zoom() {
+        // zoom_exp = 100 (10^100 zoom)
+        let result = calculate_max_iterations_perturbation(100.0);
+        // 50 * 100^1.25 ≈ 15,811
+        assert!(
+            result > 15000 && result < 17000,
+            "Expected ~15811, got {}",
+            result
+        );
+    }
+
+    #[test]
+    fn perturbation_max_iterations_at_1000x_zoom() {
+        // zoom_exp = 1000 (10^1000 zoom)
+        let result = calculate_max_iterations_perturbation(1000.0);
+        // 50 * 1000^1.25 ≈ 280,884
+        assert!(
+            result > 250000 && result < 300000,
+            "Expected ~280884, got {}",
+            result
+        );
+    }
+
+    #[test]
+    fn perturbation_max_iterations_at_2000x_zoom() {
+        // zoom_exp = 2000 (10^2000 zoom)
+        let result = calculate_max_iterations_perturbation(2000.0);
+        // 50 * 2000^1.25 ≈ 668,740
+        assert!(
+            result > 600000 && result < 750000,
+            "Expected ~668740, got {}",
+            result
+        );
+    }
+
+    #[test]
+    fn perturbation_max_iterations_capped_at_10m() {
+        // Very extreme zoom should cap at 10 million
+        let result = calculate_max_iterations_perturbation(100000.0);
+        assert_eq!(result, 10_000_000);
+    }
+
+    #[test]
+    fn perturbation_max_iterations_floor_at_1000() {
+        // Low/negative zoom should floor at 1000
+        let result = calculate_max_iterations_perturbation(0.5);
+        assert_eq!(result, 1000);
     }
 }
