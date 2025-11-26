@@ -173,6 +173,29 @@ fn handle_message(renderer: &Rc<RefCell<Option<BoxedRenderer>>>, data: JsValue) 
                 js_sys::global().dyn_into().expect("Not in worker context");
             global.close();
         }
+
+        // Perturbation theory messages - will be implemented in Task 6-8
+        MainToWorker::ComputeReferenceOrbit { .. } => {
+            post_message(&WorkerToMain::Error {
+                message: "ComputeReferenceOrbit not yet implemented".to_string(),
+            });
+        }
+
+        MainToWorker::StoreReferenceOrbit { .. } => {
+            post_message(&WorkerToMain::Error {
+                message: "StoreReferenceOrbit not yet implemented".to_string(),
+            });
+        }
+
+        MainToWorker::RenderTilePerturbation { .. } => {
+            post_message(&WorkerToMain::Error {
+                message: "RenderTilePerturbation not yet implemented".to_string(),
+            });
+        }
+
+        MainToWorker::DiscardOrbit { .. } => {
+            // Silently ignore for now
+        }
     }
 }
 

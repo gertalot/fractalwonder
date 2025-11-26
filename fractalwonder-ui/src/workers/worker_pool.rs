@@ -202,6 +202,17 @@ impl WorkerPool {
                     worker_id, message
                 )));
             }
+
+            // Perturbation theory messages - will be implemented in Task 11
+            WorkerToMain::ReferenceOrbitComplete { .. } => {
+                web_sys::console::log_1(
+                    &"[WorkerPool] ReferenceOrbitComplete not yet implemented".into(),
+                );
+            }
+
+            WorkerToMain::OrbitStored { .. } => {
+                web_sys::console::log_1(&"[WorkerPool] OrbitStored not yet implemented".into());
+            }
         }
     }
 

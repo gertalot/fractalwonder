@@ -4,6 +4,16 @@
 
 use fractalwonder_core::Viewport;
 
+/// Determines which renderer implementation to use.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum RendererType {
+    /// Simple per-pixel BigFloat computation
+    #[default]
+    Simple,
+    /// Perturbation theory with f64 delta iterations
+    Perturbation,
+}
+
 /// Configuration for a fractal type.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FractalConfig {
@@ -17,6 +27,8 @@ pub struct FractalConfig {
     pub default_width: &'static str,
     /// Default height in fractal space as string
     pub default_height: &'static str,
+    /// Which renderer implementation to use
+    pub renderer_type: RendererType,
 }
 
 impl FractalConfig {
@@ -41,6 +53,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         default_center: ("0.0", "0.0"),
         default_width: "100.0",
         default_height: "100.0",
+        renderer_type: RendererType::Simple,
     },
     FractalConfig {
         id: "mandelbrot",
@@ -48,6 +61,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         default_center: ("-0.5", "0.0"),
         default_width: "4.0",
         default_height: "4.0",
+        renderer_type: RendererType::Perturbation,
     },
 ];
 
