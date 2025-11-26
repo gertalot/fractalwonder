@@ -1,13 +1,48 @@
 // fractalwonder-compute/src/worker.rs
-use crate::{MandelbrotRenderer, Renderer, TestImageRenderer};
-use fractalwonder_core::{ComputeData, MainToWorker, Viewport, WorkerToMain};
+use crate::{
+    compute_pixel_perturbation, MandelbrotRenderer, ReferenceOrbit, Renderer, TestImageRenderer,
+};
+use fractalwonder_core::{BigFloat, ComputeData, MainToWorker, Viewport, WorkerToMain};
 use js_sys::Date;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
 /// Boxed renderer trait object for dynamic dispatch.
 type BoxedRenderer = Box<dyn Renderer<Data = ComputeData>>;
+
+/// Cached reference orbit for perturbation rendering.
+struct CachedOrbit {
+    c_ref: (f64, f64),
+    orbit: Vec<(f64, f64)>,
+    escaped_at: Option<u32>,
+}
+
+impl CachedOrbit {
+    fn to_reference_orbit(&self) -> ReferenceOrbit {
+        ReferenceOrbit {
+            c_ref: self.c_ref,
+            orbit: self.orbit.clone(),
+            escaped_at: self.escaped_at,
+        }
+    }
+}
+
+/// Worker state including renderer and orbit cache.
+struct WorkerState {
+    renderer: Option<BoxedRenderer>,
+    orbit_cache: HashMap<u32, CachedOrbit>,
+}
+
+impl WorkerState {
+    fn new() -> Self {
+        Self {
+            renderer: None,
+            orbit_cache: HashMap::new(),
+        }
+    }
+}
 
 fn create_renderer(renderer_id: &str) -> Option<BoxedRenderer> {
     match renderer_id {
@@ -58,7 +93,7 @@ fn post_message(msg: &WorkerToMain) {
     }
 }
 
-fn handle_message(renderer: &Rc<RefCell<Option<BoxedRenderer>>>, data: JsValue) {
+fn handle_message(state: &mut WorkerState, data: JsValue) {
     let Some(msg_str) = data.as_string() else {
         post_message(&WorkerToMain::Error {
             message: "Message is not a string".to_string(),
@@ -83,7 +118,7 @@ fn handle_message(renderer: &Rc<RefCell<Option<BoxedRenderer>>>, data: JsValue) 
             );
             match create_renderer(&renderer_id) {
                 Some(r) => {
-                    *renderer.borrow_mut() = Some(r);
+                    state.renderer = Some(r);
                     // Signal ready for work
                     post_message(&WorkerToMain::RequestWork { render_id: None });
                 }
@@ -100,8 +135,7 @@ fn handle_message(renderer: &Rc<RefCell<Option<BoxedRenderer>>>, data: JsValue) 
             viewport_json,
             tile,
         } => {
-            let borrowed = renderer.borrow();
-            let Some(r) = borrowed.as_ref() else {
+            let Some(r) = state.renderer.as_ref() else {
                 post_message(&WorkerToMain::Error {
                     message: "Renderer not initialized".to_string(),
                 });
@@ -174,27 +208,121 @@ fn handle_message(renderer: &Rc<RefCell<Option<BoxedRenderer>>>, data: JsValue) 
             global.close();
         }
 
-        // Perturbation theory messages - will be implemented in Task 6-8
-        MainToWorker::ComputeReferenceOrbit { .. } => {
-            post_message(&WorkerToMain::Error {
-                message: "ComputeReferenceOrbit not yet implemented".to_string(),
+        MainToWorker::ComputeReferenceOrbit {
+            render_id,
+            orbit_id,
+            c_ref_json,
+            max_iterations,
+        } => {
+            // Parse c_ref from JSON (BigFloat coordinates)
+            let c_ref: (BigFloat, BigFloat) = match serde_json::from_str(&c_ref_json) {
+                Ok(c) => c,
+                Err(e) => {
+                    post_message(&WorkerToMain::Error {
+                        message: format!("Failed to parse c_ref: {}", e),
+                    });
+                    return;
+                }
+            };
+
+            let start_time = Date::now();
+
+            // Compute reference orbit
+            let orbit = ReferenceOrbit::compute(&c_ref, max_iterations);
+
+            let compute_time = Date::now() - start_time;
+            web_sys::console::log_1(
+                &format!(
+                    "[Worker] Reference orbit computed: {} iterations in {:.0}ms, escaped_at={:?}",
+                    orbit.orbit.len(),
+                    compute_time,
+                    orbit.escaped_at
+                )
+                .into(),
+            );
+
+            // Send result back
+            post_message(&WorkerToMain::ReferenceOrbitComplete {
+                render_id,
+                orbit_id,
+                c_ref: orbit.c_ref,
+                orbit: orbit.orbit,
+                escaped_at: orbit.escaped_at,
             });
         }
 
-        MainToWorker::StoreReferenceOrbit { .. } => {
-            post_message(&WorkerToMain::Error {
-                message: "StoreReferenceOrbit not yet implemented".to_string(),
+        MainToWorker::StoreReferenceOrbit {
+            orbit_id,
+            c_ref,
+            orbit,
+            escaped_at,
+        } => {
+            state.orbit_cache.insert(
+                orbit_id,
+                CachedOrbit {
+                    c_ref,
+                    orbit,
+                    escaped_at,
+                },
+            );
+            post_message(&WorkerToMain::OrbitStored { orbit_id });
+        }
+
+        MainToWorker::RenderTilePerturbation {
+            render_id,
+            tile,
+            orbit_id,
+            delta_c_origin,
+            delta_c_step,
+            max_iterations,
+        } => {
+            // Get cached orbit
+            let cached = match state.orbit_cache.get(&orbit_id) {
+                Some(c) => c,
+                None => {
+                    post_message(&WorkerToMain::Error {
+                        message: format!("Orbit {} not found in cache", orbit_id),
+                    });
+                    return;
+                }
+            };
+
+            let orbit = cached.to_reference_orbit();
+            let start_time = Date::now();
+
+            // Compute all pixels in tile
+            let mut data = Vec::with_capacity((tile.width * tile.height) as usize);
+            let mut delta_c_row = delta_c_origin;
+
+            for _py in 0..tile.height {
+                let mut delta_c = delta_c_row;
+
+                for _px in 0..tile.width {
+                    let result = compute_pixel_perturbation(&orbit, delta_c, max_iterations);
+                    data.push(ComputeData::Mandelbrot(result));
+
+                    delta_c.0 += delta_c_step.0;
+                }
+
+                delta_c_row.1 += delta_c_step.1;
+            }
+
+            let compute_time_ms = Date::now() - start_time;
+
+            post_message(&WorkerToMain::TileComplete {
+                render_id,
+                tile,
+                data,
+                compute_time_ms,
+            });
+
+            post_message(&WorkerToMain::RequestWork {
+                render_id: Some(render_id),
             });
         }
 
-        MainToWorker::RenderTilePerturbation { .. } => {
-            post_message(&WorkerToMain::Error {
-                message: "RenderTilePerturbation not yet implemented".to_string(),
-            });
-        }
-
-        MainToWorker::DiscardOrbit { .. } => {
-            // Silently ignore for now
+        MainToWorker::DiscardOrbit { orbit_id } => {
+            state.orbit_cache.remove(&orbit_id);
         }
     }
 }
@@ -206,11 +334,11 @@ pub fn init_message_worker() {
 
     web_sys::console::log_1(&"[Worker] Started".into());
 
-    let renderer: Rc<RefCell<Option<BoxedRenderer>>> = Rc::new(RefCell::new(None));
+    let state = Rc::new(RefCell::new(WorkerState::new()));
 
-    let renderer_clone = Rc::clone(&renderer);
+    let state_clone = Rc::clone(&state);
     let onmessage = Closure::wrap(Box::new(move |e: web_sys::MessageEvent| {
-        handle_message(&renderer_clone, e.data());
+        handle_message(&mut state_clone.borrow_mut(), e.data());
     }) as Box<dyn FnMut(_)>);
 
     let global: web_sys::DedicatedWorkerGlobalScope =
