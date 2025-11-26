@@ -2,8 +2,9 @@
 use fractalwonder_core::{calculate_precision_bits, fit_viewport_to_canvas, Viewport};
 use leptos::*;
 
-use crate::components::{InteractiveCanvas, UIPanel};
+use crate::components::{CircularProgress, InteractiveCanvas, UIPanel};
 use crate::config::{default_config, get_config, FRACTAL_CONFIGS};
+use crate::hooks::use_ui_visibility;
 use crate::rendering::RenderProgress;
 
 #[component]
@@ -143,6 +144,16 @@ pub fn App() -> impl IntoView {
         set_render_progress.set(progress_signal);
     });
 
+    // UI visibility (autohide behavior)
+    let ui_visibility = use_ui_visibility();
+
+    // Cancel trigger - incremented to request render cancellation
+    let (cancel_trigger, set_cancel_trigger) = create_signal(0u32);
+
+    let on_cancel = Callback::new(move |_: ()| {
+        set_cancel_trigger.update(|v| *v = v.wrapping_add(1));
+    });
+
     view! {
         <InteractiveCanvas
             viewport=viewport.into()
@@ -150,6 +161,7 @@ pub fn App() -> impl IntoView {
             config=config.into()
             on_resize=on_resize
             on_progress_signal=on_progress_signal
+            cancel_trigger=cancel_trigger
         />
         <UIPanel
             canvas_size=canvas_size.into()
@@ -166,6 +178,13 @@ pub fn App() -> impl IntoView {
                 // No-op for now - colorizer selection in Iteration 8
             })
             render_progress=render_progress.into()
+            is_visible=ui_visibility.is_visible
+            set_is_hovering=ui_visibility.set_is_hovering
+            on_cancel=on_cancel
+        />
+        <CircularProgress
+            progress=render_progress.into()
+            is_ui_visible=ui_visibility.is_visible
         />
     }
 }

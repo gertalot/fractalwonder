@@ -6,6 +6,9 @@ public_url = "/fractalwonder/"
 filehash = true
 no_sri = true  # Disable SRI in development to avoid integrity mismatches during hot reload
 
+[watch]
+ignore = ["./worker-pkg"]
+
 [serve]
 addresses = ["127.0.0.1"]
 port = 8080

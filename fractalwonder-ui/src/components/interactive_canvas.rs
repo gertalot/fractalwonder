@@ -22,6 +22,9 @@ pub fn InteractiveCanvas(
     /// Callback fired with progress signal when renderer is created
     #[prop(optional)]
     on_progress_signal: Option<Callback<RwSignal<crate::rendering::RenderProgress>>>,
+    /// Signal that triggers render cancellation when incremented
+    #[prop(optional)]
+    cancel_trigger: Option<ReadSignal<u32>>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
@@ -60,6 +63,18 @@ pub fn InteractiveCanvas(
             renderer.with_value(|r| callback.call(r.progress()));
         }
     });
+
+    // Watch for external cancel requests
+    if let Some(trigger) = cancel_trigger {
+        create_effect(move |prev: Option<u32>| {
+            let current = trigger.get();
+            // Only cancel if value changed (not on initial mount)
+            if prev.is_some() && prev != Some(current) {
+                renderer.with_value(|r| r.cancel());
+            }
+            current
+        });
+    }
 
     // Wire up interaction hook with cancel on start
     let _interaction = use_canvas_interaction(

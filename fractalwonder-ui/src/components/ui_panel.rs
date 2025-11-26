@@ -1,7 +1,6 @@
 // fractalwonder-ui/src/components/ui_panel.rs
 use crate::components::{DropdownMenu, FullscreenButton, HomeButton, InfoButton};
 use crate::config::FractalConfig;
-use crate::hooks::{use_ui_visibility, UiVisibility};
 use crate::rendering::RenderProgress;
 use fractalwonder_core::Viewport;
 use leptos::*;
@@ -32,14 +31,13 @@ pub fn UIPanel(
     on_colorizer_select: Callback<String>,
     /// Render progress signal
     render_progress: Signal<RwSignal<RenderProgress>>,
+    /// UI visibility signal (from parent)
+    is_visible: ReadSignal<bool>,
+    /// Set hovering state (from parent)
+    set_is_hovering: WriteSignal<bool>,
+    /// Callback to cancel current render
+    on_cancel: Callback<()>,
 ) -> impl IntoView {
-    let UiVisibility {
-        is_visible,
-        is_hovering: _,
-        set_is_visible: _,
-        set_is_hovering,
-    } = use_ui_visibility();
-
     // Info panel state - lifted here so we can prevent auto-hide when open
     let (is_info_open, set_is_info_open) = create_signal(false);
 
@@ -116,20 +114,46 @@ pub fn UIPanel(
                             )
                         }}
                     </div>
-                    <div class="mt-1">
+                    <div class="mt-1 flex items-center justify-center gap-2">
+                        <span>
+                            {move || {
+                                let progress_signal = render_progress.get();
+                                let progress = progress_signal.get();
+
+                                if progress.total_tiles > 0 && !progress.is_complete {
+                                    // During render: show tiles and elapsed time
+                                    format!(
+                                        "Rendering: {}/{} tiles ({:.1}s)",
+                                        progress.completed_tiles,
+                                        progress.total_tiles,
+                                        progress.elapsed_ms / 1000.0
+                                    )
+                                } else if progress.is_complete && progress.total_tiles > 0 {
+                                    // After completion: show total render time
+                                    format!("Rendered in {:.2}s", progress.elapsed_ms / 1000.0)
+                                } else {
+                                    String::new()
+                                }
+                            }}
+                        </span>
+                        // Cancel button - only visible during active render
                         {move || {
                             let progress_signal = render_progress.get();
                             let progress = progress_signal.get();
+                            let is_rendering = progress.total_tiles > 0 && !progress.is_complete;
 
-                            if progress.total_tiles > 0 && !progress.is_complete {
-                                format!(
-                                    "Rendering: {:.1}% ({}/{} tiles)",
-                                    progress.percentage(),
-                                    progress.completed_tiles,
-                                    progress.total_tiles
-                                )
+                            if is_rendering {
+                                view! {
+                                    <button
+                                        class="text-white/50 hover:text-white/90 transition-colors cursor-pointer text-sm leading-none"
+                                        on:click=move |_| on_cancel.call(())
+                                        title="Cancel render"
+                                    >
+                                        "×"
+                                    </button>
+                                }.into_view()
                             } else {
-                                String::new()
+                                view! {}.into_view()
                             }
                         }}
                     </div>

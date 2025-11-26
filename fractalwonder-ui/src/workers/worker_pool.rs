@@ -266,15 +266,38 @@ impl WorkerPool {
     }
 
     pub fn cancel(&mut self) {
+        let pending_count = self.pending_tiles.len();
+        if pending_count == 0 && self.progress.get_untracked().is_complete {
+            // Nothing to cancel
+            return;
+        }
+
         web_sys::console::log_1(
             &format!(
                 "[WorkerPool] Cancelling render #{}, {} tiles pending",
-                self.current_render_id,
-                self.pending_tiles.len()
+                self.current_render_id, pending_count
             )
             .into(),
         );
-        // Terminate all workers
+
+        // Clear pending tiles - workers will finish current tile then idle
+        self.pending_tiles.clear();
+
+        // Mark progress as complete (cancelled)
+        self.progress.update(|p| {
+            p.is_complete = true;
+        });
+
+        // Bump render_id so any in-flight results are ignored
+        self.current_render_id = self.current_render_id.wrapping_add(1);
+    }
+
+    /// Terminate and recreate all workers. Used when switching renderers.
+    fn recreate_workers(&mut self) {
+        web_sys::console::log_1(
+            &format!("[WorkerPool] Recreating {} workers", self.workers.len()).into(),
+        );
+
         for worker in &self.workers {
             worker.terminate();
         }
@@ -282,7 +305,6 @@ impl WorkerPool {
         self.pending_tiles.clear();
         self.initialized_workers.clear();
 
-        // Recreate workers
         if let Some(pool_rc) = self.self_ref.upgrade() {
             if let Ok(new_workers) = create_workers(self.workers.len(), pool_rc) {
                 self.workers = new_workers;
@@ -292,7 +314,7 @@ impl WorkerPool {
 
     pub fn switch_renderer(&mut self, renderer_id: &str) {
         self.renderer_id = renderer_id.to_string();
-        self.cancel(); // Terminates and recreates with new renderer
+        self.recreate_workers(); // Must recreate workers with new renderer
     }
 }
 

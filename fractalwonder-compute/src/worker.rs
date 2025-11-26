@@ -78,7 +78,9 @@ fn handle_message(renderer: &Rc<RefCell<Option<BoxedRenderer>>>, data: JsValue) 
 
     match msg {
         MainToWorker::Initialize { renderer_id } => {
-            web_sys::console::log_1(&format!("[Worker] Initialize with renderer: {}", renderer_id).into());
+            web_sys::console::log_1(
+                &format!("[Worker] Initialize with renderer: {}", renderer_id).into(),
+            );
             match create_renderer(&renderer_id) {
                 Some(r) => {
                     *renderer.borrow_mut() = Some(r);
@@ -123,6 +125,30 @@ fn handle_message(renderer: &Rc<RefCell<Option<BoxedRenderer>>>, data: JsValue) 
             let data = r.render(&viewport, (tile.width, tile.height));
 
             let compute_time_ms = Date::now() - start_time;
+
+            // Detect all-black tiles (all points in set = potential rendering bug)
+            let in_set_count = data
+                .iter()
+                .filter(|d| match d {
+                    fractalwonder_core::ComputeData::Mandelbrot(m) => !m.escaped,
+                    _ => false,
+                })
+                .count();
+            let total_pixels = data.len();
+            if in_set_count == total_pixels && total_pixels > 0 {
+                web_sys::console::warn_1(
+                    &format!(
+                        "[Worker] ALL-BLACK tile at ({},{}) {}x{}: {}/{} in set. viewport center=({}, {}), width={}",
+                        tile.x, tile.y, tile.width, tile.height,
+                        in_set_count, total_pixels,
+                        viewport.center.0.to_f64(),
+                        viewport.center.1.to_f64(),
+                        viewport.width.to_f64()
+                    )
+                    .into(),
+                );
+            }
+
             // Send result
             post_message(&WorkerToMain::TileComplete {
                 render_id,

@@ -278,7 +278,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 11: Progress Indication
+## ✅ Iteration 11: Progress Indication
 
 **Goal:** Rich progress feedback during rendering
 
