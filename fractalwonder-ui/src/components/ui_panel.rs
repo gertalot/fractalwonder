@@ -2,13 +2,11 @@
 use crate::components::{DropdownMenu, FullscreenButton, HomeButton, InfoButton};
 use crate::config::FractalConfig;
 use crate::rendering::RenderProgress;
-use fractalwonder_core::{BigFloat, Viewport};
+use fractalwonder_core::{calculate_max_iterations_perturbation, BigFloat, Viewport};
 use leptos::*;
 
 #[component]
 pub fn UIPanel(
-    /// Canvas dimensions (width, height)
-    canvas_size: Signal<(u32, u32)>,
     /// Current viewport in fractal space
     viewport: Signal<Viewport>,
     /// Current fractal configuration
@@ -17,12 +15,6 @@ pub fn UIPanel(
     precision_bits: Signal<usize>,
     /// Callback when home button is clicked
     on_home_click: Callback<()>,
-    /// Renderer selection options (id, display_name)
-    renderer_options: Signal<Vec<(String, String)>>,
-    /// Currently selected renderer ID
-    selected_renderer_id: Signal<String>,
-    /// Callback when renderer is selected
-    on_renderer_select: Callback<String>,
     /// Colorizer selection options (id, display_name)
     colorizer_options: Signal<Vec<(String, String)>>,
     /// Currently selected colorizer ID
@@ -76,12 +68,6 @@ pub fn UIPanel(
                     <InfoButton is_open=is_info_open set_is_open=set_is_info_open />
                     <HomeButton on_click=on_home_click />
                     <DropdownMenu
-                        label="Function".to_string()
-                        options=renderer_options
-                        selected_id=selected_renderer_id
-                        on_select=move |id| on_renderer_select.call(id)
-                    />
-                    <DropdownMenu
                         label="Colors".to_string()
                         options=colorizer_options
                         selected_id=selected_colorizer_id
@@ -93,24 +79,27 @@ pub fn UIPanel(
                 <div class="flex-1 text-center text-white text-xs font-mono">
                     <div>
                         {move || {
+                            use std::f64::consts::LOG2_10;
+
                             let cfg = config.get();
                             let vp = viewport.get();
                             let bits = precision_bits.get();
-                            let (canvas_w, canvas_h) = canvas_size.get();
 
                             // Calculate zoom: reference_width / current_width via log subtraction
                             let reference_width = cfg.default_viewport(bits).width;
                             let zoom_log2 = reference_width.log2_approx() - vp.width.log2_approx();
                             let zoom = format_zoom_from_log2(zoom_log2);
 
+                            // Calculate max iterations from zoom exponent (log10)
+                            let zoom_exponent = zoom_log2 / LOG2_10;
+                            let max_iter = calculate_max_iterations_perturbation(zoom_exponent);
+
                             let cx = format_signed_coordinate(&vp.center.0);
                             let cy = format_signed_coordinate(&vp.center.1);
-                            let w = format_dimension_from_log2(vp.width.log2_approx());
-                            let h = format_dimension_from_log2(vp.height.log2_approx());
 
                             format!(
-                                "{} | Zoom: {} | Center: ({}, {}) | Size: {} x {} | Canvas: {}x{} | {} bits",
-                                cfg.display_name, zoom, cx, cy, w, h, canvas_w, canvas_h, bits
+                                "Zoom: {} | Center: ({}, {}) | {} bits | {} max iterations",
+                                zoom, cx, cy, bits, max_iter
                             )
                         }}
                     </div>
@@ -236,35 +225,6 @@ fn format_zoom_from_log2(log2_val: f64) -> String {
     } else {
         // Scientific: "1.50 × 10^3"
         format!("{:.2} × 10^{}", mantissa, exponent)
-    }
-}
-
-/// Format a dimension for display using log2 approximation.
-///
-/// Works at any zoom level, including extreme depths beyond f64 range.
-fn format_dimension_from_log2(log2_val: f64) -> String {
-    use std::f64::consts::LOG2_10;
-
-    if log2_val.is_infinite() || log2_val.is_nan() {
-        return "0".to_string();
-    }
-
-    // Convert log2 to log10 for display
-    let log10_val = log2_val / LOG2_10;
-
-    // If exponent is in displayable range, show the actual value
-    if log10_val > -15.0 && log10_val < 15.0 {
-        let val = 10.0_f64.powf(log10_val);
-        if val < 0.001 {
-            format!("{:.2e}", val)
-        } else if val < 1.0 {
-            format!("{:.4}", val)
-        } else {
-            format!("{:.2}", val)
-        }
-    } else {
-        // Extreme value - show as power of 10
-        format!("~10^{:.0}", log10_val)
     }
 }
 

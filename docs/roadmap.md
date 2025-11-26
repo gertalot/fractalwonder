@@ -303,7 +303,7 @@ Make sure you read `docs/architecture.md` and the code in `_archive` to understa
 
 ---
 
-## Iteration 12: Perturbation Theory Rendering
+## ✅ Iteration 12: Perturbation Theory Rendering
 
 **Goal:** Enable extreme deep zoom (10^1000+) with reasonable performance
 

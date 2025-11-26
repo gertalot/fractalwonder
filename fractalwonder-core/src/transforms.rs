@@ -456,7 +456,7 @@ pub fn calculate_max_iterations(viewport_width: &BigFloat, reference_width: &Big
 /// At deep zoom (10^1000), this returns ~281,000 iterations.
 /// At extreme zoom (10^2000), this returns ~669,000 iterations.
 pub fn calculate_max_iterations_perturbation(zoom_exponent: f64) -> u32 {
-    let iterations = 50.0 * zoom_exponent.abs().max(1.0).powf(1.25);
+    let iterations = 50.0 * zoom_exponent.abs().max(1.0).powf(2.0);
     iterations.clamp(1000.0, 10_000_000.0) as u32
 }
 

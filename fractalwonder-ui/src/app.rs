@@ -3,7 +3,7 @@ use fractalwonder_core::{calculate_precision_bits, fit_viewport_to_canvas, Viewp
 use leptos::*;
 
 use crate::components::{CircularProgress, InteractiveCanvas, UIPanel};
-use crate::config::{default_config, get_config, FRACTAL_CONFIGS};
+use crate::config::{default_config, get_config};
 use crate::hooks::{load_state, save_state, use_ui_visibility, PersistedState};
 use crate::rendering::RenderProgress;
 
@@ -30,19 +30,11 @@ pub fn App() -> impl IntoView {
         create_signal(RwSignal::new(RenderProgress::default()));
 
     // Selected renderer (fractal type) - use persisted value if available
-    let (selected_config_id, set_selected_config_id) = create_signal(initial_config_id);
+    let (selected_config_id, _set_selected_config_id) = create_signal(initial_config_id);
 
     // Derive config from selected ID
     let config =
         create_memo(move |_| get_config(&selected_config_id.get()).unwrap_or_else(default_config));
-
-    // Build renderer options from FRACTAL_CONFIGS
-    let renderer_options = Signal::derive(move || {
-        FRACTAL_CONFIGS
-            .iter()
-            .map(|c| (c.id.to_string(), c.display_name.to_string()))
-            .collect::<Vec<_>>()
-    });
 
     // Colorizer options (single default for now)
     let colorizer_options =
@@ -199,14 +191,10 @@ pub fn App() -> impl IntoView {
             cancel_trigger=cancel_trigger
         />
         <UIPanel
-            canvas_size=canvas_size.into()
             viewport=viewport.into()
             config=config.into()
             precision_bits=precision_bits.into()
             on_home_click=on_home_click
-            renderer_options=renderer_options
-            selected_renderer_id=Signal::derive(move || selected_config_id.get())
-            on_renderer_select=Callback::new(move |id: String| set_selected_config_id.set(id))
             colorizer_options=colorizer_options
             selected_colorizer_id=selected_colorizer_id
             on_colorizer_select=Callback::new(move |_: String| {

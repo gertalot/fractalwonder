@@ -20,6 +20,14 @@ struct OrbitData {
     escaped_at: Option<u32>,
 }
 
+/// Pending reference orbit computation request.
+struct PendingOrbitRequest {
+    render_id: u32,
+    orbit_id: u32,
+    c_ref_json: String,
+    max_iterations: u32,
+}
+
 /// State for perturbation rendering flow.
 #[derive(Default)]
 struct PerturbationState {
@@ -33,6 +41,8 @@ struct PerturbationState {
     max_iterations: u32,
     /// Delta step per pixel in fractal space
     delta_step: (f64, f64),
+    /// Pending orbit computation (waiting for worker to initialize)
+    pending_orbit_request: Option<PendingOrbitRequest>,
 }
 
 #[derive(Clone)]
@@ -165,7 +175,29 @@ impl WorkerPool {
             WorkerToMain::RequestWork { render_id } => {
                 // Track initialization - first RequestWork after Initialize has render_id: None
                 if render_id.is_none() {
+                    let was_empty = self.initialized_workers.is_empty();
                     self.initialized_workers.insert(worker_id);
+
+                    // If this is the first worker to initialize and we have a pending orbit request,
+                    // dispatch it now
+                    if was_empty {
+                        if let Some(req) = self.perturbation.pending_orbit_request.take() {
+                            web_sys::console::log_1(
+                                &"[WorkerPool] First worker ready, dispatching queued orbit request"
+                                    .into(),
+                            );
+                            self.send_to_worker(
+                                worker_id,
+                                &MainToWorker::ComputeReferenceOrbit {
+                                    render_id: req.render_id,
+                                    orbit_id: req.orbit_id,
+                                    c_ref_json: req.c_ref_json,
+                                    max_iterations: req.max_iterations,
+                                },
+                            );
+                            return; // Don't dispatch regular work yet, wait for orbit
+                        }
+                    }
                 }
 
                 // Only send work if render_id matches or is None (just initialized)
@@ -494,8 +526,9 @@ impl WorkerPool {
         // Serialize viewport center for reference orbit computation
         let c_ref_json = serde_json::to_string(&viewport.center).unwrap_or_default();
 
-        // Send ComputeReferenceOrbit to first available worker
+        // Send ComputeReferenceOrbit to first available worker, or queue if none ready
         if let Some(&worker_id) = self.initialized_workers.iter().next() {
+            self.perturbation.pending_orbit_request = None;
             self.send_to_worker(
                 worker_id,
                 &MainToWorker::ComputeReferenceOrbit {
@@ -505,6 +538,17 @@ impl WorkerPool {
                     max_iterations,
                 },
             );
+        } else {
+            // No workers ready yet - queue the request for when first worker initializes
+            web_sys::console::log_1(
+                &"[WorkerPool] No workers initialized yet, queueing orbit request".into(),
+            );
+            self.perturbation.pending_orbit_request = Some(PendingOrbitRequest {
+                render_id: self.current_render_id,
+                orbit_id: self.perturbation.orbit_id,
+                c_ref_json,
+                max_iterations,
+            });
         }
     }
 
