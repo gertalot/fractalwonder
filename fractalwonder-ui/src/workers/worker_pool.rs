@@ -318,6 +318,13 @@ impl WorkerPool {
             return;
         }
 
+        // In perturbation mode, workers must have the orbit cached before receiving tiles
+        if self.is_perturbation_render && !self.perturbation.workers_with_orbit.contains(&worker_id)
+        {
+            self.send_to_worker(worker_id, &MainToWorker::NoWork);
+            return;
+        }
+
         if let Some(tile) = self.pending_tiles.pop_front() {
             if self.is_perturbation_render {
                 // Perturbation mode: send RenderTilePerturbation
@@ -327,30 +334,25 @@ impl WorkerPool {
                 };
 
                 // Calculate delta_c_origin for this tile's top-left pixel
+                //
+                // PRECISION FIX: At deep zoom (10^14+), computing tile fractal coords
+                // then subtracting c_ref causes catastrophic cancellation because both
+                // values are nearly identical when converted to f64.
+                //
+                // Since c_ref IS the viewport center, we compute delta directly:
+                //   delta = (tile_pos - canvas_center) * pixel_size
+                // This avoids adding a tiny delta to a large coordinate then subtracting.
                 let (canvas_width, canvas_height) = self.canvas_size;
-                let vp_center = (viewport.center.0.to_f64(), viewport.center.1.to_f64());
                 let vp_width = viewport.width.to_f64();
                 let vp_height = viewport.height.to_f64();
 
-                // Pixel (0,0) maps to fractal corner, pixel (canvas_w, canvas_h) maps to opposite corner
-                // Tile top-left pixel in normalized coords: tile.x/canvas_w - 0.5
+                // Tile top-left pixel offset from canvas center in normalized coords [-0.5, 0.5]
                 let norm_x = tile.x as f64 / canvas_width as f64 - 0.5;
                 let norm_y = tile.y as f64 / canvas_height as f64 - 0.5;
 
-                // Fractal coords of tile top-left
-                let tile_fx = vp_center.0 + norm_x * vp_width;
-                let tile_fy = vp_center.1 + norm_y * vp_height;
-
-                // Get c_ref from pending orbit
-                let c_ref = self
-                    .perturbation
-                    .pending_orbit
-                    .as_ref()
-                    .map(|o| o.c_ref)
-                    .unwrap_or((0.0, 0.0));
-
-                // Delta from reference point
-                let delta_c_origin = (tile_fx - c_ref.0, tile_fy - c_ref.1);
+                // Delta from reference point (viewport center) computed directly
+                // This preserves full f64 precision for the small delta values
+                let delta_c_origin = (norm_x * vp_width, norm_y * vp_height);
 
                 self.send_to_worker(
                     worker_id,
@@ -436,16 +438,35 @@ impl WorkerPool {
         self.perturbation.workers_with_orbit.clear();
         self.perturbation.pending_orbit = None;
 
+        // Validate viewport dimensions to prevent panics from edge cases
+        let vp_width = viewport.width.to_f64();
+        let vp_height = viewport.height.to_f64();
+
+        if !vp_width.is_finite() || !vp_height.is_finite() || vp_width <= 0.0 || vp_height <= 0.0 {
+            web_sys::console::error_1(
+                &format!(
+                    "[WorkerPool] Invalid viewport dimensions: width={}, height={}",
+                    vp_width, vp_height
+                )
+                .into(),
+            );
+            return;
+        }
+
         // Calculate zoom exponent from viewport width
         // Default Mandelbrot width is ~4, so zoom = 4 / width
-        let zoom = 4.0 / viewport.width.to_f64();
-        let zoom_exponent = zoom.log10();
+        let zoom = 4.0 / vp_width;
+        let zoom_exponent = if zoom.is_finite() && zoom > 0.0 {
+            zoom.log10()
+        } else {
+            0.0 // Fallback for edge cases
+        };
         let max_iterations = calculate_max_iterations_perturbation(zoom_exponent);
 
         // Calculate delta step (per pixel in fractal space)
         let delta_step = (
-            viewport.width.to_f64() / canvas_size.0 as f64,
-            viewport.height.to_f64() / canvas_size.1 as f64,
+            vp_width / canvas_size.0 as f64,
+            vp_height / canvas_size.1 as f64,
         );
 
         self.perturbation.max_iterations = max_iterations;

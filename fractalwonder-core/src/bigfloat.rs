@@ -3,6 +3,19 @@ use dashu_float::ops::SquareRoot;
 use dashu_float::{DBig, FBig};
 use serde::{Deserialize, Serialize};
 
+/// Extract value from Approximation, accepting both Exact and Inexact results.
+///
+/// The dashu library's `with_precision()` returns `Approximation<FBig, _>` which
+/// can be `Exact` or `Inexact`. Using `.unwrap()` panics on `Inexact`, which
+/// commonly occurs during precision changes. This helper safely extracts the
+/// value regardless of exactness.
+fn approx_value<E>(approx: Approximation<FBig, E>) -> FBig {
+    match approx {
+        Approximation::Exact(v) => v,
+        Approximation::Inexact(v, _) => v,
+    }
+}
+
 /// Check if a string contains an exponent beyond f64's representable range.
 /// f64 can represent values from ~5e-324 to ~1.8e308.
 /// Returns true if the value would overflow or underflow f64.
@@ -90,12 +103,13 @@ impl BigFloat {
             BigFloatValue::F64(val)
         } else {
             let fbig = if val == 0.0 {
-                FBig::ZERO.with_precision(precision_bits).unwrap()
+                approx_value(FBig::ZERO.with_precision(precision_bits))
             } else {
-                FBig::try_from(val)
-                    .unwrap()
-                    .with_precision(precision_bits)
-                    .unwrap()
+                // FBig::try_from(f64) can fail for NaN/Infinity, handle gracefully
+                match FBig::try_from(val) {
+                    Ok(f) => approx_value(f.with_precision(precision_bits)),
+                    Err(_) => approx_value(FBig::ZERO.with_precision(precision_bits)),
+                }
             };
             BigFloatValue::Arbitrary(fbig)
         };
@@ -138,7 +152,7 @@ impl BigFloat {
             }
         } else {
             // Convert to arbitrary precision
-            let fbig = self.to_fbig().with_precision(precision_bits).unwrap();
+            let fbig = approx_value(self.to_fbig().with_precision(precision_bits));
             Self {
                 value: BigFloatValue::Arbitrary(fbig),
                 precision_bits,
@@ -367,12 +381,13 @@ impl BigFloat {
             BigFloatValue::F64(v) => {
                 if *v == 0.0 {
                     // Special handling for zero - create it with precision
-                    FBig::ZERO.with_precision(self.precision_bits).unwrap()
+                    approx_value(FBig::ZERO.with_precision(self.precision_bits))
                 } else {
-                    FBig::try_from(*v)
-                        .unwrap()
-                        .with_precision(self.precision_bits)
-                        .unwrap()
+                    // FBig::try_from(f64) can fail for NaN/Infinity
+                    match FBig::try_from(*v) {
+                        Ok(f) => approx_value(f.with_precision(self.precision_bits)),
+                        Err(_) => approx_value(FBig::ZERO.with_precision(self.precision_bits)),
+                    }
                 }
             }
             BigFloatValue::Arbitrary(v) => v.clone(),
