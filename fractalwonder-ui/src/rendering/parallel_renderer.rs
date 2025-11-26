@@ -1,4 +1,4 @@
-use crate::config::FractalConfig;
+use crate::config::{FractalConfig, RendererType};
 use crate::rendering::canvas_utils::{draw_pixels_to_canvas, get_2d_context};
 use crate::rendering::colorizers::colorize;
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
@@ -83,10 +83,23 @@ impl ParallelRenderer {
         // Generate tiles
         let tiles = generate_tiles(width, height, tile_size);
 
-        // Start render with viewport and canvas size
-        self.worker_pool
-            .borrow_mut()
-            .start_render(viewport.clone(), (width, height), tiles);
+        // Start render with appropriate method based on renderer type
+        match self.config.renderer_type {
+            RendererType::Simple => {
+                self.worker_pool.borrow_mut().start_render(
+                    viewport.clone(),
+                    (width, height),
+                    tiles,
+                );
+            }
+            RendererType::Perturbation => {
+                self.worker_pool.borrow_mut().start_perturbation_render(
+                    viewport.clone(),
+                    (width, height),
+                    tiles,
+                );
+            }
+        }
     }
 
     pub fn switch_config(&mut self, config: &'static FractalConfig) -> Result<(), JsValue> {

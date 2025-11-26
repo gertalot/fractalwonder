@@ -1,5 +1,8 @@
 use crate::rendering::RenderProgress;
-use fractalwonder_core::{ComputeData, MainToWorker, PixelRect, Viewport, WorkerToMain};
+use fractalwonder_core::{
+    calculate_max_iterations_perturbation, ComputeData, MainToWorker, PixelRect, Viewport,
+    WorkerToMain,
+};
 use leptos::*;
 use std::cell::RefCell;
 use std::collections::{HashSet, VecDeque};
@@ -8,6 +11,29 @@ use wasm_bindgen::prelude::*;
 use web_sys::{MessageEvent, Worker, WorkerOptions, WorkerType};
 
 const WORKER_SCRIPT_PATH: &str = "./message-compute-worker.js";
+
+/// Cached orbit data for broadcasting to workers.
+#[allow(dead_code)] // Fields kept for future rebroadcast/debugging
+struct OrbitData {
+    c_ref: (f64, f64),
+    orbit: Vec<(f64, f64)>,
+    escaped_at: Option<u32>,
+}
+
+/// State for perturbation rendering flow.
+#[derive(Default)]
+struct PerturbationState {
+    /// Current orbit ID being used
+    orbit_id: u32,
+    /// Workers that have confirmed storing the orbit
+    workers_with_orbit: HashSet<usize>,
+    /// Orbit data to broadcast
+    pending_orbit: Option<OrbitData>,
+    /// Maximum iterations for perturbation tiles
+    max_iterations: u32,
+    /// Delta step per pixel in fractal space
+    delta_step: (f64, f64),
+}
 
 #[derive(Clone)]
 pub struct TileResult {
@@ -28,6 +54,10 @@ pub struct WorkerPool {
     progress: RwSignal<RenderProgress>,
     render_start_time: Option<f64>,
     self_ref: Weak<RefCell<Self>>,
+    /// Perturbation-specific state
+    perturbation: PerturbationState,
+    /// Whether current render is using perturbation mode
+    is_perturbation_render: bool,
 }
 
 fn performance_now() -> f64 {
@@ -102,6 +132,8 @@ impl WorkerPool {
             progress,
             render_start_time: None,
             self_ref: Weak::new(),
+            perturbation: PerturbationState::default(),
+            is_perturbation_render: false,
         }));
 
         pool.borrow_mut().self_ref = Rc::downgrade(&pool);
@@ -203,15 +235,79 @@ impl WorkerPool {
                 )));
             }
 
-            // Perturbation theory messages - will be implemented in Task 11
-            WorkerToMain::ReferenceOrbitComplete { .. } => {
+            WorkerToMain::ReferenceOrbitComplete {
+                render_id,
+                orbit_id,
+                c_ref,
+                orbit,
+                escaped_at,
+            } => {
+                if render_id != self.current_render_id {
+                    return;
+                }
+
                 web_sys::console::log_1(
-                    &"[WorkerPool] ReferenceOrbitComplete not yet implemented".into(),
+                    &format!(
+                        "[WorkerPool] Reference orbit complete: {} points, escaped_at={:?}",
+                        orbit.len(),
+                        escaped_at
+                    )
+                    .into(),
                 );
+
+                // Store orbit data and broadcast to all workers
+                self.perturbation.pending_orbit = Some(OrbitData {
+                    c_ref,
+                    orbit: orbit.clone(),
+                    escaped_at,
+                });
+                self.perturbation.orbit_id = orbit_id;
+                self.perturbation.workers_with_orbit.clear();
+
+                // Broadcast to all workers
+                for worker_id in 0..self.workers.len() {
+                    self.send_to_worker(
+                        worker_id,
+                        &MainToWorker::StoreReferenceOrbit {
+                            orbit_id,
+                            c_ref,
+                            orbit: orbit.clone(),
+                            escaped_at,
+                        },
+                    );
+                }
             }
 
-            WorkerToMain::OrbitStored { .. } => {
-                web_sys::console::log_1(&"[WorkerPool] OrbitStored not yet implemented".into());
+            WorkerToMain::OrbitStored { orbit_id } => {
+                if orbit_id != self.perturbation.orbit_id {
+                    return;
+                }
+
+                self.perturbation.workers_with_orbit.insert(worker_id);
+
+                // Check if all initialized workers have the orbit
+                let all_ready = self
+                    .initialized_workers
+                    .iter()
+                    .all(|&id| self.perturbation.workers_with_orbit.contains(&id));
+
+                if all_ready && !self.pending_tiles.is_empty() {
+                    web_sys::console::log_1(
+                        &format!(
+                            "[WorkerPool] All {} workers have orbit, dispatching {} tiles",
+                            self.perturbation.workers_with_orbit.len(),
+                            self.pending_tiles.len()
+                        )
+                        .into(),
+                    );
+
+                    // Start dispatching tiles
+                    for worker_id in 0..self.workers.len() {
+                        if self.initialized_workers.contains(&worker_id) {
+                            self.dispatch_work(worker_id);
+                        }
+                    }
+                }
             }
         }
     }
@@ -223,24 +319,70 @@ impl WorkerPool {
         }
 
         if let Some(tile) = self.pending_tiles.pop_front() {
-            // Compute tile-specific viewport
-            let tile_viewport = self
-                .current_viewport
-                .as_ref()
-                .map(|vp| crate::rendering::tile_to_viewport(&tile, vp, self.canvas_size));
+            if self.is_perturbation_render {
+                // Perturbation mode: send RenderTilePerturbation
+                let Some(viewport) = self.current_viewport.as_ref() else {
+                    self.send_to_worker(worker_id, &MainToWorker::NoWork);
+                    return;
+                };
 
-            let viewport_json = tile_viewport
-                .and_then(|v| serde_json::to_string(&v).ok())
-                .unwrap_or_default();
+                // Calculate delta_c_origin for this tile's top-left pixel
+                let (canvas_width, canvas_height) = self.canvas_size;
+                let vp_center = (viewport.center.0.to_f64(), viewport.center.1.to_f64());
+                let vp_width = viewport.width.to_f64();
+                let vp_height = viewport.height.to_f64();
 
-            self.send_to_worker(
-                worker_id,
-                &MainToWorker::RenderTile {
-                    render_id: self.current_render_id,
-                    viewport_json,
-                    tile,
-                },
-            );
+                // Pixel (0,0) maps to fractal corner, pixel (canvas_w, canvas_h) maps to opposite corner
+                // Tile top-left pixel in normalized coords: tile.x/canvas_w - 0.5
+                let norm_x = tile.x as f64 / canvas_width as f64 - 0.5;
+                let norm_y = tile.y as f64 / canvas_height as f64 - 0.5;
+
+                // Fractal coords of tile top-left
+                let tile_fx = vp_center.0 + norm_x * vp_width;
+                let tile_fy = vp_center.1 + norm_y * vp_height;
+
+                // Get c_ref from pending orbit
+                let c_ref = self
+                    .perturbation
+                    .pending_orbit
+                    .as_ref()
+                    .map(|o| o.c_ref)
+                    .unwrap_or((0.0, 0.0));
+
+                // Delta from reference point
+                let delta_c_origin = (tile_fx - c_ref.0, tile_fy - c_ref.1);
+
+                self.send_to_worker(
+                    worker_id,
+                    &MainToWorker::RenderTilePerturbation {
+                        render_id: self.current_render_id,
+                        tile,
+                        orbit_id: self.perturbation.orbit_id,
+                        delta_c_origin,
+                        delta_c_step: self.perturbation.delta_step,
+                        max_iterations: self.perturbation.max_iterations,
+                    },
+                );
+            } else {
+                // Standard mode: send RenderTile
+                let tile_viewport = self
+                    .current_viewport
+                    .as_ref()
+                    .map(|vp| crate::rendering::tile_to_viewport(&tile, vp, self.canvas_size));
+
+                let viewport_json = tile_viewport
+                    .and_then(|v| serde_json::to_string(&v).ok())
+                    .unwrap_or_default();
+
+                self.send_to_worker(
+                    worker_id,
+                    &MainToWorker::RenderTile {
+                        render_id: self.current_render_id,
+                        viewport_json,
+                        tile,
+                    },
+                );
+            }
         } else {
             self.send_to_worker(worker_id, &MainToWorker::NoWork);
         }
@@ -252,6 +394,7 @@ impl WorkerPool {
         canvas_size: (u32, u32),
         tiles: Vec<PixelRect>,
     ) {
+        self.is_perturbation_render = false;
         self.current_render_id = self.current_render_id.wrapping_add(1);
         web_sys::console::log_1(
             &format!(
@@ -276,6 +419,74 @@ impl WorkerPool {
         }
     }
 
+    /// Start a perturbation render.
+    ///
+    /// 1. Computes reference orbit at viewport center
+    /// 2. Broadcasts orbit to all workers
+    /// 3. Dispatches tiles using delta iteration
+    pub fn start_perturbation_render(
+        &mut self,
+        viewport: Viewport,
+        canvas_size: (u32, u32),
+        tiles: Vec<PixelRect>,
+    ) {
+        self.is_perturbation_render = true;
+        self.current_render_id = self.current_render_id.wrapping_add(1);
+        self.perturbation.orbit_id = self.perturbation.orbit_id.wrapping_add(1);
+        self.perturbation.workers_with_orbit.clear();
+        self.perturbation.pending_orbit = None;
+
+        // Calculate zoom exponent from viewport width
+        // Default Mandelbrot width is ~4, so zoom = 4 / width
+        let zoom = 4.0 / viewport.width.to_f64();
+        let zoom_exponent = zoom.log10();
+        let max_iterations = calculate_max_iterations_perturbation(zoom_exponent);
+
+        // Calculate delta step (per pixel in fractal space)
+        let delta_step = (
+            viewport.width.to_f64() / canvas_size.0 as f64,
+            viewport.height.to_f64() / canvas_size.1 as f64,
+        );
+
+        self.perturbation.max_iterations = max_iterations;
+        self.perturbation.delta_step = delta_step;
+
+        web_sys::console::log_1(
+            &format!(
+                "[WorkerPool] Starting perturbation render #{} with {} tiles, zoom=10^{:.1}, max_iter={}",
+                self.current_render_id,
+                tiles.len(),
+                zoom_exponent,
+                max_iterations
+            )
+            .into(),
+        );
+
+        self.current_viewport = Some(viewport.clone());
+        self.canvas_size = canvas_size;
+        self.pending_tiles = tiles.into();
+        self.render_start_time = Some(performance_now());
+
+        let total = self.pending_tiles.len() as u32;
+        self.progress.set(RenderProgress::new(total));
+
+        // Serialize viewport center for reference orbit computation
+        let c_ref_json = serde_json::to_string(&viewport.center).unwrap_or_default();
+
+        // Send ComputeReferenceOrbit to first available worker
+        if let Some(&worker_id) = self.initialized_workers.iter().next() {
+            self.send_to_worker(
+                worker_id,
+                &MainToWorker::ComputeReferenceOrbit {
+                    render_id: self.current_render_id,
+                    orbit_id: self.perturbation.orbit_id,
+                    c_ref_json,
+                    max_iterations,
+                },
+            );
+        }
+    }
+
     pub fn cancel(&mut self) {
         let pending_count = self.pending_tiles.len();
         if pending_count == 0 && self.progress.get_untracked().is_complete {
@@ -290,6 +501,11 @@ impl WorkerPool {
             )
             .into(),
         );
+
+        // Reset perturbation state
+        self.is_perturbation_render = false;
+        self.perturbation.workers_with_orbit.clear();
+        self.perturbation.pending_orbit = None;
 
         // Terminate all workers immediately and recreate them
         // This ensures no stale tiles waste CPU cycles
