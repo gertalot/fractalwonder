@@ -4,11 +4,24 @@ use leptos::*;
 
 use crate::components::{CircularProgress, InteractiveCanvas, UIPanel};
 use crate::config::{default_config, get_config, FRACTAL_CONFIGS};
-use crate::hooks::use_ui_visibility;
+use crate::hooks::{load_state, save_state, use_ui_visibility, PersistedState};
 use crate::rendering::RenderProgress;
 
 #[component]
 pub fn App() -> impl IntoView {
+    // Load persisted state from localStorage (if any)
+    let persisted = load_state();
+
+    // Extract persisted values before moving into closures
+    let initial_config_id = persisted
+        .as_ref()
+        .map(|s| s.config_id.clone())
+        .unwrap_or_else(|| "mandelbrot".to_string());
+    let persisted_viewport = persisted.map(|s| s.viewport);
+
+    // Store persisted viewport for use in effect (consumed on first use)
+    let stored_viewport = store_value(persisted_viewport);
+
     // Canvas size signal (updated by InteractiveCanvas on resize)
     let (canvas_size, set_canvas_size) = create_signal((0u32, 0u32));
 
@@ -16,8 +29,8 @@ pub fn App() -> impl IntoView {
     let (render_progress, set_render_progress) =
         create_signal(RwSignal::new(RenderProgress::default()));
 
-    // Selected renderer (fractal type)
-    let (selected_config_id, set_selected_config_id) = create_signal("mandelbrot".to_string());
+    // Selected renderer (fractal type) - use persisted value if available
+    let (selected_config_id, set_selected_config_id) = create_signal(initial_config_id);
 
     // Derive config from selected ID
     let config =
@@ -52,16 +65,24 @@ pub fn App() -> impl IntoView {
         let was_valid = prev_size.map(|(w, h)| w > 0 && h > 0).unwrap_or(false);
 
         if !was_valid {
-            // First time we have a valid size: initialize viewport from config
-            let natural = cfg.default_viewport(64);
-            let fitted = fit_viewport_to_canvas(&natural, size);
-            let required_bits = calculate_precision_bits(&fitted, size);
-
-            let final_viewport = if required_bits > fitted.precision_bits() {
-                let natural_high_prec = cfg.default_viewport(required_bits);
-                fit_viewport_to_canvas(&natural_high_prec, size)
+            // First time we have a valid size: check for persisted viewport
+            let final_viewport = if let Some(persisted_vp) = stored_viewport.get_value() {
+                // Clear stored viewport so it's only used once
+                stored_viewport.set_value(None);
+                // Fit persisted viewport to current canvas
+                fit_viewport_to_canvas(&persisted_vp, size)
             } else {
-                fitted
+                // No persisted state - initialize from config default
+                let natural = cfg.default_viewport(64);
+                let fitted = fit_viewport_to_canvas(&natural, size);
+                let required_bits = calculate_precision_bits(&fitted, size);
+
+                if required_bits > fitted.precision_bits() {
+                    let natural_high_prec = cfg.default_viewport(required_bits);
+                    fit_viewport_to_canvas(&natural_high_prec, size)
+                } else {
+                    fitted
+                }
             };
 
             set_viewport.set(final_viewport);
@@ -106,6 +127,20 @@ pub fn App() -> impl IntoView {
         } else {
             calculate_precision_bits(&vp, size)
         }
+    });
+
+    // Persist state to localStorage when viewport or config changes
+    create_effect(move |_| {
+        let vp = viewport.get();
+        let config_id = selected_config_id.get();
+
+        // Skip saving if viewport hasn't been initialized yet
+        if vp.width.to_f64() == 4.0 && vp.height.to_f64() == 3.0 {
+            return;
+        }
+
+        let state = PersistedState::new(vp, config_id);
+        save_state(&state);
     });
 
     let on_resize = Callback::new(move |size: (u32, u32)| {

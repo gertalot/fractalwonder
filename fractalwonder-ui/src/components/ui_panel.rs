@@ -2,7 +2,7 @@
 use crate::components::{DropdownMenu, FullscreenButton, HomeButton, InfoButton};
 use crate::config::FractalConfig;
 use crate::rendering::RenderProgress;
-use fractalwonder_core::Viewport;
+use fractalwonder_core::{BigFloat, Viewport};
 use leptos::*;
 
 #[component]
@@ -103,8 +103,8 @@ pub fn UIPanel(
                             let zoom_log2 = reference_width.log2_approx() - vp.width.log2_approx();
                             let zoom = format_zoom_from_log2(zoom_log2);
 
-                            let cx = format_coordinate_from_log2(vp.center.0.log2_approx());
-                            let cy = format_coordinate_from_log2(vp.center.1.log2_approx());
+                            let cx = format_signed_coordinate(&vp.center.0);
+                            let cy = format_signed_coordinate(&vp.center.1);
                             let w = format_dimension_from_log2(vp.width.log2_approx());
                             let h = format_dimension_from_log2(vp.height.log2_approx());
 
@@ -165,6 +165,21 @@ pub fn UIPanel(
                 </div>
             </div>
         </div>
+    }
+}
+
+/// Format a signed coordinate for display, preserving the sign.
+///
+/// Uses log2_approx for magnitude (which uses abs internally) and
+/// to_f64() to determine the sign.
+fn format_signed_coordinate(coord: &BigFloat) -> String {
+    let is_negative = coord.to_f64() < 0.0;
+    let magnitude = format_coordinate_from_log2(coord.log2_approx());
+
+    if is_negative {
+        format!("-{}", magnitude)
+    } else {
+        magnitude
     }
 }
 

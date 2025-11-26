@@ -506,6 +506,7 @@ dependencies = [
  "leptos-use",
  "leptos_meta",
  "log",
+ "serde",
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-test",

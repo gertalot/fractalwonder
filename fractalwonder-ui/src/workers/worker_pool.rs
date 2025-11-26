@@ -274,21 +274,22 @@ impl WorkerPool {
 
         web_sys::console::log_1(
             &format!(
-                "[WorkerPool] Cancelling render #{}, {} tiles pending",
+                "[WorkerPool] Cancelling render #{}, {} tiles pending - terminating workers",
                 self.current_render_id, pending_count
             )
             .into(),
         );
 
-        // Clear pending tiles - workers will finish current tile then idle
-        self.pending_tiles.clear();
+        // Terminate all workers immediately and recreate them
+        // This ensures no stale tiles waste CPU cycles
+        self.recreate_workers();
 
         // Mark progress as complete (cancelled)
         self.progress.update(|p| {
             p.is_complete = true;
         });
 
-        // Bump render_id so any in-flight results are ignored
+        // Bump render_id so any in-flight results are ignored (belt and suspenders)
         self.current_render_id = self.current_render_id.wrapping_add(1);
     }
 
