@@ -73,6 +73,8 @@ pub struct WorkerPool {
     glitched_tile_count: u32,
     /// Quadtree for spatial tracking of glitched regions
     quadtree: Option<QuadtreeCell>,
+    /// Bounds of tiles that have glitched pixels (for associating with quadtree cells)
+    glitched_tiles: Vec<PixelRect>,
 }
 
 fn performance_now() -> f64 {
@@ -151,6 +153,7 @@ impl WorkerPool {
             is_perturbation_render: false,
             glitched_tile_count: 0,
             quadtree: None,
+            glitched_tiles: Vec::new(),
         }));
 
         pool.borrow_mut().self_ref = Rc::downgrade(&pool);
@@ -244,6 +247,7 @@ impl WorkerPool {
                                 .into(),
                             );
                             self.glitched_tile_count += 1;
+                            self.glitched_tiles.push(tile);
                         }
                     }
 
@@ -480,6 +484,8 @@ impl WorkerPool {
         self.is_perturbation_render = false;
         self.current_render_id = self.current_render_id.wrapping_add(1);
         self.glitched_tile_count = 0;
+        self.glitched_tiles.clear();
+        self.quadtree = None; // Clear quadtree for non-perturbation renders
         web_sys::console::log_1(
             &format!(
                 "[WorkerPool] Starting render #{} with {} tiles, precision={} bits",
@@ -517,6 +523,7 @@ impl WorkerPool {
         self.is_perturbation_render = true;
         self.current_render_id = self.current_render_id.wrapping_add(1);
         self.glitched_tile_count = 0;
+        self.glitched_tiles.clear();
         self.perturbation.orbit_id = self.perturbation.orbit_id.wrapping_add(1);
         self.perturbation.workers_with_orbit.clear();
         self.perturbation.pending_orbit = None;
@@ -638,6 +645,101 @@ impl WorkerPool {
 
         // Bump render_id so any in-flight results are ignored (belt and suspenders)
         self.current_render_id = self.current_render_id.wrapping_add(1);
+    }
+
+    /// Subdivide quadtree cells that contain glitched tiles.
+    ///
+    /// Performs ONE level of subdivision: finds all current leaf cells that
+    /// intersect with at least one glitched tile and subdivides them.
+    /// Press "d" multiple times for deeper subdivision.
+    pub fn subdivide_glitched_cells(&mut self) {
+        let Some(quadtree) = &mut self.quadtree else {
+            web_sys::console::log_1(&"[WorkerPool] No quadtree exists, cannot subdivide".into());
+            return;
+        };
+
+        if self.glitched_tiles.is_empty() {
+            web_sys::console::log_1(&"[WorkerPool] No glitched tiles to subdivide for".into());
+            return;
+        }
+
+        // Helper to convert PixelRect to quadtree Bounds for intersection check
+        fn tile_to_bounds(tile: &PixelRect) -> crate::workers::quadtree::Bounds {
+            crate::workers::quadtree::Bounds::new(tile.x, tile.y, tile.width, tile.height)
+        }
+
+        let mut subdivided_count = 0;
+
+        // Subdivide only CURRENT leaves (one level at a time).
+        // We do NOT recurse into newly created children - that's what
+        // multiple "d" presses are for.
+        fn subdivide_leaves_once(
+            cell: &mut QuadtreeCell,
+            glitched_tiles: &[PixelRect],
+            subdivided_count: &mut u32,
+        ) {
+            // Check if any glitched tile intersects this cell
+            let has_glitched = glitched_tiles
+                .iter()
+                .any(|tile| cell.bounds.intersects(&tile_to_bounds(tile)));
+
+            if !has_glitched {
+                return;
+            }
+
+            if cell.is_leaf() {
+                // This is a leaf with glitched tiles - subdivide it
+                if cell.subdivide() {
+                    *subdivided_count += 1;
+                }
+                // Do NOT recurse into new children - one level only
+                return;
+            }
+
+            // Only recurse into EXISTING children (cells that were already subdivided)
+            if let Some(children) = &mut cell.children {
+                for child in children.iter_mut() {
+                    subdivide_leaves_once(child, glitched_tiles, subdivided_count);
+                }
+            }
+        }
+
+        subdivide_leaves_once(quadtree, &self.glitched_tiles, &mut subdivided_count);
+
+        web_sys::console::log_1(
+            &format!(
+                "[WorkerPool] Subdivided {} cells with glitched tiles",
+                subdivided_count
+            )
+            .into(),
+        );
+
+        // Log the new structure - collect all leaves and their glitch counts
+        let mut leaves = Vec::new();
+        quadtree.collect_leaves(&mut leaves);
+
+        for leaf in &leaves {
+            let glitched_count = self
+                .glitched_tiles
+                .iter()
+                .filter(|tile| leaf.bounds.intersects(&tile_to_bounds(tile)))
+                .count();
+
+            if glitched_count > 0 {
+                let b = &leaf.bounds;
+                web_sys::console::log_1(
+                    &format!(
+                        "[WorkerPool] Cell ({},{})-({},{}): {} glitched tiles",
+                        b.x,
+                        b.y,
+                        b.x + b.width,
+                        b.y + b.height,
+                        glitched_count
+                    )
+                    .into(),
+                );
+            }
+        }
     }
 
     /// Terminate and recreate all workers. Used when switching renderers.

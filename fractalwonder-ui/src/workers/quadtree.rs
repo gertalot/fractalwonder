@@ -39,6 +39,20 @@ impl Bounds {
     pub fn contains(&self, px: u32, py: u32) -> bool {
         px >= self.x && px < self.x + self.width && py >= self.y && py < self.y + self.height
     }
+
+    /// Check if this bounds intersects (overlaps) with another bounds.
+    /// Uses half-open intervals, so adjacent bounds do NOT intersect.
+    pub fn intersects(&self, other: &Bounds) -> bool {
+        let self_right = self.x + self.width;
+        let self_bottom = self.y + self.height;
+        let other_right = other.x + other.width;
+        let other_bottom = other.y + other.height;
+
+        self.x < other_right
+            && self_right > other.x
+            && self.y < other_bottom
+            && self_bottom > other.y
+    }
 }
 
 /// A cell in the quadtree, representing a rectangular region of the canvas.
@@ -587,5 +601,126 @@ mod tests {
         root.collect_leaves(&mut leaves);
         assert_eq!(leaves.len(), 1);
         assert_eq!(leaves[0].bounds, root.bounds);
+    }
+
+    // =========================================================================
+    // Bounds Intersection Tests (for subdivide_glitched_cells)
+    // =========================================================================
+
+    #[test]
+    fn intersects_overlapping_bounds() {
+        let a = Bounds::new(0, 0, 100, 100);
+        let b = Bounds::new(50, 50, 100, 100);
+        assert!(a.intersects(&b));
+        assert!(b.intersects(&a)); // Symmetric
+    }
+
+    #[test]
+    fn intersects_contained_bounds() {
+        let outer = Bounds::new(0, 0, 100, 100);
+        let inner = Bounds::new(25, 25, 50, 50);
+        assert!(outer.intersects(&inner));
+        assert!(inner.intersects(&outer));
+    }
+
+    #[test]
+    fn intersects_adjacent_bounds_do_not_intersect() {
+        // Half-open intervals: adjacent bounds share an edge but don't overlap
+        let left = Bounds::new(0, 0, 50, 100);
+        let right = Bounds::new(50, 0, 50, 100);
+        assert!(!left.intersects(&right)); // Right edge of left == left edge of right
+        assert!(!right.intersects(&left));
+
+        let top = Bounds::new(0, 0, 100, 50);
+        let bottom = Bounds::new(0, 50, 100, 50);
+        assert!(!top.intersects(&bottom));
+        assert!(!bottom.intersects(&top));
+    }
+
+    #[test]
+    fn intersects_disjoint_bounds() {
+        let a = Bounds::new(0, 0, 50, 50);
+        let b = Bounds::new(100, 100, 50, 50);
+        assert!(!a.intersects(&b));
+        assert!(!b.intersects(&a));
+    }
+
+    #[test]
+    fn intersects_same_bounds() {
+        let a = Bounds::new(10, 20, 30, 40);
+        assert!(a.intersects(&a));
+    }
+
+    #[test]
+    fn intersects_partial_overlap_x_only() {
+        let a = Bounds::new(0, 0, 100, 50);
+        let b = Bounds::new(50, 100, 100, 50); // Same x range, different y
+        assert!(!a.intersects(&b));
+    }
+
+    #[test]
+    fn intersects_partial_overlap_y_only() {
+        let a = Bounds::new(0, 0, 50, 100);
+        let b = Bounds::new(100, 50, 50, 100); // Same y range, different x
+        assert!(!a.intersects(&b));
+    }
+
+    // =========================================================================
+    // One-Level Subdivision Tests
+    // =========================================================================
+
+    #[test]
+    fn subdivide_once_creates_four_children() {
+        let mut root = QuadtreeCell::new_root((64, 64));
+        assert!(root.subdivide());
+
+        let mut leaves = Vec::new();
+        root.collect_leaves(&mut leaves);
+        assert_eq!(leaves.len(), 4, "Single subdivision should create 4 leaves");
+    }
+
+    #[test]
+    fn subdivide_children_creates_more_leaves() {
+        let mut root = QuadtreeCell::new_root((128, 128));
+
+        // First subdivision: 1 -> 4 leaves
+        root.subdivide();
+        {
+            let mut leaves = Vec::new();
+            root.collect_leaves(&mut leaves);
+            assert_eq!(leaves.len(), 4);
+        }
+
+        // Subdivide only first child: 4 -> 7 leaves (one child becomes 4)
+        if let Some(children) = &mut root.children {
+            children[0].subdivide();
+        }
+        let mut leaves = Vec::new();
+        root.collect_leaves(&mut leaves);
+        assert_eq!(leaves.len(), 7, "Subdividing one child: 4 - 1 + 4 = 7");
+    }
+
+    #[test]
+    fn subdivided_children_have_correct_depth() {
+        let mut root = QuadtreeCell::new_root((128, 128));
+        root.subdivide();
+
+        if let Some(children) = &root.children {
+            for child in children.iter() {
+                assert_eq!(child.depth, 1, "Children should be at depth 1");
+            }
+
+            // Subdivide one child and check grandchildren
+            let mut root2 = QuadtreeCell::new_root((128, 128));
+            root2.subdivide();
+            if let Some(children2) = &mut root2.children {
+                children2[0].subdivide();
+                if let Some(grandchildren) = &children2[0].children {
+                    for gc in grandchildren.iter() {
+                        assert_eq!(gc.depth, 2, "Grandchildren should be at depth 2");
+                    }
+                }
+            }
+        }
     }
 }

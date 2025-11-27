@@ -1,6 +1,7 @@
 // fractalwonder-ui/src/app.rs
 use fractalwonder_core::{calculate_precision_bits, fit_viewport_to_canvas, Viewport};
 use leptos::*;
+use wasm_bindgen::prelude::Closure;
 
 use crate::components::{CircularProgress, InteractiveCanvas, UIPanel};
 use crate::config::{default_config, get_config};
@@ -181,6 +182,71 @@ pub fn App() -> impl IntoView {
         set_cancel_trigger.update(|v| *v = v.wrapping_add(1));
     });
 
+    // X-ray mode toggle for visualizing glitched regions
+    let (xray_enabled, set_xray_enabled) = create_signal(false);
+
+    // Trigger for quadtree subdivision (incremented by "d" key when x-ray enabled)
+    let (subdivide_trigger, set_subdivide_trigger) = create_signal(0u32);
+
+    // Global keyboard handler for x-ray mode and subdivision
+    // Store handler in a StoredValue so it lives for the component lifetime
+    // and can be properly cleaned up
+    let keyboard_handler = store_value::<Option<Closure<dyn FnMut(web_sys::KeyboardEvent)>>>(None);
+
+    create_effect(move |_| {
+        use wasm_bindgen::prelude::*;
+        use wasm_bindgen::JsCast;
+
+        let handler = Closure::wrap(Box::new(move |e: web_sys::KeyboardEvent| {
+            match e.key().as_str() {
+                "x" | "X" => {
+                    // Toggle x-ray mode
+                    set_xray_enabled.update(|v| {
+                        *v = !*v;
+                        web_sys::console::log_1(
+                            &format!("[App] X-ray mode: {}", if *v { "ON" } else { "OFF" }).into(),
+                        );
+                    });
+                }
+                "d" | "D" => {
+                    // Subdivide quadtree (only when x-ray enabled)
+                    if xray_enabled.get_untracked() {
+                        set_subdivide_trigger.update(|v| *v = v.wrapping_add(1));
+                        web_sys::console::log_1(&"[App] Subdivision triggered".into());
+                    } else {
+                        web_sys::console::log_1(
+                            &"[App] 'd' pressed but x-ray mode disabled - ignoring".into(),
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }) as Box<dyn FnMut(web_sys::KeyboardEvent)>);
+
+        if let Some(window) = web_sys::window() {
+            let _ = window
+                .add_event_listener_with_callback("keydown", handler.as_ref().unchecked_ref());
+        }
+
+        // Store handler to keep it alive (prevents drop) without using forget()
+        keyboard_handler.set_value(Some(handler));
+
+        on_cleanup(move || {
+            // Remove event listener on cleanup
+            keyboard_handler.with_value(|handler_opt| {
+                if let Some(handler) = handler_opt {
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.remove_event_listener_with_callback(
+                            "keydown",
+                            handler.as_ref().unchecked_ref(),
+                        );
+                    }
+                }
+            });
+            keyboard_handler.set_value(None);
+        });
+    });
+
     view! {
         <InteractiveCanvas
             viewport=viewport.into()
@@ -189,6 +255,7 @@ pub fn App() -> impl IntoView {
             on_resize=on_resize
             on_progress_signal=on_progress_signal
             cancel_trigger=cancel_trigger
+            subdivide_trigger=subdivide_trigger
         />
         <UIPanel
             viewport=viewport.into()

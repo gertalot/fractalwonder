@@ -25,6 +25,9 @@ pub fn InteractiveCanvas(
     /// Signal that triggers render cancellation when incremented
     #[prop(optional)]
     cancel_trigger: Option<ReadSignal<u32>>,
+    /// Signal that triggers quadtree subdivision when incremented
+    #[prop(optional)]
+    subdivide_trigger: Option<ReadSignal<u32>>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
@@ -71,6 +74,18 @@ pub fn InteractiveCanvas(
             // Only cancel if value changed (not on initial mount)
             if prev.is_some() && prev != Some(current) {
                 renderer.with_value(|r| r.cancel());
+            }
+            current
+        });
+    }
+
+    // Watch for subdivision requests
+    if let Some(trigger) = subdivide_trigger {
+        create_effect(move |prev: Option<u32>| {
+            let current = trigger.get();
+            // Only subdivide if value changed (not on initial mount)
+            if prev.is_some() && prev != Some(current) {
+                renderer.with_value(|r| r.subdivide_glitched_cells());
             }
             current
         });

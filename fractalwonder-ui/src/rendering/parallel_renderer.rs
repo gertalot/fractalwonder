@@ -59,6 +59,11 @@ impl ParallelRenderer {
         self.worker_pool.borrow_mut().cancel();
     }
 
+    /// Subdivide quadtree cells that contain glitched tiles.
+    pub fn subdivide_glitched_cells(&self) {
+        self.worker_pool.borrow_mut().subdivide_glitched_cells();
+    }
+
     pub fn render(&self, viewport: &Viewport, canvas: &HtmlCanvasElement) {
         let width = canvas.width();
         let height = canvas.height();
