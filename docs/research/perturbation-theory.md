@@ -1059,5 +1059,220 @@ Current problems:
 
 ---
 
+## 13. Implementation Increments
+
+This section defines self-contained, shippable increments that build progressively toward a world-class deep zoom renderer. Each increment is complete—no "this will be fixed later" dependencies.
+
+### 13.1 Increment 1: Correct Perturbation Core
+
+**Deliverable:** Mathematically correct perturbation rendering up to ~10^300 zoom.
+
+**Problems to Fix:**
+
+| Issue | Current Behavior | Correct Behavior |
+|-------|------------------|------------------|
+| Rebasing | Switches to f64 on-the-fly computation | Reset to iteration 0 with `δz_new = Z + δz` |
+| Glitch detection | Only checks reference exhaustion | Replace with Pauldelbrot criterion: `\|z\|² < τ²\|Z\|²` |
+
+> **Note:** With correct rebasing, reference exhaustion is no longer a glitch condition—it's handled by wrapping to iteration 0. The Pauldelbrot criterion detects *actual* precision loss that rebasing couldn't prevent. The net result is **fewer false-positive glitches**.
+
+**Why Self-Contained:**
+- f64 range (~10^±308) sufficient for moderate zoom
+- With correct math, renders are TRUSTWORTHY within this range
+- Every pixel either: escapes correctly, is in-set correctly, or is marked glitched
+- No silent corruption—glitches are detected and flagged
+
+**Test Strategy (Mathematically Grounded):**
+
+1. **Delta iteration correctness**: Verify `δz' = 2Zδz + δz² + δc` against direct BigFloat computation for known orbits
+2. **Rebasing equivalence**: Prove that pixel at `Z + δz` after rebase equals pixel continuing with new `δz` from iteration 0
+3. **Pauldelbrot detection**: Verify criterion catches precision loss BEFORE visual artifacts appear (compare with/without detection)
+4. **Cross-validation**: Compare iteration counts against Kalles Fraktaler at documented coordinates
+5. **Known orbits**: Test against analytically-known points (period-2 at c=-1, cardioid boundary, etc.)
+
+**Acceptance Criteria:**
+- All mathematical invariants verified by tests
+- Glitch overlay (cyan) matches visible artifacts exactly
+- No silent corruption at any zoom level up to 10^300
+
+---
+
+### 13.2 Increment 2: Extended Precision Deltas
+
+**Deliverable:** Correct rendering at extreme zoom (10^1000+).
+
+**Change:**
+- Delta values (`δc`, `δz`) use BigFloat instead of f64
+- Reference orbit stays f64 (research confirms this is sufficient—see Section 5.1)
+
+**Why Self-Contained:**
+- Unlimited zoom depth with guaranteed correctness
+- Performance may be slower, but output is mathematically correct
+- This is the "reference implementation"—correctness over speed
+- Serves as ground truth for validating optimizations in later increments
+
+**Test Strategy:**
+
+1. **No underflow**: Render at 10^100, 10^500, 10^1000 zoom—verify delta values never become zero
+2. **Deep zoom coordinates**: Compare against published deep zoom iteration counts from Kalles Fraktaler, Mandel Machine
+3. **Artifact detection**: Verify no flat "blobs" (signature of delta underflow to zero)
+4. **Precision scaling**: Verify BigFloat precision automatically scales with zoom depth
+
+**Acceptance Criteria:**
+- Correct renders at 10^1000 zoom (verified against known coordinates)
+- No underflow artifacts at any zoom depth
+- Clear performance baseline for comparison with Increment 3
+
+---
+
+### 13.3 Increment 3: FloatExp Optimization
+
+**Deliverable:** Fast extended-range arithmetic for deltas.
+
+**Change:**
+- Implement `FloatExp` type: f64 mantissa (53 bits precision) + i64 exponent (unlimited range)
+- Use for delta iteration instead of BigFloat
+- Expected speedup: 10-20x over BigFloat for deep zoom
+
+**FloatExp Specification:**
+
+```rust
+struct FloatExp {
+    mantissa: f64,  // Normalized: 0.5 ≤ |mantissa| < 1.0
+    exp: i64,       // Base-2 exponent
+}
+// Value = mantissa × 2^exp
+```
+
+**Why Self-Contained:**
+- Same correctness as Increment 2, better performance
+- Optional: only implement if BigFloat proves too slow for interactive use
+- Clear validation: must match BigFloat output exactly
+
+**Test Strategy:**
+
+1. **Operation correctness**: FloatExp add/mul/norm match BigFloat to f64 precision limits
+2. **Render equivalence**: Iteration counts identical to BigFloat at all zoom levels
+3. **Edge cases**: Verify normalization, overflow, underflow handling
+4. **Performance benchmarks**: Measure speedup vs BigFloat at 10^100, 10^500, 10^1000
+
+**Acceptance Criteria:**
+- FloatExp renders match BigFloat renders exactly (same iteration counts)
+- Measurable speedup (target: 10x minimum)
+- All edge cases handled correctly
+
+---
+
+### 13.4 Increment 4: BLA Acceleration
+
+**Deliverable:** Skip iterations using Bivariate Linear Approximation.
+
+**Mathematical Foundation:**
+
+When `|δz²| ≪ |2Zδz|`, the delta iteration becomes approximately linear:
+```
+δz_{n+1} ≈ 2Z_n·δz_n + δc  (dropping δz² term)
+```
+
+This allows skipping multiple iterations:
+```
+δz_{m+l} = A_l·δz_m + B_l·δc
+```
+
+**Implementation:**
+
+1. **BLA table construction**: Precompute (A, B, validity_radius) for each reference iteration
+2. **Binary tree merging**: Combine adjacent BLAs for O(log n) skip lengths
+3. **Runtime application**: At each iteration, find largest valid BLA skip
+
+**Validity Condition:**
+```
+BLA valid when: |δz_m| < validity_radius
+validity_radius = ε|Z_n| - |B||δc|/|A|
+```
+
+Where ε ≈ 2×10^-53 (f64 precision).
+
+**Why Self-Contained:**
+- Massive speedup (potentially 100x+ at deep zoom with high iteration counts)
+- Same correctness—BLA has mathematical validity bounds that guarantee accuracy
+- Falls back to per-iteration computation when BLA is invalid
+
+**Test Strategy:**
+
+1. **Skip equivalence**: BLA-skipped result matches full iteration (within f64 tolerance)
+2. **Validity radius correctness**: Verify BLA never applied outside valid radius
+3. **Merge correctness**: Merged BLA (A_y∘x, B_y∘x) produces same result as sequential application
+4. **Performance scaling**: Verify O(log n) iteration complexity, not O(n)
+
+**Acceptance Criteria:**
+- Identical iteration counts with and without BLA (correctness preserved)
+- Measurable speedup proportional to max_iterations
+- No visual artifacts from BLA approximation errors
+
+---
+
+### 13.5 Increment 5: Multi-Reference
+
+**Deliverable:** Automatic glitch resolution for complex regions.
+
+**When Needed:**
+- Reference escapes before many pixels (constant rebasing overhead)
+- Extremely heterogeneous iteration counts across image
+- Complex boundaries where single reference is insufficient
+
+**Algorithm:**
+
+```
+1. Render image with center as reference
+2. Collect glitched pixels (via Pauldelbrot criterion)
+3. While glitched pixels exist:
+   a. Select new reference in largest glitched region
+   b. Compute new reference orbit
+   c. Re-render ONLY glitched pixels with new reference
+   d. Update glitch status
+4. Return glitch-free image
+```
+
+**Reference Selection Strategy:**
+- Choose pixel with highest iteration count in glitched region
+- Prefer points that don't escape (longer usable orbit)
+- Use Newton's method to find nearby periodic points (minibrots) for optimal references
+
+**Why Self-Contained:**
+- Handles edge cases where single reference is insufficient
+- Fully automatic—user sees glitch-free image
+- Bounded iteration (typically <10 references needed, Kalles Fraktaler uses up to 10,000 in extreme cases)
+
+**Test Strategy:**
+
+1. **Glitch elimination**: Known glitch-prone coordinates render without glitches
+2. **Convergence**: Multi-reference loop terminates (no infinite reference selection)
+3. **Efficiency**: Only glitched pixels re-rendered (not entire image)
+4. **Reference quality**: Selected references have long orbits (minimize re-renders)
+
+**Acceptance Criteria:**
+- Zero glitched pixels in final output
+- Reasonable reference count (<100 for typical renders)
+- Performance within 2x of single-reference for non-pathological cases
+
+---
+
+### 13.6 Summary
+
+| Increment | Zoom Depth | Performance | Key Capability |
+|-----------|------------|-------------|----------------|
+| 1. Correct Core | ~10^300 | Fast (f64) | Trustworthy output |
+| 2. Extended Precision | 10^1000+ | Slow (BigFloat) | Unlimited depth |
+| 3. FloatExp | 10^1000+ | Medium | Fast deep zoom |
+| 4. BLA | 10^1000+ | Fast | Skip iterations |
+| 5. Multi-Reference | 10^1000+ | Fast | Glitch-free complex regions |
+
+**Key Principle:** Each increment produces a **complete, correct renderer** for its scope. No increment depends on future fixes—each works fully before moving to the next.
+
+**Testing Philosophy:** Tests are designed to verify mathematical correctness, not just "make tests pass." Each test has a clear mathematical rationale and validates specific invariants from perturbation theory.
+
+---
+
 *Document created: November 2025*
 *Based on research from Fractal Forums, mathr.co.uk, and academic sources*
