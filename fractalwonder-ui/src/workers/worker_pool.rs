@@ -1,3 +1,4 @@
+use crate::config::get_config;
 use crate::rendering::RenderProgress;
 use crate::workers::quadtree::{Bounds, QuadtreeCell};
 use fractalwonder_compute::ReferenceOrbit;
@@ -45,6 +46,8 @@ struct PerturbationState {
     delta_step: (f64, f64),
     /// Pending orbit computation (waiting for worker to initialize)
     pending_orbit_request: Option<PendingOrbitRequest>,
+    /// Glitch detection threshold squared (τ²)
+    tau_sq: f64,
 }
 
 #[derive(Clone)]
@@ -499,6 +502,7 @@ impl WorkerPool {
                         delta_c_origin,
                         delta_c_step: self.perturbation.delta_step,
                         max_iterations: self.perturbation.max_iterations,
+                        tau_sq: self.perturbation.tau_sq,
                     },
                 );
             } else {
@@ -620,6 +624,8 @@ impl WorkerPool {
 
         self.perturbation.max_iterations = max_iterations;
         self.perturbation.delta_step = delta_step;
+        // Get tau_sq from fractal config (defaults to 1e-6)
+        self.perturbation.tau_sq = get_config("mandelbrot").map(|c| c.tau_sq).unwrap_or(1e-6);
 
         web_sys::console::log_1(
             &format!(
