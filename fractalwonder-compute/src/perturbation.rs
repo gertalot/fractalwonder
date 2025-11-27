@@ -504,6 +504,96 @@ mod tests {
         );
     }
 
+    // =========================================================================
+    // Phase 7: Mathematical Correctness Tests
+    // =========================================================================
+
+    #[test]
+    fn orbit_satisfies_recurrence_relation() {
+        // Verify that orbit values follow z_{n+1} = z_n^2 + c exactly
+        let c_ref = (
+            BigFloat::with_precision(-0.5, 128),
+            BigFloat::with_precision(0.1, 128),
+        );
+        let orbit = ReferenceOrbit::compute(&c_ref, 100);
+
+        let (c_x, c_y) = orbit.c_ref;
+
+        for n in 0..orbit.orbit.len() - 1 {
+            let (xn, yn) = orbit.orbit[n];
+            let (xn1, yn1) = orbit.orbit[n + 1];
+
+            // z_{n+1} = z_n^2 + c
+            // (x + iy)^2 = x^2 - y^2 + 2ixy
+            let expected_x = xn * xn - yn * yn + c_x;
+            let expected_y = 2.0 * xn * yn + c_y;
+
+            // Allow small floating point error since orbit stores f64
+            assert!(
+                (xn1 - expected_x).abs() < 1e-10,
+                "x recurrence failed at n={}: got {}, expected {}",
+                n,
+                xn1,
+                expected_x
+            );
+            assert!(
+                (yn1 - expected_y).abs() < 1e-10,
+                "y recurrence failed at n={}: got {}, expected {}",
+                n,
+                yn1,
+                expected_y
+            );
+        }
+    }
+
+    #[test]
+    fn orbit_starts_at_origin() {
+        // The Mandelbrot iteration z_{n+1} = z_n^2 + c starts with z_0 = 0
+        let orbit = ReferenceOrbit::compute(
+            &(
+                BigFloat::with_precision(-0.5, 128),
+                BigFloat::with_precision(0.1, 128),
+            ),
+            100,
+        );
+        assert_eq!(orbit.orbit[0], (0.0, 0.0), "Orbit must start at origin");
+    }
+
+    #[test]
+    fn orbit_known_values_c_equals_neg1() {
+        // c = -1: orbit is 0, -1, 0, -1, ... (period 2)
+        // z_0 = 0
+        // z_1 = 0^2 + (-1) = -1
+        // z_2 = (-1)^2 + (-1) = 0
+        // z_3 = 0^2 + (-1) = -1
+        // ...
+        let orbit = ReferenceOrbit::compute(
+            &(BigFloat::with_precision(-1.0, 128), BigFloat::zero(128)),
+            100,
+        );
+
+        // Point c = -1 is in the set (bounded period-2 orbit)
+        assert!(orbit.escaped_at.is_none(), "c = -1 should not escape");
+
+        // Check the orbit values
+        assert_eq!(orbit.orbit[0], (0.0, 0.0), "z_0 should be 0");
+        assert!(
+            (orbit.orbit[1].0 - (-1.0)).abs() < 1e-14 && orbit.orbit[1].1.abs() < 1e-14,
+            "z_1 should be -1, got {:?}",
+            orbit.orbit[1]
+        );
+        assert!(
+            orbit.orbit[2].0.abs() < 1e-14 && orbit.orbit[2].1.abs() < 1e-14,
+            "z_2 should be 0, got {:?}",
+            orbit.orbit[2]
+        );
+        assert!(
+            (orbit.orbit[3].0 - (-1.0)).abs() < 1e-14 && orbit.orbit[3].1.abs() < 1e-14,
+            "z_3 should be -1, got {:?}",
+            orbit.orbit[3]
+        );
+    }
+
     #[test]
     fn high_precision_orbit_differs_from_low_precision() {
         // Compare orbit computed with different precision levels

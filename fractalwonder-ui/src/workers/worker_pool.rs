@@ -1,12 +1,13 @@
 use crate::rendering::RenderProgress;
-use crate::workers::quadtree::QuadtreeCell;
+use crate::workers::quadtree::{Bounds, QuadtreeCell};
+use fractalwonder_compute::ReferenceOrbit;
 use fractalwonder_core::{
-    calculate_max_iterations_perturbation, ComputeData, MainToWorker, PixelRect, Viewport,
-    WorkerToMain,
+    calculate_max_iterations_perturbation, pixel_to_fractal, ComputeData, MainToWorker, PixelRect,
+    Viewport, WorkerToMain,
 };
 use leptos::*;
 use std::cell::RefCell;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::{Rc, Weak};
 use wasm_bindgen::prelude::*;
 use web_sys::{MessageEvent, Worker, WorkerOptions, WorkerType};
@@ -75,6 +76,9 @@ pub struct WorkerPool {
     quadtree: Option<QuadtreeCell>,
     /// Bounds of tiles that have glitched pixels (for associating with quadtree cells)
     glitched_tiles: Vec<PixelRect>,
+    /// Computed reference orbits for quadtree cell centers (Phase 7)
+    /// Key: (x, y, width, height) of cell bounds
+    cell_orbits: HashMap<(u32, u32, u32, u32), ReferenceOrbit>,
 }
 
 fn performance_now() -> f64 {
@@ -154,6 +158,7 @@ impl WorkerPool {
             glitched_tile_count: 0,
             quadtree: None,
             glitched_tiles: Vec::new(),
+            cell_orbits: HashMap::new(),
         }));
 
         pool.borrow_mut().self_ref = Rc::downgrade(&pool);
@@ -740,6 +745,127 @@ impl WorkerPool {
                 );
             }
         }
+
+        // Phase 7: Compute reference orbits for cell centers
+        self.compute_orbits_for_glitched_cells();
+    }
+
+    /// Compute reference orbits for cells containing glitched tiles.
+    ///
+    /// For each leaf cell with glitched tiles:
+    /// 1. Computes the cell center in fractal coordinates
+    /// 2. Computes a ReferenceOrbit at that point
+    /// 3. Stores the orbit for later distribution to workers (Phase 8)
+    fn compute_orbits_for_glitched_cells(&mut self) {
+        let Some(viewport) = self.current_viewport.clone() else {
+            web_sys::console::log_1(
+                &"[WorkerPool] No viewport available, cannot compute cell center orbits".into(),
+            );
+            return;
+        };
+
+        let Some(quadtree) = &self.quadtree else {
+            return;
+        };
+
+        // Helper to convert PixelRect to quadtree Bounds for intersection check
+        fn tile_to_bounds(tile: &PixelRect) -> Bounds {
+            Bounds::new(tile.x, tile.y, tile.width, tile.height)
+        }
+
+        // Collect leaves with glitched tiles
+        let mut leaves = Vec::new();
+        quadtree.collect_leaves(&mut leaves);
+
+        let precision_bits = viewport.precision_bits();
+
+        // Compute max_iterations from zoom level
+        let zoom_exponent = viewport.width.to_f64().abs().log2().abs();
+        let max_iterations = calculate_max_iterations_perturbation(zoom_exponent);
+
+        web_sys::console::log_1(
+            &format!(
+                "[WorkerPool] Computing orbits: zoom_exp={:.1}, max_iter={}, precision={}",
+                zoom_exponent, max_iterations, precision_bits
+            )
+            .into(),
+        );
+
+        let start_time = performance_now();
+        let mut computed_count = 0;
+
+        for leaf in &leaves {
+            let has_glitched = self
+                .glitched_tiles
+                .iter()
+                .any(|tile| leaf.bounds.intersects(&tile_to_bounds(tile)));
+
+            if !has_glitched {
+                continue;
+            }
+
+            // Cell key for storage
+            let cell_key = (
+                leaf.bounds.x,
+                leaf.bounds.y,
+                leaf.bounds.width,
+                leaf.bounds.height,
+            );
+
+            // Skip if we already computed an orbit for this cell
+            if self.cell_orbits.contains_key(&cell_key) {
+                continue;
+            }
+
+            // Compute cell center in pixel coordinates
+            let center_px_x = leaf.bounds.x as f64 + leaf.bounds.width as f64 / 2.0;
+            let center_px_y = leaf.bounds.y as f64 + leaf.bounds.height as f64 / 2.0;
+
+            // Convert to fractal coordinates
+            let (c_ref_x, c_ref_y) = pixel_to_fractal(
+                center_px_x,
+                center_px_y,
+                &viewport,
+                self.canvas_size,
+                precision_bits,
+            );
+
+            // Compute the reference orbit
+            let c_ref = (c_ref_x, c_ref_y);
+            let orbit = ReferenceOrbit::compute(&c_ref, max_iterations);
+
+            // Log the orbit details
+            web_sys::console::log_1(
+                &format!(
+                    "[WorkerPool] Cell ({},{})-({},{}): c_ref=({:.6e}, {:.6e}), escaped_at={:?}, orbit_len={}",
+                    leaf.bounds.x,
+                    leaf.bounds.y,
+                    leaf.bounds.x + leaf.bounds.width,
+                    leaf.bounds.y + leaf.bounds.height,
+                    orbit.c_ref.0,
+                    orbit.c_ref.1,
+                    orbit.escaped_at,
+                    orbit.orbit.len()
+                )
+                .into(),
+            );
+
+            // Store the orbit
+            self.cell_orbits.insert(cell_key, orbit);
+            computed_count += 1;
+        }
+
+        let elapsed = performance_now() - start_time;
+
+        web_sys::console::log_1(
+            &format!(
+                "[WorkerPool] Phase 7: Computed {} reference orbits in {:.1}ms (total stored: {})",
+                computed_count,
+                elapsed,
+                self.cell_orbits.len()
+            )
+            .into(),
+        );
     }
 
     /// Terminate and recreate all workers. Used when switching renderers.
