@@ -1,4 +1,5 @@
 use crate::rendering::RenderProgress;
+use crate::workers::quadtree::QuadtreeCell;
 use fractalwonder_core::{
     calculate_max_iterations_perturbation, ComputeData, MainToWorker, PixelRect, Viewport,
     WorkerToMain,
@@ -70,6 +71,8 @@ pub struct WorkerPool {
     is_perturbation_render: bool,
     /// Count of tiles with glitched pixels in current render
     glitched_tile_count: u32,
+    /// Quadtree for spatial tracking of glitched regions
+    quadtree: Option<QuadtreeCell>,
 }
 
 fn performance_now() -> f64 {
@@ -147,6 +150,7 @@ impl WorkerPool {
             perturbation: PerturbationState::default(),
             is_perturbation_render: false,
             glitched_tile_count: 0,
+            quadtree: None,
         }));
 
         pool.borrow_mut().self_ref = Rc::downgrade(&pool);
@@ -223,22 +227,24 @@ impl WorkerPool {
                 compute_time_ms,
             } => {
                 if render_id == self.current_render_id {
-                    // Count glitched pixels for diagnostic logging
-                    let glitched_count = data
-                        .iter()
-                        .filter(|d| matches!(d, ComputeData::Mandelbrot(m) if m.glitched))
-                        .count();
+                    // Count glitched pixels (perturbation mode only)
+                    if self.is_perturbation_render {
+                        let glitched_count = data
+                            .iter()
+                            .filter(|d| matches!(d, ComputeData::Mandelbrot(m) if m.glitched))
+                            .count();
 
-                    if glitched_count > 0 {
-                        let total_pixels = data.len();
-                        web_sys::console::log_1(
-                            &format!(
-                                "[WorkerPool] Tile ({},{}): {}/{} pixels glitched",
-                                tile.x, tile.y, glitched_count, total_pixels
-                            )
-                            .into(),
-                        );
-                        self.glitched_tile_count += 1;
+                        if glitched_count > 0 {
+                            let total_pixels = data.len();
+                            web_sys::console::log_1(
+                                &format!(
+                                    "[WorkerPool] Tile ({},{}): {}/{} pixels glitched",
+                                    tile.x, tile.y, glitched_count, total_pixels
+                                )
+                                .into(),
+                            );
+                            self.glitched_tile_count += 1;
+                        }
                     }
 
                     // Update progress
@@ -258,8 +264,8 @@ impl WorkerPool {
                         complete
                     };
 
-                    // Log render completion summary
-                    if is_complete {
+                    // Log render completion summary (perturbation mode only for glitch stats)
+                    if is_complete && self.is_perturbation_render {
                         let total = self.progress.get_untracked().total_tiles;
                         web_sys::console::log_1(
                             &format!(
@@ -268,6 +274,22 @@ impl WorkerPool {
                             )
                             .into(),
                         );
+
+                        // Log quadtree cell glitch tracking
+                        if let Some(qt) = &self.quadtree {
+                            let b = &qt.bounds;
+                            web_sys::console::log_1(
+                                &format!(
+                                    "[WorkerPool] Quadtree cell ({},{})-({},{}): {} glitched tiles",
+                                    b.x,
+                                    b.y,
+                                    b.x + b.width,
+                                    b.y + b.height,
+                                    self.glitched_tile_count
+                                )
+                                .into(),
+                            );
+                        }
                     }
 
                     // Callback
@@ -499,6 +521,9 @@ impl WorkerPool {
         self.perturbation.workers_with_orbit.clear();
         self.perturbation.pending_orbit = None;
 
+        // Create quadtree for spatial tracking of glitched regions
+        self.quadtree = Some(QuadtreeCell::new_root(canvas_size));
+
         // Validate viewport dimensions to prevent panics from edge cases
         let vp_width = viewport.width.to_f64();
         let vp_height = viewport.height.to_f64();
@@ -598,6 +623,7 @@ impl WorkerPool {
 
         // Reset perturbation state
         self.is_perturbation_render = false;
+        self.quadtree = None;
         self.perturbation.workers_with_orbit.clear();
         self.perturbation.pending_orbit = None;
 
