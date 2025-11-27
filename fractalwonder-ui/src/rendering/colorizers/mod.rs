@@ -7,13 +7,15 @@ pub use mandelbrot::colorize as colorize_mandelbrot;
 pub use test_image::colorize as colorize_test_image;
 
 /// Colorizer function type - converts compute data to RGBA pixels.
-pub type Colorizer = fn(&ComputeData) -> [u8; 4];
+/// The bool parameter is xray_enabled.
+pub type Colorizer = fn(&ComputeData, bool) -> [u8; 4];
 
 /// Dispatch colorization based on ComputeData variant.
-pub fn colorize(data: &ComputeData) -> [u8; 4] {
+/// xray_enabled controls whether glitched pixels are shown in cyan.
+pub fn colorize(data: &ComputeData, xray_enabled: bool) -> [u8; 4] {
     match data {
         ComputeData::TestImage(d) => colorize_test_image(d),
-        ComputeData::Mandelbrot(d) => colorize_mandelbrot(d),
+        ComputeData::Mandelbrot(d) => colorize_mandelbrot(d, xray_enabled),
     }
 }
 
@@ -36,7 +38,7 @@ mod tests {
             is_on_minor_tick_y: false,
             is_light_cell: true,
         });
-        let color = colorize(&data);
+        let color = colorize(&data, false);
         // Should be light background (light cell with no special features)
         assert_eq!(color, [245, 245, 245, 255]);
     }
@@ -49,7 +51,7 @@ mod tests {
             escaped: false,
             glitched: false,
         });
-        let color = colorize(&data);
+        let color = colorize(&data, false);
         // Should be black (in set)
         assert_eq!(color, [0, 0, 0, 255]);
     }

@@ -256,6 +256,7 @@ pub fn App() -> impl IntoView {
             on_progress_signal=on_progress_signal
             cancel_trigger=cancel_trigger
             subdivide_trigger=subdivide_trigger
+            xray_enabled=xray_enabled
         />
         <UIPanel
             viewport=viewport.into()
@@ -271,6 +272,8 @@ pub fn App() -> impl IntoView {
             is_visible=ui_visibility.is_visible
             set_is_hovering=ui_visibility.set_is_hovering
             on_cancel=on_cancel
+            xray_enabled=xray_enabled
+            set_xray_enabled=set_xray_enabled
         />
         <CircularProgress
             progress=render_progress.into()

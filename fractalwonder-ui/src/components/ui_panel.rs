@@ -29,6 +29,10 @@ pub fn UIPanel(
     set_is_hovering: WriteSignal<bool>,
     /// Callback to cancel current render
     on_cancel: Callback<()>,
+    /// X-ray mode enabled state
+    xray_enabled: ReadSignal<bool>,
+    /// Callback to toggle x-ray mode
+    set_xray_enabled: WriteSignal<bool>,
 ) -> impl IntoView {
     // Info panel state - lifted here so we can prevent auto-hide when open
     let (is_info_open, set_is_info_open) = create_signal(false);
@@ -65,7 +69,12 @@ pub fn UIPanel(
             <div class="flex items-center justify-between px-4 py-3 bg-black/50 backdrop-blur-sm">
                 // Left section: info button, home button, and dropdowns
                 <div class="flex items-center space-x-2">
-                    <InfoButton is_open=is_info_open set_is_open=set_is_info_open />
+                    <InfoButton
+                        is_open=is_info_open
+                        set_is_open=set_is_info_open
+                        xray_enabled=xray_enabled
+                        set_xray_enabled=set_xray_enabled
+                    />
                     <HomeButton on_click=on_home_click />
                     <DropdownMenu
                         label="Colors".to_string()

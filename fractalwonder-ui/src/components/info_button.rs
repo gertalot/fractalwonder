@@ -22,7 +22,12 @@ fn GithubIcon() -> impl IntoView {
 }
 
 #[component]
-pub fn InfoButton(is_open: ReadSignal<bool>, set_is_open: WriteSignal<bool>) -> impl IntoView {
+pub fn InfoButton(
+    is_open: ReadSignal<bool>,
+    set_is_open: WriteSignal<bool>,
+    xray_enabled: ReadSignal<bool>,
+    set_xray_enabled: WriteSignal<bool>,
+) -> impl IntoView {
     view! {
         <div class="relative">
             <button
@@ -35,9 +40,28 @@ pub fn InfoButton(is_open: ReadSignal<bool>, set_is_open: WriteSignal<bool>) -> 
             {move || is_open.get().then(|| view! {
                 <div class="absolute bottom-full mb-3 left-0 w-80 bg-black/70 backdrop-blur-sm border border-gray-800 rounded-lg p-4 text-white">
                     <h3 class="font-medium mb-2">"Fractal Wonder"</h3>
-                    <p class="text-sm text-gray-300 mb-4">
+                    <p class="text-sm text-gray-300 mb-3">
                         "Use mouse/touch to pan and zoom."
                     </p>
+
+                    // Menu items
+                    <div class="border-t border-gray-700 pt-3 mb-3">
+                        <button
+                            class="w-full flex items-center justify-between px-2 py-1.5 text-sm text-gray-300 hover:bg-white/10 rounded transition-colors"
+                            on:click=move |_| set_xray_enabled.update(|v| *v = !*v)
+                        >
+                            <span class="flex items-center gap-2">
+                                {move || if xray_enabled.get() {
+                                    view! { <span class="w-4 text-center">"✓"</span> }.into_view()
+                                } else {
+                                    view! { <span class="w-4"></span> }.into_view()
+                                }}
+                                "X-ray"
+                            </span>
+                            <span class="text-gray-500 text-xs">"x"</span>
+                        </button>
+                    </div>
+
                     <div class="flex items-center gap-2 text-sm text-gray-400">
                         <a
                             href="https://github.com/gertalot/fractalwonder"

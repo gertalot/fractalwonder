@@ -6,7 +6,7 @@ use crate::rendering::RenderProgress;
 use crate::workers::{TileResult, WorkerPool};
 use fractalwonder_core::Viewport;
 use leptos::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use wasm_bindgen::JsValue;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
@@ -17,18 +17,26 @@ pub struct ParallelRenderer {
     worker_pool: Rc<RefCell<WorkerPool>>,
     progress: RwSignal<RenderProgress>,
     canvas_ctx: Rc<RefCell<Option<CanvasRenderingContext2d>>>,
+    xray_enabled: Rc<Cell<bool>>,
+    /// Stored tile results for re-colorizing without recompute
+    tile_results: Rc<RefCell<Vec<TileResult>>>,
 }
 
 impl ParallelRenderer {
     pub fn new(config: &'static FractalConfig) -> Result<Self, JsValue> {
         let progress = create_rw_signal(RenderProgress::default());
         let canvas_ctx: Rc<RefCell<Option<CanvasRenderingContext2d>>> = Rc::new(RefCell::new(None));
+        let xray_enabled: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+        let tile_results: Rc<RefCell<Vec<TileResult>>> = Rc::new(RefCell::new(Vec::new()));
 
         let ctx_clone = Rc::clone(&canvas_ctx);
+        let xray_clone = Rc::clone(&xray_enabled);
+        let results_clone = Rc::clone(&tile_results);
         let on_tile_complete = move |result: TileResult| {
             if let Some(ctx) = ctx_clone.borrow().as_ref() {
-                // Colorize
-                let pixels: Vec<u8> = result.data.iter().flat_map(colorize).collect();
+                // Colorize with current xray state
+                let xray = xray_clone.get();
+                let pixels: Vec<u8> = result.data.iter().flat_map(|d| colorize(d, xray)).collect();
 
                 // Draw to canvas
                 let _ = draw_pixels_to_canvas(
@@ -38,6 +46,9 @@ impl ParallelRenderer {
                     result.tile.x as f64,
                     result.tile.y as f64,
                 );
+
+                // Store result for re-colorizing
+                results_clone.borrow_mut().push(result);
             }
         };
 
@@ -48,7 +59,34 @@ impl ParallelRenderer {
             worker_pool,
             progress,
             canvas_ctx,
+            xray_enabled,
+            tile_results,
         })
+    }
+
+    /// Set x-ray mode enabled state.
+    pub fn set_xray_enabled(&self, enabled: bool) {
+        self.xray_enabled.set(enabled);
+    }
+
+    /// Re-colorize all stored tiles with current xray state (no recompute).
+    pub fn recolorize(&self) {
+        let xray = self.xray_enabled.get();
+        let ctx_ref = self.canvas_ctx.borrow();
+        let Some(ctx) = ctx_ref.as_ref() else {
+            return;
+        };
+
+        for result in self.tile_results.borrow().iter() {
+            let pixels: Vec<u8> = result.data.iter().flat_map(|d| colorize(d, xray)).collect();
+            let _ = draw_pixels_to_canvas(
+                ctx,
+                &pixels,
+                result.tile.width,
+                result.tile.x as f64,
+                result.tile.y as f64,
+            );
+        }
     }
 
     pub fn progress(&self) -> RwSignal<RenderProgress> {
@@ -71,6 +109,9 @@ impl ParallelRenderer {
         if width == 0 || height == 0 {
             return;
         }
+
+        // Clear stored tile results from previous render
+        self.tile_results.borrow_mut().clear();
 
         // Store canvas context for tile callbacks
         if let Ok(ctx) = get_2d_context(canvas) {

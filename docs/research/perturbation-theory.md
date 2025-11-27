@@ -323,9 +323,241 @@ If BigFloat proves too slow for interactive use, implement FloatExp as an optimi
 
 ---
 
-## 5. Series Approximation and BLA
+## 5. Deep Dive: Precision and Range in Perturbation
 
-### 5.1 Series Approximation (Traditional)
+This section addresses two subtle but important questions:
+1. Why is f64 sufficient for storing reference orbit values?
+2. When and why would FloatExp outperform BigFloat?
+
+### 5.1 Why f64 is Sufficient for Reference Orbit Storage
+
+**The Question**: Reference orbits are computed from high-precision center coordinates C (potentially thousands of bits at deep zoom). When we store the orbit values Z_n as f64, don't we lose important information?
+
+**The Answer**: No. f64 storage is sufficient for orbit values, and this is well-established in production renderers.
+
+#### The Mathematical Reasoning
+
+Consider a deep zoom at 10^1000. The center coordinate C requires ~3300 bits of precision. The reference orbit Z_n is computed iteratively:
+
+```
+Z₀ = 0
+Z₁ = C
+Z₂ = C² + C
+Z₃ = (C² + C)² + C
+...
+```
+
+Each Z_n encodes information from C, but critically:
+
+1. **Orbit values are bounded**: For non-escaping orbits, |Z_n| ≤ 2 always. This means the *range* of f64 is never exceeded for orbit values themselves.
+
+2. **The trajectory encodes C, not individual values**: The high-precision information from C determines *which sequence* of Z_n values occurs. But each individual Z_n is just a complex number with |Z_n| ≤ 2.
+
+3. **Delta iteration only needs 53 bits of Z_n**: In the formula `δz' = 2*Z_n*δz + δz² + δc`, we multiply Z_n by the small delta δz. Since δz is tiny, the product doesn't require more than 53 bits of precision in Z_n.
+
+#### Analogy
+
+Think of it like GPS coordinates:
+- Your absolute position might be "37.7749295847362°N, 122.4194183746253°W" (many digits)
+- But your *velocity* (rate of change) only needs a few digits of precision
+- The high precision is in your position, not in the derivative
+
+Similarly:
+- The high precision is in C (the center coordinate)
+- The orbit values Z_n are like "waypoints" - bounded values that don't need the full precision of C
+- The deltas δz are the small differences we compute
+
+#### Evidence from Production Renderers
+
+**Kalles Fraktaler** (from [mathr.co.uk](https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html)):
+> "(C, Z) is the 'reference' orbit, computed in high precision... and **rounded to machine double precision**, which works fine most of the time."
+
+**General consensus** (from [Phil Thompson](https://philthompson.me/2022/Perturbation-Theory-and-the-Mandelbrot-set.html)):
+> "Double precision floating point (with 53 bits of mantissa) is more than enough for computing perturbed orbits: even single precision (with 24 bits) can be used successfully."
+
+#### The Exception: Z_n Near Zero
+
+When Z_n passes very close to zero, a different issue arises - not precision, but **range**. A Z_n value of 10^-400 would underflow in f64.
+
+**Nanoscope's solution** (from [Wikibooks](https://en.wikibooks.org/wiki/Fractals/software)):
+> "Nanoscope stores... a pointer that is either null or points to a **wide-exponent copy** of those values. If the double precision values underflow (denorm or zero), these get set for that iteration."
+
+This is a lazy/sparse approach: store f64 normally, but keep FloatExp copies only for iterations where Z_n underflows.
+
+#### Summary Table
+
+| What | Precision Needed | Storage Format | Why |
+|------|------------------|----------------|-----|
+| Center C | Arbitrary (matches zoom) | BigFloat | Absolute position in complex plane |
+| Orbit Z_n | 53 bits | f64 | Bounded by escape radius, trajectory encodes C |
+| Orbit Z_n ≈ 0 | 53 bits + extended range | FloatExp (sparse) | Range issue, not precision |
+| Delta δc | 53 bits + extended range | f64 or FloatExp | Small, but can underflow at deep zoom |
+| Delta δz | 53 bits + extended range | f64 or FloatExp | Grows during iteration, may need range |
+
+### 5.2 FloatExp: High-Performance Extended Range
+
+#### What FloatExp Is
+
+FloatExp is a number representation with:
+- **Mantissa**: f64 (53 bits of precision), normalized to ~1.0
+- **Exponent**: Separate integer (i32 or i64), supporting huge ranges
+
+```rust
+struct FloatExp {
+    mantissa: f64,  // Normalized: 0.5 ≤ |mantissa| < 1.0
+    exp: i32,       // Base-2 exponent
+}
+// Value = mantissa × 2^exp
+```
+
+This gives: **f64 precision** with **unlimited range**.
+
+#### Why FloatExp Exists
+
+The perturbation technique creates a precision/range tradeoff:
+
+| Arithmetic | Precision | Range | Speed |
+|------------|-----------|-------|-------|
+| f64 | 53 bits | 10^±308 | Fastest (hardware) |
+| FloatExp | 53 bits | 10^±huge | Fast (software, simple ops) |
+| BigFloat | Arbitrary | Unlimited | Slow (multi-word arithmetic) |
+
+For delta iteration at deep zoom:
+- We need **extended range** (deltas can be 10^-1000)
+- We only need **53 bits precision** (perturbation theory guarantee)
+- We need **speed** (billions of iterations)
+
+FloatExp is the sweet spot: it provides the range we need without the overhead of arbitrary precision.
+
+#### How FloatExp Operations Work
+
+**Multiplication** (fast):
+```rust
+fn mul(a: FloatExp, b: FloatExp) -> FloatExp {
+    FloatExp {
+        mantissa: a.mantissa * b.mantissa,  // 1 f64 multiply
+        exp: a.exp + b.exp,                  // 1 integer add
+    }.normalize()
+}
+```
+
+**Addition** (more complex):
+```rust
+fn add(a: FloatExp, b: FloatExp) -> FloatExp {
+    // Align exponents
+    let exp_diff = a.exp - b.exp;
+    if exp_diff > 53 { return a; }  // b is negligible
+    if exp_diff < -53 { return b; } // a is negligible
+
+    // Scale and add mantissas
+    let scaled_b = b.mantissa * 2.0_f64.powi(-exp_diff);
+    FloatExp {
+        mantissa: a.mantissa + scaled_b,
+        exp: a.exp,
+    }.normalize()
+}
+```
+
+**Normalization**:
+```rust
+fn normalize(mut self) -> Self {
+    if self.mantissa == 0.0 {
+        self.exp = 0;
+    } else {
+        // Use frexp to extract exponent, keeping mantissa in [0.5, 1.0)
+        let (m, e) = frexp(self.mantissa);
+        self.mantissa = m;
+        self.exp += e;
+    }
+    self
+}
+```
+
+#### When FloatExp Outperforms BigFloat
+
+**Delta iteration is the hot path**. Consider rendering a 1000×1000 image at 10^500 zoom with 100,000 max iterations:
+- 1,000,000 pixels × 100,000 iterations = 100 billion delta operations
+
+Per-operation overhead matters enormously:
+
+| Operation | BigFloat (64-bit) | FloatExp | Speedup |
+|-----------|-------------------|----------|---------|
+| Multiply | ~50-100 ns | ~5 ns | 10-20× |
+| Add | ~50-100 ns | ~10 ns | 5-10× |
+
+These are rough estimates, but the principle holds: FloatExp uses native f64 hardware operations where possible, while BigFloat has library overhead.
+
+#### FloatExp Implementation Variants
+
+**Standard FloatExp** (most common):
+- f64 mantissa + i32/i64 exponent
+- Used by Kalles Fraktaler, many renderers
+
+**float32 + i32** (GPU-friendly):
+- 32-bit mantissa for GPU performance
+- Sacrifices some precision (24 bits vs 53)
+
+**"2x32" or "double-double with exponent"**:
+- Two f32 values for ~48-bit mantissa
+- Better GPU performance than f64
+
+From [FractalShark](https://github.com/mattsaccount364/FractalShark):
+> "A pair of 32-bit floating point numbers + an exponent, to provide a combined ~48-bit mantissa without using the native 64-bit type."
+
+### 5.3 Practical Recommendations
+
+#### For Fractal Wonder
+
+1. **Start with f64 for orbit storage** - this is proven sufficient
+2. **Use f64 for deltas at zoom < 10^300** - hardware speed, no underflow
+3. **Implement FloatExp for deltas at zoom > 10^300** - if BigFloat is too slow
+4. **Consider sparse FloatExp for orbit values near zero** - Nanoscope's approach
+
+#### Performance Testing Strategy
+
+Before implementing FloatExp, benchmark BigFloat at various zoom depths:
+
+```rust
+// Pseudocode for benchmarking
+for zoom in [1e50, 1e100, 1e300, 1e500, 1e1000] {
+    let time_f64 = if zoom < 1e300 { benchmark_f64_deltas(zoom) } else { f64::MAX };
+    let time_bigfloat = benchmark_bigfloat_deltas(zoom);
+    let time_floatexp = benchmark_floatexp_deltas(zoom); // if implemented
+
+    println!("Zoom {}: f64={}ms, BigFloat={}ms, FloatExp={}ms",
+             zoom, time_f64, time_bigfloat, time_floatexp);
+}
+```
+
+If BigFloat is within 2-3× of theoretical FloatExp performance, the implementation complexity may not be worth it.
+
+### 5.4 Sources
+
+1. **mathr.co.uk** - Claude Heiland-Allen's deep zoom theory
+   - https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html
+   - Confirms f64 orbit storage, discusses FloatExp and rescaling
+
+2. **Phil Thompson** - Perturbation Theory explanation
+   - https://philthompson.me/2022/Perturbation-Theory-and-the-Mandelbrot-set.html
+   - "Double precision (53 bits) is more than enough for perturbed orbits"
+
+3. **Wikibooks Fractals/software** - Nanoscope implementation details
+   - https://en.wikibooks.org/wiki/Fractals/software
+   - Describes sparse wide-exponent storage for underflow cases
+
+4. **FractalShark** - GPU implementation with 2x32 floats
+   - https://github.com/mattsaccount364/FractalShark
+   - Alternative FloatExp variants for GPU performance
+
+5. **Fractal Forums** - Community discussions on precision
+   - Various threads on perturbation implementation details
+   - Source of FloatExp and rescaling techniques
+
+---
+
+## 6. Series Approximation and BLA
+
+### 6.1 Series Approximation (Traditional)
 
 The delta iteration generates a polynomial series in δc:
 ```
@@ -336,7 +568,7 @@ Coefficients `Aₙ, Bₙ, Cₙ, ...` can be computed once and reused for all pix
 
 **Limitation**: Accuracy degrades after many iterations; requires "probe points" to validate.
 
-### 5.2 BLA: Bivariate Linear Approximation (Zhuoran, 2021)
+### 6.2 BLA: Bivariate Linear Approximation (Zhuoran, 2021)
 
 **Key insight**: When `δzₙ²` is negligible compared to `2Zₙδzₙ`, the iteration becomes linear:
 ```
@@ -345,7 +577,7 @@ Coefficients `Aₙ, Bₙ, Cₙ, ...` can be computed once and reused for all pix
 
 This linear form allows "skipping" multiple iterations at once.
 
-### 5.3 BLA Mathematics
+### 6.3 BLA Mathematics
 
 **Single-iteration BLA**:
 ```
@@ -371,7 +603,7 @@ r = ε|Zₙ| - |B||δc|/|A|
 
 BLA can be applied when `|δzₘ| < r`.
 
-### 5.4 BLA Merging (Binary Tree)
+### 6.4 BLA Merging (Binary Tree)
 
 Adjacent BLAs can be merged:
 ```
@@ -384,7 +616,7 @@ r_y∘x = min(r_x, max(0, (r_y - |B_x|×|δc|) / |A_x|))
 2. Merge neighbors: M → M/2 → M/4 → ... → 1
 3. Result: Binary tree of BLAs at different skip lengths
 
-### 5.5 BLA vs Series Approximation
+### 6.5 BLA vs Series Approximation
 
 | Aspect | Series Approximation | BLA |
 |--------|---------------------|-----|
@@ -399,16 +631,16 @@ r_y∘x = min(r_x, max(0, (r_y - |B_x|×|δc|) / |A_x|))
 
 ---
 
-## 6. Multi-Reference Strategies
+## 7. Multi-Reference Strategies
 
-### 6.1 When Multi-Reference is Needed
+### 7.1 When Multi-Reference is Needed
 
 Even with rebasing, some scenarios benefit from multiple references:
 - Reference escapes too early (all pixels would need constant rebasing)
 - Hybrid formulas with multiple critical points
 - Extremely heterogeneous iteration counts across the image
 
-### 6.2 Reference Selection Strategies
+### 7.2 Reference Selection Strategies
 
 **Strategy 1: Iterative Refinement**
 1. Compute image with center as reference
@@ -427,7 +659,7 @@ Even with rebasing, some scenarios benefit from multiple references:
 - Assign references per region based on dynamics
 - Kalles Fraktaler uses up to 10,000 references
 
-### 6.3 Kalles Fraktaler's Approach
+### 7.3 Kalles Fraktaler's Approach
 
 1. Start with center reference
 2. Auto-detect glitches during render
@@ -439,9 +671,9 @@ Even with rebasing, some scenarios benefit from multiple references:
 
 ---
 
-## 7. Algorithm Specification
+## 8. Algorithm Specification
 
-### 7.1 Complete Perturbation Algorithm with Rebasing
+### 8.1 Complete Perturbation Algorithm with Rebasing
 
 ```rust
 struct PerturbationRenderer {
@@ -505,7 +737,7 @@ impl PerturbationRenderer {
 }
 ```
 
-### 7.2 Reference Orbit Computation
+### 8.2 Reference Orbit Computation
 
 ```rust
 fn compute_reference_orbit(
@@ -544,9 +776,9 @@ fn compute_reference_orbit(
 
 ---
 
-## 8. Test Cases
+## 9. Test Cases
 
-### 8.1 Mathematical Test Cases
+### 9.1 Mathematical Test Cases
 
 **Test 1: Delta iteration matches direct computation (shallow zoom)**
 ```rust
@@ -649,7 +881,7 @@ fn no_glitch_when_pixel_escapes_before_reference() {
 }
 ```
 
-### 8.2 Visual Validation Test Cases
+### 9.2 Visual Validation Test Cases
 
 | Zoom Depth | Location | Expected Behavior |
 |------------|----------|-------------------|
@@ -660,16 +892,16 @@ fn no_glitch_when_pixel_escapes_before_reference() {
 
 ---
 
-## 9. Analysis of Current Implementation
+## 10. Analysis of Current Implementation
 
-### 9.1 What's Correct
+### 10.1 What's Correct
 
 1. ✅ Basic perturbation iteration formula: `dz' = 2*Z*dz + dz² + dc`
 2. ✅ Reference orbit computation with BigFloat
 3. ✅ Reference exhaustion detection
 4. ✅ Basic rebasing trigger
 
-### 9.2 What's Missing/Incorrect
+### 10.2 What's Missing/Incorrect
 
 1. ❌ **Pauldelbrot criterion not implemented**: Only detecting reference exhaustion, missing precision loss detection
    - Current: `if n >= reference_escaped`
@@ -687,7 +919,7 @@ fn no_glitch_when_pixel_escapes_before_reference() {
 
 5. ❌ **Threshold not configurable**: No way to tune glitch detection sensitivity
 
-### 9.3 Why Glitches Go Undetected
+### 10.3 Why Glitches Go Undetected
 
 At 10¹⁶ zoom with 26/342 tiles marked glitched:
 - Reference exhaustion catches some glitches
@@ -696,7 +928,7 @@ At 10¹⁶ zoom with 26/342 tiles marked glitched:
 
 ---
 
-## 10. References
+## 11. References
 
 ### Primary Sources
 
@@ -746,30 +978,80 @@ At 10¹⁶ zoom with 26/342 tiles marked glitched:
 
 ---
 
-## 11. Implementation Roadmap
+## 12. Implementation Roadmap
 
-### Phase 1: Fix Glitch Detection
+### 12.1 Strategy: Refactor, Don't Rewrite
+
+The existing codebase has the **right architecture** with **wrong details** in one core function. The infrastructure (quadtree, workers, reference orbit computation) is sound and should be preserved.
+
+#### What to Keep
+
+| Component | Location | Status | Rationale |
+|-----------|----------|--------|-----------|
+| `ReferenceOrbit::compute()` | `perturbation.rs` | ✅ Keep | Correctly computes BigFloat orbit, stores as f64 |
+| `ReferenceOrbit` struct | `perturbation.rs` | ✅ Keep | Right structure for orbit storage |
+| Quadtree subdivision | `quadtree.rs` | ✅ Keep | Spatial organization is orthogonal to perturbation math |
+| Worker pool | `worker_pool.rs` | ✅ Keep | Tile rendering infrastructure is correct |
+| `BigFloat` | `bigfloat.rs` | ✅ Keep | Needed for reference computation, possibly for deltas |
+| Overall architecture | - | ✅ Keep | Reference orbit + delta iteration is the correct approach |
+
+#### What to Rewrite
+
+| Component | Location | Issue | Action |
+|-----------|----------|-------|--------|
+| `compute_pixel_perturbation()` | `perturbation.rs` | Wrong rebasing logic, missing Pauldelbrot criterion | **Rewrite core loop** |
+| Glitch detection | `perturbation.rs` | Only checks reference exhaustion | **Add Pauldelbrot criterion** |
+| Delta types | `perturbation.rs` | f64-only, no extended range | **Add FloatExp or BigFloat path** |
+
+#### Why Not Start Fresh?
+
+1. **Wasted effort**: Re-implementing quadtree, workers, and reference orbit infrastructure that already works
+2. **Same architecture**: A fresh implementation would have the same structure - the bug is in one function, not the design
+3. **Testability**: Existing infrastructure provides integration points for testing the fixed algorithm
+4. **Incremental validation**: Can compare old vs new behavior at each step
+
+#### The Core Change
+
+The entire fix centers on rewriting one function:
+
+```rust
+// This function needs rewriting:
+pub fn compute_pixel_perturbation(
+    orbit: &ReferenceOrbit,
+    delta_c: (f64, f64),
+    max_iterations: u32,
+) -> MandelbrotData
+```
+
+Current problems:
+1. **Rebasing**: Switches to "on-the-fly" f64 computation instead of resetting to iteration 0
+2. **Glitch detection**: Only checks `n >= reference_escaped`, misses precision loss
+3. **No Pauldelbrot criterion**: The `|z|² < τ²|Z|²` check is completely absent
+
+### 12.2 Implementation Phases
+
+#### Phase 1: Fix Glitch Detection
 1. Add Pauldelbrot criterion (`|z|² < τ²|Z|²`)
 2. Make threshold configurable
 3. Verify cyan overlay matches visible artifacts at 10¹⁴-10¹⁶
 
-### Phase 2: Fix Rebasing
+#### Phase 2: Fix Rebasing
 1. Replace on-the-fly computation with true rebasing
 2. Rebase to iteration 0 with `dz_new = Z + dz`
 3. Test at boundary regions where rebasing matters
 
-### Phase 3: Extended Precision
+#### Phase 3: Extended Precision
 1. Use BigFloat for delta values at deep zoom (already available in codebase)
 2. Validate at 10⁵⁰-10¹⁰⁰
 3. If performance is insufficient, consider implementing FloatExp as optimization
 
-### Phase 4: BLA Acceleration
+#### Phase 4: BLA Acceleration
 1. Implement single-iteration BLA
 2. Build BLA table with binary merging
 3. Integrate with iteration loop
 4. Benchmark performance gains
 
-### Phase 5: Multi-Reference (if needed)
+#### Phase 5: Multi-Reference (if needed)
 1. Track glitch locations
 2. Select references in glitched regions
 3. Re-render only affected pixels
@@ -777,5 +1059,5 @@ At 10¹⁶ zoom with 26/342 tiles marked glitched:
 
 ---
 
-*Document created: November 2024*
+*Document created: November 2025*
 *Based on research from Fractal Forums, mathr.co.uk, and academic sources*

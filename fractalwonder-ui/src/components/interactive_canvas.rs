@@ -28,6 +28,9 @@ pub fn InteractiveCanvas(
     /// Signal that triggers quadtree subdivision when incremented
     #[prop(optional)]
     subdivide_trigger: Option<ReadSignal<u32>>,
+    /// X-ray mode enabled signal
+    #[prop(optional)]
+    xray_enabled: Option<ReadSignal<bool>>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
@@ -88,6 +91,20 @@ pub fn InteractiveCanvas(
                 renderer.with_value(|r| r.subdivide_glitched_cells());
             }
             current
+        });
+    }
+
+    // Watch for xray mode changes - update renderer and recolorize
+    if let Some(xray) = xray_enabled {
+        create_effect(move |prev: Option<bool>| {
+            let enabled = xray.get();
+            renderer.with_value(|r| r.set_xray_enabled(enabled));
+
+            // Recolorize when xray changes (not on initial mount)
+            if prev.is_some() && prev != Some(enabled) {
+                renderer.with_value(|r| r.recolorize());
+            }
+            enabled
         });
     }
 
