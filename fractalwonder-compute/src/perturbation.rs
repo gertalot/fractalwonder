@@ -61,75 +61,58 @@ impl ReferenceOrbit {
 
 /// Compute a single pixel using perturbation from a reference orbit.
 ///
-/// Uses f64 delta iterations with automatic rebasing when delta grows too large.
-/// Falls back to on-the-fly computation when reference orbit escapes or after rebasing.
+/// Uses f64 delta iterations with automatic rebasing when |z|² < |δz|².
+/// Detects glitches using Pauldelbrot criterion: |z|² < τ²|Z|².
 ///
-/// # Glitch Detection
+/// # Algorithm (from docs/research/perturbation-theory.md Section 8.1)
 ///
-/// A pixel is marked as `glitched: true` when it requires iterations beyond where
-/// the reference orbit escaped. This indicates the result may be inaccurate because
-/// the on-the-fly f64 fallback lacks the precision of the original BigFloat reference.
+/// 1. δz = 0, m = 0
+/// 2. For each iteration n:
+///    a. Z_m = orbit[m % len] (wrap-around)
+///    b. z = Z_m + δz
+///    c. Escape: |z|² > 4 → return escaped
+///    d. Glitch: |z|² < τ²|Z|² → mark glitched
+///    e. Rebase: |z|² < |δz|² → δz = z, m = 0
+///    f. δz = 2·Z_m·δz + δz² + δc
+///    g. m += 1
 pub fn compute_pixel_perturbation(
     orbit: &ReferenceOrbit,
     delta_c: (f64, f64),
     max_iterations: u32,
+    tau_sq: f64,
 ) -> MandelbrotData {
-    let mut dx = 0.0;
-    let mut dy = 0.0;
-
-    // For on-the-fly mode after rebasing or reference escape
-    let mut x = 0.0;
-    let mut y = 0.0;
-    let mut on_the_fly = false;
-
-    // Track if this pixel is glitched (needed iterations beyond reference escape)
+    // δz starts at origin
+    let mut dz = (0.0_f64, 0.0_f64);
+    // m = reference orbit index
+    let mut m: usize = 0;
+    // Track precision loss via Pauldelbrot criterion
     let mut glitched = false;
 
-    let orbit_len = orbit.orbit.len() as u32;
-    let reference_escaped = orbit.escaped_at.unwrap_or(u32::MAX);
+    let orbit_len = orbit.orbit.len();
+    if orbit_len == 0 {
+        // Degenerate case: no orbit data
+        return MandelbrotData {
+            iterations: 0,
+            max_iterations,
+            escaped: false,
+            glitched: true,
+        };
+    }
 
     for n in 0..max_iterations {
-        // Glitch detection: Check at iteration start, not when entering on-the-fly mode.
-        // A pixel may validly rebase (when delta grows too large), but continuing past
-        // reference_escaped means we're extrapolating without reference data → mark as glitched.
-        if n >= reference_escaped && !glitched {
-            glitched = true;
-        }
+        // Get Z_m with wrap-around for non-escaping references
+        let z_m = orbit.orbit[m % orbit_len];
 
-        // Get X_n from orbit or compute on-the-fly
-        let (xn, yn) = if !on_the_fly && n < orbit_len && n < reference_escaped {
-            orbit.orbit[n as usize]
-        } else {
-            if !on_the_fly {
-                // Switching to on-the-fly mode
-                on_the_fly = true;
+        // Full pixel value: z = Z_m + δz
+        let z = (z_m.0 + dz.0, z_m.1 + dz.1);
 
-                // Initialize x, y from last known Z = X + delta
-                if n > 0 && n <= orbit_len {
-                    let prev_n = (n - 1) as usize;
-                    if prev_n < orbit.orbit.len() {
-                        x = orbit.orbit[prev_n].0 + dx;
-                        y = orbit.orbit[prev_n].1 + dy;
-                    }
-                }
-                dx = 0.0;
-                dy = 0.0;
-            }
-            // Compute next X on-the-fly using the pixel's actual c value
-            let pixel_c = (orbit.c_ref.0 + delta_c.0, orbit.c_ref.1 + delta_c.1);
-            let new_x = x * x - y * y + pixel_c.0;
-            let new_y = 2.0 * x * y + pixel_c.1;
-            x = new_x;
-            y = new_y;
-            (x, y)
-        };
+        // Precompute magnitudes squared
+        let z_mag_sq = z.0 * z.0 + z.1 * z.1;
+        let z_m_mag_sq = z_m.0 * z_m.0 + z_m.1 * z_m.1;
+        let dz_mag_sq = dz.0 * dz.0 + dz.1 * dz.1;
 
-        // Escape check: |X_n + delta_n|^2 > 4
-        let zx = xn + dx;
-        let zy = yn + dy;
-        let mag_sq = zx * zx + zy * zy;
-
-        if mag_sq > 4.0 {
+        // 1. Escape check: |z|² > 4
+        if z_mag_sq > 4.0 {
             return MandelbrotData {
                 iterations: n,
                 max_iterations,
@@ -138,31 +121,40 @@ pub fn compute_pixel_perturbation(
             };
         }
 
-        // Rebase check: |delta|^2 > 0.25 * |X|^2 (threshold 0.5)
-        if !on_the_fly {
-            let delta_mag_sq = dx * dx + dy * dy;
-            let x_mag_sq = xn * xn + yn * yn;
-
-            if delta_mag_sq > 0.25 * x_mag_sq && x_mag_sq > 1e-20 {
-                // Rebase: switch to on-the-fly with Z as new reference
-                x = zx;
-                y = zy;
-                dx = 0.0;
-                dy = 0.0;
-                on_the_fly = true;
-                continue;
-            }
+        // 2. Pauldelbrot glitch detection: |z|² < τ²|Z_m|²
+        // Skip check when Z_m is near zero to avoid division issues
+        if z_m_mag_sq > 1e-20 && z_mag_sq < tau_sq * z_m_mag_sq {
+            glitched = true;
         }
 
-        // Delta iteration: delta_{n+1} = 2*X_n*delta_n + delta_n^2 + delta_c
-        if !on_the_fly {
-            let new_dx = 2.0 * (xn * dx - yn * dy) + dx * dx - dy * dy + delta_c.0;
-            let new_dy = 2.0 * (xn * dy + yn * dx) + 2.0 * dx * dy + delta_c.1;
-            dx = new_dx;
-            dy = new_dy;
+        // 3. Rebase check: |z|² < |δz|²
+        // When the full pixel value is smaller than the delta alone,
+        // absorb Z into delta and reset to iteration 0
+        if z_mag_sq < dz_mag_sq {
+            dz = z;
+            m = 0;
+            continue; // Skip delta iteration this round
         }
+
+        // 4. Delta iteration: δz' = 2·Z_m·δz + δz² + δc
+        // Complex multiplication: (a+bi)(c+di) = (ac-bd) + (ad+bc)i
+        // 2·Z_m·δz = 2·(z_m.0·dz.0 - z_m.1·dz.1, z_m.0·dz.1 + z_m.1·dz.0)
+        // δz² = (dz.0² - dz.1², 2·dz.0·dz.1)
+        let two_z_dz = (
+            2.0 * (z_m.0 * dz.0 - z_m.1 * dz.1),
+            2.0 * (z_m.0 * dz.1 + z_m.1 * dz.0),
+        );
+        let dz_sq = (dz.0 * dz.0 - dz.1 * dz.1, 2.0 * dz.0 * dz.1);
+
+        dz = (
+            two_z_dz.0 + dz_sq.0 + delta_c.0,
+            two_z_dz.1 + dz_sq.1 + delta_c.1,
+        );
+
+        m += 1;
     }
 
+    // Reached max iterations without escaping
     MandelbrotData {
         iterations: max_iterations,
         max_iterations,
