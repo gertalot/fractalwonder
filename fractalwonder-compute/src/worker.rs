@@ -299,7 +299,8 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                 let mut delta_c = delta_c_row;
 
                 for _px in 0..tile.width {
-                    let result = compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq);
+                    let result =
+                        compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq);
                     data.push(ComputeData::Mandelbrot(result));
 
                     delta_c.0 += delta_c_step.0;
