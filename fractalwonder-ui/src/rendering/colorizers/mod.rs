@@ -47,6 +47,7 @@ mod tests {
             iterations: 0,
             max_iterations: 1000,
             escaped: false,
+            glitched: false,
         });
         let color = colorize(&data);
         // Should be black (in set)

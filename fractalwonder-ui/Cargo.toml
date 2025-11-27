@@ -22,19 +22,24 @@ web-sys = { workspace = true, features = [
     "Element",
     "ErrorEvent",
     "Event",
+    "History",
     "HtmlCanvasElement",
     "ImageData",
+    "Location",
     "MessageEvent",
     "MouseEvent",
     "Performance",
     "PointerEvent",
     "Storage",
+    "Url",
     "WheelEvent",
     "Window",
     "Worker",
     "WorkerOptions",
     "WorkerType",
 ] }
+flate2 = { workspace = true }
+base64 = { workspace = true }
 console_error_panic_hook = { workspace = true }
 console_log = { workspace = true }
 log = { workspace = true }

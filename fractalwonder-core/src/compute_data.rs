@@ -44,6 +44,10 @@ pub struct MandelbrotData {
     pub max_iterations: u32,
     /// Whether the point escaped the set
     pub escaped: bool,
+    /// Whether this pixel was computed with a glitched reference orbit.
+    /// When true, the colorizer can render this pixel distinctively (e.g., cyan overlay).
+    #[serde(default)]
+    pub glitched: bool,
 }
 
 /// Unified enum for all compute results.

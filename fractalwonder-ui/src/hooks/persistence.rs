@@ -1,12 +1,18 @@
 // fractalwonder-ui/src/hooks/persistence.rs
 //!
-//! Browser localStorage persistence for viewport and config state.
-//! Enables users to continue exploring from their last position after page reload.
+//! Browser persistence for viewport and config state.
+//! Supports both localStorage and URL hash parameters.
+//! Priority on load: URL hash > localStorage > defaults.
+//! Enables users to continue exploring from their last position and share fractals via URL.
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use flate2::{read::DeflateDecoder, write::DeflateEncoder, Compression};
 use fractalwonder_core::Viewport;
 use serde::{Deserialize, Serialize};
+use std::io::{Read, Write};
 
 const STORAGE_KEY: &str = "fractalwonder_state";
+const URL_HASH_PREFIX: &str = "v1:";
 
 /// State persisted to localStorage between sessions.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -31,9 +37,20 @@ impl PersistedState {
     }
 }
 
-/// Load persisted state from localStorage.
-/// Returns None if no state exists, parsing fails, or localStorage is unavailable.
+/// Load persisted state with priority: URL hash > localStorage > None.
+/// Returns None if no state exists, parsing fails, or storage is unavailable.
 pub fn load_state() -> Option<PersistedState> {
+    // Priority 1: URL hash (allows sharing fractals via URL)
+    if let Some(state) = load_from_url_hash() {
+        return Some(state);
+    }
+
+    // Priority 2: localStorage (session persistence)
+    load_from_local_storage()
+}
+
+/// Load state from localStorage only.
+fn load_from_local_storage() -> Option<PersistedState> {
     let window = web_sys::window()?;
     let storage = window.local_storage().ok()??;
     let json = storage.get_item(STORAGE_KEY).ok()??;
@@ -42,11 +59,14 @@ pub fn load_state() -> Option<PersistedState> {
         Ok(state) => {
             // Only accept current version (future: add migration logic)
             if state.version == PersistedState::CURRENT_VERSION {
-                log::info!("Loaded persisted state: config={}", state.config_id);
+                log::info!(
+                    "Loaded persisted state from localStorage: config={}",
+                    state.config_id
+                );
                 Some(state)
             } else {
                 log::warn!(
-                    "Ignoring persisted state with version {} (current: {})",
+                    "Ignoring localStorage state with version {} (current: {})",
                     state.version,
                     PersistedState::CURRENT_VERSION
                 );
@@ -54,15 +74,24 @@ pub fn load_state() -> Option<PersistedState> {
             }
         }
         Err(e) => {
-            log::warn!("Failed to parse persisted state: {}", e);
+            log::warn!("Failed to parse localStorage state: {}", e);
             None
         }
     }
 }
 
-/// Save state to localStorage.
-/// Logs a warning if saving fails (localStorage unavailable or quota exceeded).
+/// Save state to both localStorage and URL hash.
+/// Logs a warning if saving fails (storage unavailable or quota exceeded).
 pub fn save_state(state: &PersistedState) {
+    // Save to localStorage (for session persistence)
+    save_to_local_storage(state);
+
+    // Save to URL hash (for bookmarking/sharing)
+    save_to_url_hash(state);
+}
+
+/// Save state to localStorage only.
+fn save_to_local_storage(state: &PersistedState) {
     let Some(window) = web_sys::window() else {
         return;
     };
@@ -82,15 +111,119 @@ pub fn save_state(state: &PersistedState) {
     }
 }
 
-/// Clear persisted state from localStorage.
+/// Clear persisted state from localStorage and URL hash.
 #[allow(dead_code)]
 pub fn clear_state() {
     let Some(window) = web_sys::window() else {
         return;
     };
-    let Ok(Some(storage)) = window.local_storage() else {
+
+    // Clear localStorage
+    if let Ok(Some(storage)) = window.local_storage() {
+        let _ = storage.remove_item(STORAGE_KEY);
+    }
+
+    // Clear URL hash
+    if let Ok(history) = window.history() {
+        let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(""));
+    }
+
+    log::info!("Cleared persisted state");
+}
+
+// =============================================================================
+// URL Hash Encoding/Decoding
+// =============================================================================
+
+/// Encode state to a compressed, URL-safe string.
+fn encode_state(state: &PersistedState) -> Option<String> {
+    // Serialize to JSON
+    let json = serde_json::to_string(state).ok()?;
+
+    // Compress with deflate
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::best());
+    encoder.write_all(json.as_bytes()).ok()?;
+    let compressed = encoder.finish().ok()?;
+
+    // Encode to URL-safe base64
+    let encoded = URL_SAFE_NO_PAD.encode(&compressed);
+
+    // Add version prefix
+    Some(format!("{URL_HASH_PREFIX}{encoded}"))
+}
+
+/// Decode state from a compressed, URL-safe string.
+fn decode_state(encoded: &str) -> Option<PersistedState> {
+    // Check and strip version prefix
+    let data = encoded.strip_prefix(URL_HASH_PREFIX)?;
+
+    // Decode from base64
+    let compressed = URL_SAFE_NO_PAD.decode(data).ok()?;
+
+    // Decompress
+    let mut decoder = DeflateDecoder::new(&compressed[..]);
+    let mut json = String::new();
+    decoder.read_to_string(&mut json).ok()?;
+
+    // Deserialize
+    let state: PersistedState = serde_json::from_str(&json).ok()?;
+
+    // Validate version
+    if state.version == PersistedState::CURRENT_VERSION {
+        Some(state)
+    } else {
+        log::warn!(
+            "Ignoring URL hash state with version {} (current: {})",
+            state.version,
+            PersistedState::CURRENT_VERSION
+        );
+        None
+    }
+}
+
+/// Load state from URL hash fragment.
+fn load_from_url_hash() -> Option<PersistedState> {
+    let window = web_sys::window()?;
+    let location = window.location();
+    let hash = location.hash().ok()?;
+
+    // Strip leading '#' if present
+    let hash = hash.strip_prefix('#').unwrap_or(&hash);
+
+    if hash.is_empty() {
+        return None;
+    }
+
+    match decode_state(hash) {
+        Some(state) => {
+            log::info!("Loaded state from URL hash: config={}", state.config_id);
+            Some(state)
+        }
+        None => {
+            log::warn!("Failed to decode URL hash state");
+            None
+        }
+    }
+}
+
+/// Save state to URL hash fragment (updates browser URL without navigation).
+fn save_to_url_hash(state: &PersistedState) {
+    let Some(window) = web_sys::window() else {
         return;
     };
-    let _ = storage.remove_item(STORAGE_KEY);
-    log::info!("Cleared persisted state");
+
+    let Some(encoded) = encode_state(state) else {
+        log::warn!("Failed to encode state for URL hash");
+        return;
+    };
+
+    // Use replaceState to update URL without adding to history
+    if let Ok(history) = window.history() {
+        let new_url = format!("#{encoded}");
+        if let Err(e) =
+            history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&new_url))
+        {
+            log::warn!("Failed to update URL hash: {:?}", e);
+        }
+    }
 }

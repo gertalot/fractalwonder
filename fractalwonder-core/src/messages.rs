@@ -147,6 +147,7 @@ mod tests {
                 iterations: 100,
                 max_iterations: 1000,
                 escaped: true,
+                glitched: false,
             })],
             compute_time_ms: 12.5,
         };
@@ -263,6 +264,148 @@ mod tests {
         let parsed: WorkerToMain = serde_json::from_str(&json).unwrap();
         match parsed {
             WorkerToMain::OrbitStored { orbit_id } => assert_eq!(orbit_id, 42),
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    // =========================================================================
+    // Phase 3: Precision Preservation Tests
+    // =========================================================================
+
+    use crate::BigFloat;
+
+    #[test]
+    fn bigfloat_json_roundtrip_preserves_precision() {
+        // Test with high-precision value that would lose precision in f64
+        let original = BigFloat::from_string(
+            "-1.10000101110000011001011000111011011110110100100101010010110010101111001",
+            128,
+        )
+        .unwrap();
+
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: BigFloat = serde_json::from_str(&json).unwrap();
+
+        // Precision bits must be preserved
+        assert_eq!(
+            original.precision_bits(),
+            parsed.precision_bits(),
+            "Precision bits should be preserved"
+        );
+
+        // Values must be equal
+        assert_eq!(
+            original, parsed,
+            "Value should be preserved through roundtrip"
+        );
+    }
+
+    #[test]
+    fn bigfloat_json_roundtrip_preserves_extreme_precision() {
+        // Test with extreme precision (beyond f64 range)
+        let original = BigFloat::from_string("1.23456789e-500", 512).unwrap();
+
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: BigFloat = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.precision_bits(), parsed.precision_bits());
+        assert_eq!(original, parsed);
+    }
+
+    #[test]
+    fn bigfloat_json_format_is_human_readable() {
+        let bf = BigFloat::from_string("-0.75", 128).unwrap();
+        let json = serde_json::to_string(&bf).unwrap();
+
+        // JSON should contain readable fields
+        assert!(json.contains("value"), "JSON should contain 'value' field");
+        assert!(
+            json.contains("precision_bits"),
+            "JSON should contain 'precision_bits' field"
+        );
+        assert!(json.contains("128"), "JSON should contain precision value");
+    }
+
+    #[test]
+    fn viewport_coordinates_survive_roundtrip() {
+        // Real-world deep zoom coordinates (like from the glitchy tile data in the plan)
+        // These coordinates represent a point at ~10^14 zoom depth
+        let x = BigFloat::from_string(
+            "-1.1000010111000001100101100011101101111011010010010101001011001010111100100000011110010",
+            128,
+        )
+        .unwrap();
+        let y = BigFloat::from_string("0.23456789012345678901234567890123456789", 128).unwrap();
+
+        // Serialize as tuple (like c_ref in messages)
+        let coords = (x.clone(), y.clone());
+        let json = serde_json::to_string(&coords).unwrap();
+        let parsed: (BigFloat, BigFloat) = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(coords.0, parsed.0, "X coordinate should survive roundtrip");
+        assert_eq!(coords.1, parsed.1, "Y coordinate should survive roundtrip");
+        assert_eq!(
+            coords.0.precision_bits(),
+            parsed.0.precision_bits(),
+            "X precision should be preserved"
+        );
+        assert_eq!(
+            coords.1.precision_bits(),
+            parsed.1.precision_bits(),
+            "Y precision should be preserved"
+        );
+    }
+
+    #[test]
+    fn viewport_json_field_roundtrip() {
+        // Test the actual message pattern used: viewport_json is a JSON string
+        // containing BigFloat coordinates
+        use crate::Viewport;
+
+        let viewport = Viewport::from_strings(
+            "-1.10000101110000011001011000111011011110110100100101010010110010101111001",
+            "0.23456789",
+            "0.0000001",
+            "0.0000001",
+            128,
+        )
+        .unwrap();
+
+        // Serialize viewport to JSON string (as done in RenderTile message)
+        let viewport_json = serde_json::to_string(&viewport).unwrap();
+
+        // Put in message
+        let msg = MainToWorker::RenderTile {
+            render_id: 1,
+            viewport_json: viewport_json.clone(),
+            tile: PixelRect::new(0, 0, 32, 32),
+        };
+
+        // Roundtrip the message
+        let msg_json = serde_json::to_string(&msg).unwrap();
+        let parsed_msg: MainToWorker = serde_json::from_str(&msg_json).unwrap();
+
+        match parsed_msg {
+            MainToWorker::RenderTile {
+                viewport_json: parsed_vp_json,
+                ..
+            } => {
+                // Parse the inner viewport JSON
+                let parsed_viewport: Viewport = serde_json::from_str(&parsed_vp_json).unwrap();
+
+                // Center coordinates precision should match
+                assert_eq!(
+                    viewport.center.0.precision_bits(),
+                    parsed_viewport.center.0.precision_bits(),
+                    "Viewport center_x precision should be preserved"
+                );
+
+                // Values should match
+                assert_eq!(
+                    viewport.center.0, parsed_viewport.center.0,
+                    "Viewport center_x should be preserved"
+                );
+            }
             _ => panic!("Wrong variant"),
         }
     }

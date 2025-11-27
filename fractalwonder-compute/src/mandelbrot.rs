@@ -51,6 +51,7 @@ impl MandelbrotRenderer {
                     iterations: i,
                     max_iterations: self.max_iterations,
                     escaped: true,
+                    glitched: false,
                 };
             }
 
@@ -67,6 +68,7 @@ impl MandelbrotRenderer {
             iterations: self.max_iterations,
             max_iterations: self.max_iterations,
             escaped: false,
+            glitched: false,
         }
     }
 }
