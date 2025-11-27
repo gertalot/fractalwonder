@@ -29,6 +29,10 @@ pub struct FractalConfig {
     pub default_height: &'static str,
     /// Which renderer implementation to use
     pub renderer_type: RendererType,
+    /// Glitch detection threshold squared (τ²).
+    /// Default 1e-6 corresponds to τ = 10⁻³ (standard).
+    /// See docs/research/perturbation-theory.md Section 2.5.
+    pub tau_sq: f64,
 }
 
 impl FractalConfig {
@@ -54,6 +58,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         default_width: "100.0",
         default_height: "100.0",
         renderer_type: RendererType::Simple,
+        tau_sq: 1e-6, // Not used for test_image, but required field
     },
     FractalConfig {
         id: "mandelbrot",
@@ -62,6 +67,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         default_width: "4.0",
         default_height: "4.0",
         renderer_type: RendererType::Perturbation,
+        tau_sq: 1e-6, // τ = 10⁻³, standard threshold
     },
 ];
 
