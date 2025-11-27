@@ -22,6 +22,7 @@ web-sys = { workspace = true, features = [
     "Element",
     "ErrorEvent",
     "Event",
+    "HashChangeEvent",
     "History",
     "HtmlCanvasElement",
     "ImageData",
@@ -49,3 +50,4 @@ futures = "0.3"
 
 [dev-dependencies]
 wasm-bindgen-test = { workspace = true }
+gloo-timers = { version = "0.3", features = ["futures"] }

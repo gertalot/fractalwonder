@@ -227,3 +227,113 @@ fn save_to_url_hash(state: &PersistedState) {
         }
     }
 }
+
+// =============================================================================
+// Hashchange Listener Hook
+// =============================================================================
+
+use leptos::*;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
+
+/// Listen for hashchange events and call the callback with the new state.
+/// The callback is wrapped in an Rc so it can be shared across closures.
+pub fn use_hashchange_listener<F>(on_change: F)
+where
+    F: Fn(PersistedState) + 'static,
+{
+    use std::rc::Rc;
+
+    // Store the closure so it lives for the component lifetime
+    let handler_storage = store_value::<Option<Closure<dyn FnMut(web_sys::HashChangeEvent)>>>(None);
+
+    // Wrap callback in Rc for sharing across closures
+    let on_change = Rc::new(on_change);
+
+    create_effect(move |_| {
+        let on_change = Rc::clone(&on_change);
+
+        let handler = Closure::wrap(Box::new(move |_e: web_sys::HashChangeEvent| {
+            if let Some(state) = load_from_url_hash() {
+                on_change(state);
+            }
+        }) as Box<dyn FnMut(web_sys::HashChangeEvent)>);
+
+        if let Some(window) = web_sys::window() {
+            let _ = window
+                .add_event_listener_with_callback("hashchange", handler.as_ref().unchecked_ref());
+        }
+
+        handler_storage.set_value(Some(handler));
+
+        on_cleanup(move || {
+            handler_storage.with_value(|handler_opt| {
+                if let Some(handler) = handler_opt {
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.remove_event_listener_with_callback(
+                            "hashchange",
+                            handler.as_ref().unchecked_ref(),
+                        );
+                    }
+                }
+            });
+            handler_storage.set_value(None);
+        });
+    });
+}
+
+#[cfg(test)]
+mod browser_tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    async fn test_hashchange_triggers_callback() {
+        use gloo_timers::future::TimeoutFuture;
+        use leptos::*;
+
+        // Create a runtime for signals
+        let runtime = create_runtime();
+
+        // Track if callback was called using a Cell (no reactive context needed)
+        let callback_called = Rc::new(Cell::new(false));
+        let callback_called_clone = Rc::clone(&callback_called);
+
+        // Set up the listener
+        use_hashchange_listener(move |_state| {
+            callback_called_clone.set(true);
+        });
+
+        // Give the effect time to run and register the listener
+        TimeoutFuture::new(10).await;
+
+        // Create a valid encoded state to use as hash
+        let test_viewport = fractalwonder_core::Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64);
+        let test_state = PersistedState::new(test_viewport, "mandelbrot".to_string());
+
+        // Encode and set the hash, then dispatch event
+        if let Some(encoded) = encode_state(&test_state) {
+            let window = web_sys::window().unwrap();
+            let _ = window.location().set_hash(&encoded);
+
+            // Manually dispatch hashchange event
+            let event = web_sys::HashChangeEvent::new("hashchange").unwrap();
+            let _ = window.dispatch_event(&event);
+        }
+
+        // Give time for the event handler to run
+        TimeoutFuture::new(10).await;
+
+        // Check that callback was called
+        assert!(
+            callback_called.get(),
+            "Hashchange callback should have been triggered"
+        );
+
+        runtime.dispose();
+    }
+}

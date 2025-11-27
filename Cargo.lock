@@ -529,6 +529,7 @@ dependencies = [
  "fractalwonder-compute",
  "fractalwonder-core",
  "futures",
+ "gloo-timers",
  "leptos",
  "leptos-use",
  "leptos_meta",

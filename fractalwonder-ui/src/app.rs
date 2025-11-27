@@ -5,7 +5,9 @@ use wasm_bindgen::prelude::Closure;
 
 use crate::components::{CircularProgress, InteractiveCanvas, UIPanel};
 use crate::config::{default_config, get_config};
-use crate::hooks::{load_state, save_state, use_ui_visibility, PersistedState};
+use crate::hooks::{
+    load_state, save_state, use_hashchange_listener, use_ui_visibility, PersistedState,
+};
 use crate::rendering::RenderProgress;
 
 #[component]
@@ -134,6 +136,18 @@ pub fn App() -> impl IntoView {
 
         let state = PersistedState::new(vp, config_id);
         save_state(&state);
+    });
+
+    // Listen for hashchange events (e.g., when user clicks a bookmark)
+    // This enables navigating to a saved position via URL hash
+    use_hashchange_listener(move |state| {
+        let size = canvas_size.get_untracked();
+        if size.0 > 0 && size.1 > 0 {
+            // Fit the persisted viewport to the current canvas size
+            let fitted = fit_viewport_to_canvas(&state.viewport, size);
+            set_viewport.set(fitted);
+            log::info!("Restored viewport from URL hash change");
+        }
     });
 
     let on_resize = Callback::new(move |size: (u32, u32)| {

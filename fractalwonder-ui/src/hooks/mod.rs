@@ -4,7 +4,7 @@ mod ui_visibility;
 mod use_canvas_interaction;
 
 pub use fullscreen::{toggle_fullscreen, use_fullscreen};
-pub use persistence::{load_state, save_state, PersistedState};
+pub use persistence::{load_state, save_state, use_hashchange_listener, PersistedState};
 pub use ui_visibility::{use_ui_visibility, UiVisibility};
 pub use use_canvas_interaction::{use_canvas_interaction, InteractionHandle};
 
