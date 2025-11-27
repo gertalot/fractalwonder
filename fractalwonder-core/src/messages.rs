@@ -45,6 +45,8 @@ pub enum MainToWorker {
         delta_c_origin: (f64, f64),
         delta_c_step: (f64, f64),
         max_iterations: u32,
+        /// Glitch detection threshold squared (τ²).
+        tau_sq: f64,
     },
 
     /// Discard a cached orbit.
@@ -217,6 +219,7 @@ mod tests {
             delta_c_origin: (0.001, -0.002),
             delta_c_step: (0.0001, 0.0001),
             max_iterations: 10000,
+            tau_sq: 1e-6,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: MainToWorker = serde_json::from_str(&json).unwrap();
@@ -224,10 +227,12 @@ mod tests {
             MainToWorker::RenderTilePerturbation {
                 orbit_id,
                 delta_c_origin,
+                tau_sq,
                 ..
             } => {
                 assert_eq!(orbit_id, 42);
                 assert!((delta_c_origin.0 - 0.001).abs() < 1e-10);
+                assert!((tau_sq - 1e-6).abs() < 1e-12);
             }
             _ => panic!("Wrong variant"),
         }
