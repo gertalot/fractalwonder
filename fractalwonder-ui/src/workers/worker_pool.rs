@@ -68,6 +68,8 @@ pub struct WorkerPool {
     perturbation: PerturbationState,
     /// Whether current render is using perturbation mode
     is_perturbation_render: bool,
+    /// Count of tiles with glitched pixels in current render
+    glitched_tile_count: u32,
 }
 
 fn performance_now() -> f64 {
@@ -144,6 +146,7 @@ impl WorkerPool {
             self_ref: Weak::new(),
             perturbation: PerturbationState::default(),
             is_perturbation_render: false,
+            glitched_tile_count: 0,
         }));
 
         pool.borrow_mut().self_ref = Rc::downgrade(&pool);
@@ -220,28 +223,52 @@ impl WorkerPool {
                 compute_time_ms,
             } => {
                 if render_id == self.current_render_id {
-                    // let progress = self.progress.get_untracked();
-                    // web_sys::console::log_1(
-                    //     &format!(
-                    //         "[WorkerPool] Tile complete: render #{}, {}/{} tiles, {:.0}ms",
-                    //         render_id,
-                    //         progress.completed_tiles + 1,
-                    //         progress.total_tiles,
-                    //         compute_time_ms
-                    //     )
-                    //     .into(),
-                    // );
+                    // Count glitched pixels for diagnostic logging
+                    let glitched_count = data
+                        .iter()
+                        .filter(|d| matches!(d, ComputeData::Mandelbrot(m) if m.glitched))
+                        .count();
+
+                    if glitched_count > 0 {
+                        let total_pixels = data.len();
+                        web_sys::console::log_1(
+                            &format!(
+                                "[WorkerPool] Tile ({},{}): {}/{} pixels glitched",
+                                tile.x, tile.y, glitched_count, total_pixels
+                            )
+                            .into(),
+                        );
+                        self.glitched_tile_count += 1;
+                    }
+
                     // Update progress
                     let elapsed = self
                         .render_start_time
                         .map(|start| performance_now() - start)
                         .unwrap_or(0.0);
 
-                    self.progress.update(|p| {
-                        p.completed_tiles += 1;
-                        p.elapsed_ms = elapsed;
-                        p.is_complete = p.completed_tiles >= p.total_tiles;
-                    });
+                    let is_complete = {
+                        let mut complete = false;
+                        self.progress.update(|p| {
+                            p.completed_tiles += 1;
+                            p.elapsed_ms = elapsed;
+                            p.is_complete = p.completed_tiles >= p.total_tiles;
+                            complete = p.is_complete;
+                        });
+                        complete
+                    };
+
+                    // Log render completion summary
+                    if is_complete {
+                        let total = self.progress.get_untracked().total_tiles;
+                        web_sys::console::log_1(
+                            &format!(
+                                "[WorkerPool] Render complete: {} tiles had glitches (of {} total)",
+                                self.glitched_tile_count, total
+                            )
+                            .into(),
+                        );
+                    }
 
                     // Callback
                     (self.on_tile_complete)(TileResult {
@@ -430,6 +457,7 @@ impl WorkerPool {
     ) {
         self.is_perturbation_render = false;
         self.current_render_id = self.current_render_id.wrapping_add(1);
+        self.glitched_tile_count = 0;
         web_sys::console::log_1(
             &format!(
                 "[WorkerPool] Starting render #{} with {} tiles, precision={} bits",
@@ -466,6 +494,7 @@ impl WorkerPool {
     ) {
         self.is_perturbation_render = true;
         self.current_render_id = self.current_render_id.wrapping_add(1);
+        self.glitched_tile_count = 0;
         self.perturbation.orbit_id = self.perturbation.orbit_id.wrapping_add(1);
         self.perturbation.workers_with_orbit.clear();
         self.perturbation.pending_orbit = None;

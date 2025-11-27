@@ -1109,7 +1109,7 @@ mod tests {
     fn perturbation_max_iterations_at_low_zoom() {
         // zoom_exp = 1 (10^1 zoom)
         let result = calculate_max_iterations_perturbation(1.0);
-        // 50 * 1^1.25 = 50, clamped to 1000
+        // 200 * 1^2.5 = 200, clamped to 1000
         assert_eq!(result, 1000);
     }
 
@@ -1117,45 +1117,36 @@ mod tests {
     fn perturbation_max_iterations_at_10x_zoom() {
         // zoom_exp = 10 (10^10 zoom)
         let result = calculate_max_iterations_perturbation(10.0);
-        // 50 * 10^1.25 ≈ 890
-        // Clamped to minimum 1000
-        assert_eq!(result, 1000);
+        // 200 * 10^2.5 ≈ 63,246
+        assert!(
+            result > 60000 && result < 70000,
+            "Expected ~63246, got {}",
+            result
+        );
     }
 
     #[test]
     fn perturbation_max_iterations_at_100x_zoom() {
         // zoom_exp = 100 (10^100 zoom)
         let result = calculate_max_iterations_perturbation(100.0);
-        // 50 * 100^1.25 ≈ 15,811
-        assert!(
-            result > 15000 && result < 17000,
-            "Expected ~15811, got {}",
-            result
-        );
+        // 200 * 100^2.5 = 20,000,000 → capped at 10,000,000
+        assert_eq!(result, 10_000_000);
     }
 
     #[test]
     fn perturbation_max_iterations_at_1000x_zoom() {
         // zoom_exp = 1000 (10^1000 zoom)
         let result = calculate_max_iterations_perturbation(1000.0);
-        // 50 * 1000^1.25 ≈ 280,884
-        assert!(
-            result > 250000 && result < 300000,
-            "Expected ~280884, got {}",
-            result
-        );
+        // 200 * 1000^2.5 = huge → capped at 10,000,000
+        assert_eq!(result, 10_000_000);
     }
 
     #[test]
     fn perturbation_max_iterations_at_2000x_zoom() {
         // zoom_exp = 2000 (10^2000 zoom)
         let result = calculate_max_iterations_perturbation(2000.0);
-        // 50 * 2000^1.25 ≈ 668,740
-        assert!(
-            result > 600000 && result < 750000,
-            "Expected ~668740, got {}",
-            result
-        );
+        // 200 * 2000^2.5 = huge → capped at 10,000,000
+        assert_eq!(result, 10_000_000);
     }
 
     #[test]
