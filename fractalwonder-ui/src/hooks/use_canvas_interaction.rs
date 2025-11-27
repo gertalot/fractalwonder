@@ -256,6 +256,17 @@ where
             sequence
         )));
 
+        // No transforms = no change, just clean up and return without firing callback
+        if sequence.is_empty() {
+            initial_image_data.set_value(None);
+            base_offset.set_value((0.0, 0.0));
+            current_drag_offset.set_value((0.0, 0.0));
+            accumulated_zoom.set_value(1.0);
+            zoom_center.set_value(None);
+            // sequence already empty, no need to clear
+            return;
+        }
+
         let composed_matrix: PixelMat3 = compose_affine_transformations(sequence);
 
         // Extract center-relative offset and zoom from the composed matrix
