@@ -79,6 +79,13 @@ pub struct WorkerPool {
     /// Computed reference orbits for quadtree cell centers (Phase 7)
     /// Key: (x, y, width, height) of cell bounds
     cell_orbits: HashMap<(u32, u32, u32, u32), ReferenceOrbit>,
+    /// Mapping from cell bounds to orbit_id for worker distribution (Phase 8)
+    cell_orbit_ids: HashMap<(u32, u32, u32, u32), u32>,
+    /// Counter for generating unique cell orbit IDs (separate from main perturbation orbit)
+    cell_orbit_id_counter: u32,
+    /// Tracks which workers have confirmed storing which cell orbits
+    /// Key: orbit_id, Value: set of worker_ids that have confirmed
+    cell_orbit_confirmations: HashMap<u32, HashSet<usize>>,
 }
 
 fn performance_now() -> f64 {
@@ -159,6 +166,9 @@ impl WorkerPool {
             quadtree: None,
             glitched_tiles: Vec::new(),
             cell_orbits: HashMap::new(),
+            cell_orbit_ids: HashMap::new(),
+            cell_orbit_id_counter: 1000, // Start at 1000 to distinguish from main orbit IDs
+            cell_orbit_confirmations: HashMap::new(),
         }));
 
         pool.borrow_mut().self_ref = Rc::downgrade(&pool);
@@ -369,6 +379,42 @@ impl WorkerPool {
             }
 
             WorkerToMain::OrbitStored { orbit_id } => {
+                // Check if this is a cell orbit (Phase 8)
+                if self.cell_orbit_confirmations.contains_key(&orbit_id) {
+                    // Log worker confirmation for cell orbit
+                    web_sys::console::log_1(
+                        &format!(
+                            "[WorkerPool] Worker {} stored orbit #{}",
+                            worker_id, orbit_id
+                        )
+                        .into(),
+                    );
+
+                    // Track confirmation
+                    if let Some(confirmations) = self.cell_orbit_confirmations.get_mut(&orbit_id) {
+                        confirmations.insert(worker_id);
+
+                        // Check if all workers have confirmed
+                        let all_confirmed = self
+                            .initialized_workers
+                            .iter()
+                            .all(|&id| confirmations.contains(&id));
+
+                        if all_confirmed {
+                            web_sys::console::log_1(
+                                &format!(
+                                    "[WorkerPool] Phase 8: All {} workers confirmed orbit #{}",
+                                    confirmations.len(),
+                                    orbit_id
+                                )
+                                .into(),
+                            );
+                        }
+                    }
+                    return;
+                }
+
+                // Main perturbation orbit handling
                 if orbit_id != self.perturbation.orbit_id {
                     return;
                 }
@@ -532,6 +578,11 @@ impl WorkerPool {
         self.perturbation.orbit_id = self.perturbation.orbit_id.wrapping_add(1);
         self.perturbation.workers_with_orbit.clear();
         self.perturbation.pending_orbit = None;
+
+        // Clear cell orbit tracking (Phase 8) - new render starts fresh
+        self.cell_orbits.clear();
+        self.cell_orbit_ids.clear();
+        self.cell_orbit_confirmations.clear();
 
         // Create quadtree for spatial tracking of glitched regions
         self.quadtree = Some(QuadtreeCell::new_root(canvas_size));
@@ -863,6 +914,89 @@ impl WorkerPool {
                 computed_count,
                 elapsed,
                 self.cell_orbits.len()
+            )
+            .into(),
+        );
+
+        // Phase 8: Distribute computed orbits to workers
+        self.broadcast_cell_orbits_to_workers();
+    }
+
+    /// Broadcast cell orbits to all workers (Phase 8).
+    ///
+    /// For each computed orbit that hasn't been assigned an orbit_id yet:
+    /// 1. Assigns a unique orbit_id
+    /// 2. Sends StoreReferenceOrbit to all workers
+    /// 3. Initializes confirmation tracking
+    fn broadcast_cell_orbits_to_workers(&mut self) {
+        if self.cell_orbits.is_empty() {
+            web_sys::console::log_1(&"[WorkerPool] Phase 8: No cell orbits to distribute".into());
+            return;
+        }
+
+        let start_time = performance_now();
+        let mut broadcast_count = 0;
+
+        // Collect cell keys that need orbit_id assignment (can't mutate while iterating)
+        let cells_without_id: Vec<(u32, u32, u32, u32)> = self
+            .cell_orbits
+            .keys()
+            .filter(|key| !self.cell_orbit_ids.contains_key(*key))
+            .cloned()
+            .collect();
+
+        for cell_key in cells_without_id {
+            let Some(orbit) = self.cell_orbits.get(&cell_key) else {
+                continue;
+            };
+
+            // Assign a unique orbit_id
+            let orbit_id = self.cell_orbit_id_counter;
+            self.cell_orbit_id_counter = self.cell_orbit_id_counter.wrapping_add(1);
+
+            // Store the mapping
+            self.cell_orbit_ids.insert(cell_key, orbit_id);
+
+            // Initialize confirmation tracking
+            self.cell_orbit_confirmations
+                .insert(orbit_id, HashSet::new());
+
+            // Broadcast to all workers
+            let msg = MainToWorker::StoreReferenceOrbit {
+                orbit_id,
+                c_ref: orbit.c_ref,
+                orbit: orbit.orbit.clone(),
+                escaped_at: orbit.escaped_at,
+            };
+
+            for worker_id in 0..self.workers.len() {
+                self.send_to_worker(worker_id, &msg);
+            }
+
+            web_sys::console::log_1(
+                &format!(
+                    "[WorkerPool] Phase 8: Broadcasting orbit #{} for cell ({},{})-({},{}) to {} workers",
+                    orbit_id,
+                    cell_key.0,
+                    cell_key.1,
+                    cell_key.0 + cell_key.2,
+                    cell_key.1 + cell_key.3,
+                    self.workers.len()
+                )
+                .into(),
+            );
+
+            broadcast_count += 1;
+        }
+
+        let elapsed = performance_now() - start_time;
+
+        web_sys::console::log_1(
+            &format!(
+                "[WorkerPool] Phase 8: Broadcast {} cell orbits to {} workers in {:.1}ms",
+                broadcast_count,
+                self.workers.len(),
+                elapsed
             )
             .into(),
         );
