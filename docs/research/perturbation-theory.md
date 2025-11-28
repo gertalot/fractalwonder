@@ -1125,7 +1125,7 @@ This section defines self-contained, shippable increments that build progressive
 
 ---
 
-### 13.3 Increment 3: FloatExp Optimization
+### ✅ 13.3 Increment 3: FloatExp Optimization
 
 **Deliverable:** Fast extended-range arithmetic for deltas.
 
