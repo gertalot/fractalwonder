@@ -962,13 +962,8 @@ mod tests {
         );
 
         // BigFloat version (reference implementation)
-        let bf_result = compute_pixel_perturbation_bigfloat(
-            &orbit,
-            &delta_bf.0,
-            &delta_bf.1,
-            500,
-            TEST_TAU_SQ,
-        );
+        let bf_result =
+            compute_pixel_perturbation_bigfloat(&orbit, &delta_bf.0, &delta_bf.1, 500, TEST_TAU_SQ);
 
         // FloatExp version (optimized)
         let fe_result = compute_pixel_perturbation_floatexp(&orbit, delta_fe, 500, TEST_TAU_SQ);
