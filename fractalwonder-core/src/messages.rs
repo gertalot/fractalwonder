@@ -37,13 +37,15 @@ pub enum MainToWorker {
         escaped_at: Option<u32>,
     },
 
-    /// Render a tile using perturbation.
+    /// Render a tile using perturbation with extended precision deltas.
     RenderTilePerturbation {
         render_id: u32,
         tile: PixelRect,
         orbit_id: u32,
-        delta_c_origin: (f64, f64),
-        delta_c_step: (f64, f64),
+        /// JSON-serialized (BigFloat, BigFloat) for delta_c at tile origin
+        delta_c_origin_json: String,
+        /// JSON-serialized (BigFloat, BigFloat) for delta_c step per pixel
+        delta_c_step_json: String,
         max_iterations: u32,
         /// Glitch detection threshold squared (τ²).
         tau_sq: f64,
@@ -212,12 +214,23 @@ mod tests {
 
     #[test]
     fn render_tile_perturbation_roundtrip() {
+        use crate::BigFloat;
+
+        let delta_origin = (
+            BigFloat::from_string("1e-500", 2048).unwrap(),
+            BigFloat::from_string("-2e-500", 2048).unwrap(),
+        );
+        let delta_step = (
+            BigFloat::from_string("1e-503", 2048).unwrap(),
+            BigFloat::from_string("1e-503", 2048).unwrap(),
+        );
+
         let msg = MainToWorker::RenderTilePerturbation {
             render_id: 1,
             tile: PixelRect::new(0, 0, 64, 64),
             orbit_id: 42,
-            delta_c_origin: (0.001, -0.002),
-            delta_c_step: (0.0001, 0.0001),
+            delta_c_origin_json: serde_json::to_string(&delta_origin).unwrap(),
+            delta_c_step_json: serde_json::to_string(&delta_step).unwrap(),
             max_iterations: 10000,
             tau_sq: 1e-6,
         };
@@ -226,13 +239,21 @@ mod tests {
         match parsed {
             MainToWorker::RenderTilePerturbation {
                 orbit_id,
-                delta_c_origin,
+                delta_c_origin_json,
                 tau_sq,
                 ..
             } => {
                 assert_eq!(orbit_id, 42);
-                assert!((delta_c_origin.0 - 0.001).abs() < 1e-10);
                 assert!((tau_sq - 1e-6).abs() < 1e-12);
+
+                // Verify BigFloat survives roundtrip
+                let parsed_origin: (BigFloat, BigFloat) =
+                    serde_json::from_str(&delta_c_origin_json).unwrap();
+                assert_eq!(parsed_origin.0.precision_bits(), 2048);
+
+                // Verify extreme value preserved
+                let log2 = parsed_origin.0.log2_approx();
+                assert!(log2 < -1600.0, "Delta should be ~10^-500");
             }
             _ => panic!("Wrong variant"),
         }
