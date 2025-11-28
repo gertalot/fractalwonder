@@ -91,7 +91,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         iteration_multiplier: 200.0,
         iteration_power: 2.7,
         bigfloat_threshold_bits: 1024, // ~10^300 zoom
-        bla_enabled: true,
+        bla_enabled: false,
     },
 ];
 

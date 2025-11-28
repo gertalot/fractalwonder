@@ -414,6 +414,7 @@ impl WorkerPool {
                             orbit: orbit.clone(),
                             escaped_at,
                             dc_max: self.perturbation.dc_max,
+                            bla_enabled: self.perturbation.bla_enabled,
                         },
                     );
                 }
@@ -1044,6 +1045,7 @@ impl WorkerPool {
                 orbit: orbit.orbit.clone(),
                 escaped_at: orbit.escaped_at,
                 dc_max: self.perturbation.dc_max,
+                bla_enabled: self.perturbation.bla_enabled,
             };
 
             for worker_id in 0..self.workers.len() {

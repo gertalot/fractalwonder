@@ -37,6 +37,8 @@ pub enum MainToWorker {
         escaped_at: Option<u32>,
         /// Maximum |δc| for any pixel in viewport (for BLA table construction)
         dc_max: f64,
+        /// Whether to build BLA table for this orbit
+        bla_enabled: bool,
     },
 
     /// Render a tile using perturbation with extended precision deltas.
@@ -206,6 +208,7 @@ mod tests {
             orbit: vec![(0.0, 0.0), (-0.5, 0.0), (-0.25, 0.0)],
             escaped_at: None,
             dc_max: 0.01,
+            bla_enabled: true,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: MainToWorker = serde_json::from_str(&json).unwrap();
@@ -312,6 +315,7 @@ mod tests {
             orbit: vec![(0.0, 0.0), (-0.5, 0.0)],
             escaped_at: None,
             dc_max: 0.001,
+            bla_enabled: true,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: MainToWorker = serde_json::from_str(&json).unwrap();

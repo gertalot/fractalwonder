@@ -19,7 +19,7 @@ struct CachedOrbit {
     c_ref: (f64, f64),
     orbit: Vec<(f64, f64)>,
     escaped_at: Option<u32>,
-    bla_table: BlaTable,
+    bla_table: Option<BlaTable>,
 }
 
 impl CachedOrbit {
@@ -260,25 +260,28 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             orbit,
             escaped_at,
             dc_max,
+            bla_enabled,
         } => {
-            // Build reference orbit for BLA table construction
-            let ref_orbit = ReferenceOrbit {
-                c_ref,
-                orbit: orbit.clone(),
-                escaped_at,
+            // Conditionally build BLA table
+            let bla_table = if bla_enabled {
+                let ref_orbit = ReferenceOrbit {
+                    c_ref,
+                    orbit: orbit.clone(),
+                    escaped_at,
+                };
+                let table = BlaTable::compute(&ref_orbit, dc_max);
+                web_sys::console::log_1(
+                    &format!(
+                        "[Worker] Built BLA table: {} entries, {} levels",
+                        table.entries.len(),
+                        table.num_levels
+                    )
+                    .into(),
+                );
+                Some(table)
+            } else {
+                None
             };
-
-            // Build BLA table
-            let bla_table = BlaTable::compute(&ref_orbit, dc_max);
-
-            web_sys::console::log_1(
-                &format!(
-                    "[Worker] Built BLA table: {} entries, {} levels",
-                    bla_table.entries.len(),
-                    bla_table.num_levels
-                )
-                .into(),
-            );
 
             state.orbit_cache.insert(
                 orbit_id,
@@ -394,13 +397,23 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
                     for _px in 0..tile.width {
                         let result = if bla_enabled {
-                            compute_pixel_perturbation_floatexp_bla(
-                                &orbit,
-                                &cached.bla_table,
-                                delta_c,
-                                max_iterations,
-                                tau_sq,
-                            )
+                            if let Some(ref bla_table) = cached.bla_table {
+                                compute_pixel_perturbation_floatexp_bla(
+                                    &orbit,
+                                    bla_table,
+                                    delta_c,
+                                    max_iterations,
+                                    tau_sq,
+                                )
+                            } else {
+                                // Fallback if table wasn't built
+                                compute_pixel_perturbation_floatexp(
+                                    &orbit,
+                                    delta_c,
+                                    max_iterations,
+                                    tau_sq,
+                                )
+                            }
                         } else {
                             compute_pixel_perturbation_floatexp(
                                 &orbit,
