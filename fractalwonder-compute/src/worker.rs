@@ -1,8 +1,8 @@
 // fractalwonder-compute/src/worker.rs
 use crate::{
     compute_pixel_perturbation, compute_pixel_perturbation_bigfloat,
-    compute_pixel_perturbation_floatexp, MandelbrotRenderer, ReferenceOrbit, Renderer,
-    TestImageRenderer,
+    compute_pixel_perturbation_floatexp, compute_pixel_perturbation_floatexp_bla, BlaTable,
+    MandelbrotRenderer, ReferenceOrbit, Renderer, TestImageRenderer,
 };
 use fractalwonder_core::{BigFloat, ComputeData, FloatExp, MainToWorker, Viewport, WorkerToMain};
 use js_sys::Date;
@@ -19,6 +19,7 @@ struct CachedOrbit {
     c_ref: (f64, f64),
     orbit: Vec<(f64, f64)>,
     escaped_at: Option<u32>,
+    bla_table: BlaTable,
 }
 
 impl CachedOrbit {
@@ -258,13 +259,34 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             c_ref,
             orbit,
             escaped_at,
+            dc_max,
         } => {
+            // Build reference orbit for BLA table construction
+            let ref_orbit = ReferenceOrbit {
+                c_ref,
+                orbit: orbit.clone(),
+                escaped_at,
+            };
+
+            // Build BLA table
+            let bla_table = BlaTable::compute(&ref_orbit, dc_max);
+
+            web_sys::console::log_1(
+                &format!(
+                    "[Worker] Built BLA table: {} entries, {} levels",
+                    bla_table.entries.len(),
+                    bla_table.num_levels
+                )
+                .into(),
+            );
+
             state.orbit_cache.insert(
                 orbit_id,
                 CachedOrbit {
                     c_ref,
                     orbit,
                     escaped_at,
+                    bla_table,
                 },
             );
             post_message(&WorkerToMain::OrbitStored { orbit_id });
