@@ -734,6 +734,36 @@ mod tests {
     }
 
     #[test]
+    fn bigfloat_handles_extreme_zoom_without_artifacts() {
+        // At 10^1000 zoom, verify computation completes and produces sensible results
+        let precision = 4096; // ~1200 decimal digits
+
+        // Reference at a point known to be in the set
+        let c_ref = (
+            BigFloat::from_string("-0.5", precision).unwrap(),
+            BigFloat::zero(precision),
+        );
+        let orbit = ReferenceOrbit::compute(&c_ref, 1000);
+
+        // Tiny delta - point should still be in set (near reference)
+        let delta_c = (
+            BigFloat::from_string("1e-1000", precision).unwrap(),
+            BigFloat::from_string("1e-1000", precision).unwrap(),
+        );
+
+        let result = compute_pixel_perturbation_bigfloat(&orbit, &delta_c, 1000, TEST_TAU_SQ);
+
+        // Nearby point should have similar behavior to reference
+        assert!(!result.escaped, "Point very close to reference should be in set");
+        assert_eq!(result.iterations, 1000, "Should reach max iterations");
+
+        // Verify delta didn't underflow (would cause all points to behave identically)
+        let log2_delta = delta_c.0.log2_approx();
+        assert!(log2_delta.is_finite(), "Delta log2 should be finite");
+        assert!(log2_delta < -3000.0, "Delta should be extremely small: {}", log2_delta);
+    }
+
+    #[test]
     fn high_precision_orbit_differs_from_low_precision() {
         // Compare orbit computed with different precision levels
         // This demonstrates why we need arbitrary precision at deep zoom
