@@ -371,7 +371,6 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                         data.push(ComputeData::Mandelbrot(result));
 
                         delta_c.0 = delta_c.0.add(&delta_step.0);
-                        delta_c.1 = delta_c.1.add(&delta_step.1);
                     }
 
                     delta_c_row.1 = delta_c_row.1.add(&delta_step.1);
