@@ -322,13 +322,12 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
             for _py in 0..tile.height {
                 let mut delta_c_re = delta_c_row_re.clone();
-                let delta_c_im = delta_c_row_im.clone();
 
                 for _px in 0..tile.width {
-                    let delta_c = (delta_c_re.clone(), delta_c_im.clone());
                     let result = compute_pixel_perturbation_bigfloat(
                         &orbit,
-                        &delta_c,
+                        &delta_c_re,
+                        &delta_c_row_im,
                         max_iterations,
                         tau_sq,
                     );

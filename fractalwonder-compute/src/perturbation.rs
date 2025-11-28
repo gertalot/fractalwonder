@@ -67,16 +67,18 @@ impl ReferenceOrbit {
 ///
 /// # Arguments
 /// * `orbit` - Pre-computed reference orbit (f64 values, bounded by escape radius)
-/// * `delta_c` - Offset from reference point as BigFloat (can be 10^-1000 scale)
+/// * `delta_c_re` - Real component of offset from reference point (can be 10^-1000 scale)
+/// * `delta_c_im` - Imaginary component of offset from reference point
 /// * `max_iterations` - Maximum iterations before declaring point in set
 /// * `tau_sq` - Pauldelbrot glitch detection threshold squared (τ²)
 pub fn compute_pixel_perturbation_bigfloat(
     orbit: &ReferenceOrbit,
-    delta_c: &(BigFloat, BigFloat),
+    delta_c_re: &BigFloat,
+    delta_c_im: &BigFloat,
     max_iterations: u32,
     tau_sq: f64,
 ) -> MandelbrotData {
-    let precision = delta_c.0.precision_bits();
+    let precision = delta_c_re.precision_bits();
 
     // δz starts at origin
     let mut dz_re = BigFloat::zero(precision);
@@ -151,8 +153,8 @@ pub fn compute_pixel_perturbation_bigfloat(
         let dz_sq_im = two.mul(&dz_re).mul(&dz_im);
 
         // δz' = 2·Z·δz + δz² + δc
-        dz_re = two_z_dz_re.add(&dz_sq_re).add(&delta_c.0);
-        dz_im = two_z_dz_im.add(&dz_sq_im).add(&delta_c.1);
+        dz_re = two_z_dz_re.add(&dz_sq_re).add(delta_c_re);
+        dz_im = two_z_dz_im.add(&dz_sq_im).add(delta_c_im);
 
         m += 1;
     }
@@ -695,7 +697,8 @@ mod tests {
         );
 
         // Compute pixel - should complete without panic
-        let result = compute_pixel_perturbation_bigfloat(&orbit, &delta_c, 100, TEST_TAU_SQ);
+        let result =
+            compute_pixel_perturbation_bigfloat(&orbit, &delta_c.0, &delta_c.1, 100, TEST_TAU_SQ);
 
         // Point near origin with tiny offset should be in set
         assert!(!result.escaped, "Point near origin should be in set");
@@ -716,12 +719,15 @@ mod tests {
             let f64_result = compute_pixel_perturbation(&orbit, (dx, dy), 500, TEST_TAU_SQ);
 
             // BigFloat version
-            let bigfloat_delta = (
-                BigFloat::with_precision(dx, 128),
-                BigFloat::with_precision(dy, 128),
+            let bigfloat_delta_re = BigFloat::with_precision(dx, 128);
+            let bigfloat_delta_im = BigFloat::with_precision(dy, 128);
+            let bigfloat_result = compute_pixel_perturbation_bigfloat(
+                &orbit,
+                &bigfloat_delta_re,
+                &bigfloat_delta_im,
+                500,
+                TEST_TAU_SQ,
             );
-            let bigfloat_result =
-                compute_pixel_perturbation_bigfloat(&orbit, &bigfloat_delta, 500, TEST_TAU_SQ);
 
             assert_eq!(
                 f64_result.escaped, bigfloat_result.escaped,
@@ -749,12 +755,16 @@ mod tests {
         let orbit = ReferenceOrbit::compute(&c_ref, 1000);
 
         // Tiny delta - point should still be in set (near reference)
-        let delta_c = (
-            BigFloat::from_string("1e-1000", precision).unwrap(),
-            BigFloat::from_string("1e-1000", precision).unwrap(),
-        );
+        let delta_c_re = BigFloat::from_string("1e-1000", precision).unwrap();
+        let delta_c_im = BigFloat::from_string("1e-1000", precision).unwrap();
 
-        let result = compute_pixel_perturbation_bigfloat(&orbit, &delta_c, 1000, TEST_TAU_SQ);
+        let result = compute_pixel_perturbation_bigfloat(
+            &orbit,
+            &delta_c_re,
+            &delta_c_im,
+            1000,
+            TEST_TAU_SQ,
+        );
 
         // Nearby point should have similar behavior to reference
         assert!(
@@ -764,7 +774,7 @@ mod tests {
         assert_eq!(result.iterations, 1000, "Should reach max iterations");
 
         // Verify delta didn't underflow (would cause all points to behave identically)
-        let log2_delta = delta_c.0.log2_approx();
+        let log2_delta = delta_c_re.log2_approx();
         assert!(log2_delta.is_finite(), "Delta log2 should be finite");
         assert!(
             log2_delta < -3000.0,
