@@ -559,6 +559,36 @@ mod tests {
     }
 
     #[test]
+    fn perturbation_with_bigfloat_deltas_no_underflow() {
+        // At 10^500 zoom, f64 deltas would underflow to zero
+        // This test verifies BigFloat deltas preserve the value
+
+        let precision = 2048; // Enough for 10^500
+
+        // Reference at origin (simple, in set)
+        let c_ref = (BigFloat::zero(precision), BigFloat::zero(precision));
+        let orbit = ReferenceOrbit::compute(&c_ref, 100);
+
+        // Delta at 10^-500 scale - would be 0.0 in f64
+        let delta_c = (
+            BigFloat::from_string("1e-500", precision).unwrap(),
+            BigFloat::from_string("1e-500", precision).unwrap(),
+        );
+
+        // This should NOT underflow - delta_c should remain non-zero
+        let log2_delta = delta_c.0.log2_approx();
+        assert!(log2_delta > -2000.0, "Delta should not underflow: log2 = {}", log2_delta);
+        assert!(log2_delta < -1600.0, "Delta should be around 10^-500: log2 = {}", log2_delta);
+
+        // Compute pixel - should complete without panic
+        let result = compute_pixel_perturbation_bigfloat(&orbit, &delta_c, 100, TEST_TAU_SQ);
+
+        // Point near origin with tiny offset should be in set
+        assert!(!result.escaped, "Point near origin should be in set");
+        assert_eq!(result.iterations, 100);
+    }
+
+    #[test]
     fn high_precision_orbit_differs_from_low_precision() {
         // Compare orbit computed with different precision levels
         // This demonstrates why we need arbitrary precision at deep zoom
