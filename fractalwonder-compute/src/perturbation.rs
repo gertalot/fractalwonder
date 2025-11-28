@@ -1125,4 +1125,67 @@ mod tests {
         assert_eq!(result_no_bla.escaped, result_bla.escaped);
         assert_eq!(result_no_bla.iterations, result_bla.iterations);
     }
+
+    #[test]
+    fn bla_matches_non_bla_for_many_deltas() {
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 1000);
+
+        let test_deltas = [
+            (0.01, 0.01),
+            (-0.005, 0.002),
+            (0.1, -0.05),
+            (0.0, 0.001),
+            (0.05, 0.05),
+            (-0.02, 0.03),
+        ];
+
+        for (dx, dy) in test_deltas {
+            let delta_c = (FloatExp::from_f64(dx), FloatExp::from_f64(dy));
+            let dc_max = (dx.abs() + dy.abs()).max(0.001);
+            let bla_table = BlaTable::compute(&orbit, dc_max);
+
+            let result_no_bla = compute_pixel_perturbation_floatexp(&orbit, delta_c, 1000, TEST_TAU_SQ);
+            let result_bla = compute_pixel_perturbation_floatexp_bla(
+                &orbit, &bla_table, delta_c, 1000, TEST_TAU_SQ
+            );
+
+            assert_eq!(
+                result_no_bla.escaped, result_bla.escaped,
+                "Escape mismatch for delta ({}, {})", dx, dy
+            );
+            assert_eq!(
+                result_no_bla.iterations, result_bla.iterations,
+                "Iteration mismatch for delta ({}, {}): no_bla={}, bla={}",
+                dx, dy, result_no_bla.iterations, result_bla.iterations
+            );
+        }
+    }
+
+    #[test]
+    fn bla_handles_rebasing() {
+        // Use a reference point where rebasing will be triggered
+        // but with small enough deltas that BLA remains valid
+        let c_ref = (
+            BigFloat::with_precision(-0.5, 128),
+            BigFloat::zero(128),
+        );
+        let orbit = ReferenceOrbit::compute(&c_ref, 500);
+
+        // Small delta values that will stay within BLA validity
+        let delta_c = (FloatExp::from_f64(0.005), FloatExp::from_f64(0.003));
+        let bla_table = BlaTable::compute(&orbit, 0.01);
+
+        let result_no_bla = compute_pixel_perturbation_floatexp(&orbit, delta_c, 500, TEST_TAU_SQ);
+        let result_bla = compute_pixel_perturbation_floatexp_bla(
+            &orbit, &bla_table, delta_c, 500, TEST_TAU_SQ
+        );
+
+        assert_eq!(
+            result_no_bla.escaped, result_bla.escaped,
+            "Escape mismatch: no_bla={}, bla={}, no_bla_iters={}, bla_iters={}",
+            result_no_bla.escaped, result_bla.escaped, result_no_bla.iterations, result_bla.iterations
+        );
+        assert_eq!(result_no_bla.iterations, result_bla.iterations);
+    }
 }
