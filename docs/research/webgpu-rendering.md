@@ -899,6 +899,95 @@ This section defines self-contained, shippable increments that build progressive
 
 > **Prerequisite**: The perturbation theory increments from `perturbation-theory.md` (Sections 13.1-13.4) must be complete before starting GPU work. GPU acceleration optimizes correct math—it cannot fix incorrect math.
 
+### High-Level Architecture
+
+The GPU path works **alongside** the existing web worker system, not replacing it:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            Main Thread                                  │
+│                                                                         │
+│  ┌──────────────┐         ┌──────────────────────────────────────────┐  │
+│  │ Worker Pool  │         │ GPU Renderer (wgpu)                      │  │
+│  │              │         │                                          │  │
+│  │ ┌──────────┐ │         │  Inputs:                                 │  │
+│  │ │ Worker 1 │ │         │  - reference_orbit: array<vec2<f32>>     │  │
+│  │ └──────────┘ │         │  - bla_table: array<BlaEntry>            │  │
+│  │ ┌──────────┐ │         │  - dc_origin, dc_step: FloatExp          │  │
+│  │ │ Worker N │ │         │                                          │  │
+│  │ └──────────┘ │         │  Outputs (per pixel):                    │  │
+│  │              │         │  - iterations: u32                       │  │
+│  │ Handles:     │         │  - escaped: bool                         │  │
+│  │ - Ref orbit  │         │  - glitched: bool                        │  │
+│  │   (BigFloat) │         │                                          │  │
+│  │ - Glitch     │         │  Renders ALL pixels in one dispatch      │  │
+│  │   correction │         │  (thousands of GPU threads in parallel)  │  │
+│  │ - Fallback   │         │                                          │  │
+│  └──────────────┘         └──────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key architectural decisions:**
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| GPU location | Main thread | wgpu is async (won't block), simpler than GPU-in-worker |
+| Precision | FloatExp with f32 mantissa (24-bit) | Start simple, add 2×f32 double-double later if needed |
+| δc computation | On GPU from origin + step | Avoids uploading millions of δc values per frame |
+| Reference orbit | Persistent on GPU, invalidate on change | Most frames reuse same orbit during zoom/pan |
+| Worker role | Reference orbit, glitch correction, fallback | GPU can't do BigFloat; glitch correction needs coordination |
+
+**Render flow:**
+
+1. Worker computes reference orbit (BigFloat) → sends to main thread
+2. Main thread uploads orbit + BLA table to GPU (if changed)
+3. GPU renders **all pixels** in one compute dispatch
+4. GPU returns: iterations, escaped, glitched per pixel
+5. If glitched pixels exist:
+   - Main thread selects new reference point(s)
+   - Workers re-render glitched regions with new references
+6. Colorize and display
+
+**Why GPU renders all pixels, not tiles:**
+
+Unlike CPU workers that process one tile at a time, GPU executes thousands of threads in parallel. A 3840×2160 frame
+(8.3M pixels) dispatches as ~130,000 workgroups of 64 threads each. Batching by tile adds complexity with no
+benefit—GPU handles the entire frame as one unit of work.
+
+### Progressive Rendering
+
+> **Implementation**: See [Increment 2: Progressive Multi-Pass Rendering](#122-increment-2-progressive-multi-pass-rendering) for the detailed implementation specification.
+
+GPU rendering loses the tile-by-tile progress feedback of CPU workers. To restore visual responsiveness, we use
+**multi-pass progressive refinement** where both resolution and iteration count scale together:
+
+| Pass | Resolution | Max Iterations | Pixels (4K) | Relative Work |
+|------|------------|----------------|-------------|---------------|
+| 1 | 1/16 | 1/16 | ~32K | Tiny |
+| 2 | 1/8 | 1/8 | ~130K | Small |
+| 3 | 1/4 | 1/4 | ~520K | Medium |
+| 4 | Full | Full | ~8.3M | Full |
+
+**How it works:**
+
+1. Each pass renders to a smaller buffer at reduced resolution
+2. The GPU stretches the result to fill the screen (GPU texture sampling, essentially free)
+3. User sees a blocky preview almost instantly, which sharpens through each pass
+4. Passes 1-3 combined are <10% of pass 4's work, so "wasted" recomputation is negligible
+
+**Why this works with the architecture:**
+
+- **Reference orbit**: Computed once, reused across all passes (center point unchanged)
+- **BLA table**: Computed once, reused across all passes
+- **δc values**: Computed on GPU from `origin + step × pixel_index`; just change `step` per pass
+- **Iteration scaling + BLA**: With BLA's O(log n) skipping, later passes may be faster than the iteration ratio suggests
+
+**UX characteristics:**
+
+- Shallow zoom: All passes complete so fast the preview is barely visible
+- Deep zoom with high iterations: User sees composition immediately, detail fills in over ~1-2 seconds
+- Familiar aesthetic: Kalles Fraktaler, XaoS, and other explorers use similar blocky→sharp progression
+
 ---
 
 ### 12.1 Increment 1: GPU Infrastructure and Basic f32 Perturbation
@@ -972,7 +1061,66 @@ iteration_counts      ◄──────  results: array<u32>
 
 ---
 
-### 12.2 Increment 2: FloatExp Type in WGSL
+### 12.2 Increment 2: Progressive Multi-Pass Rendering
+
+**Deliverable:** Responsive GPU rendering with blocky→sharp visual refinement.
+
+**What This Builds:**
+
+| Component | Implementation |
+|-----------|----------------|
+| Multi-resolution dispatch | 4 passes at 1/16, 1/8, 1/4, full resolution |
+| Iteration scaling | Max iterations scales proportionally with resolution |
+| Texture upsampling | GPU stretches low-res result to fill screen |
+| Pass orchestration | Async dispatch with intermediate display |
+| Interrupt handling | Cancel remaining passes on navigation |
+
+**Architecture:**
+
+```
+Pass 1: 240×135 @ 1/16 max_iter → stretch to 3840×2160 (instant, ~16ms)
+Pass 2: 480×270 @ 1/8 max_iter  → stretch to 3840×2160 (~50ms)
+Pass 3: 960×540 @ 1/4 max_iter  → stretch to 3840×2160 (~200ms)
+Pass 4: 3840×2160 @ full        → final image (1-10s for deep zoom)
+```
+
+**Key Implementation Details:**
+
+1. **Same reference orbit for all passes**: Computed once before pass 1, reused by all passes
+2. **Same BLA table for all passes** (when Increment 5 is implemented): No recomputation
+3. **δc computed per-pixel on GPU**: `origin + step × pixel_index` where `step` varies per pass
+4. **Cumulative overhead is minimal**: Passes 1-3 combined are <10% of pass 4's computational work
+5. **Single output texture**: Each pass overwrites; no accumulation needed
+
+**Why Self-Contained:**
+- Restores progressive feedback lost when moving from tile-based CPU to single-dispatch GPU
+- Users see composition immediately (~16ms for pass 1 at 4K)
+- Interruptible: navigation cancels pending passes, starts new render sequence
+- All subsequent increments (FloatExp, BLA, etc.) automatically inherit this UX pattern
+- No dependency on precision features—works with basic f32 from Increment 1
+
+**Test Strategy (Mathematically Grounded):**
+
+1. **Visual equivalence**: Pass 4 output matches single-pass GPU output exactly (bit-identical iteration counts)
+2. **Performance targets**:
+   - Pass 1 completes in <50ms for 4K viewport
+   - Pass 1-3 combined complete in <500ms
+3. **Interruption correctness**:
+   - Navigation during pass 2 cancels passes 3-4 cleanly
+   - No GPU resource leaks from canceled dispatches
+   - New render starts from pass 1 with updated viewport
+4. **Memory stability**: No memory growth across 100 interrupt/restart cycles
+
+**Acceptance Criteria:**
+- User sees blocky preview within 50ms of render start
+- Full render (pass 4) matches single-pass GPU output exactly
+- Navigation interrupts in-progress renders without visual artifacts or resource leaks
+- Memory stable across many interrupt/restart cycles
+- Performance overhead of multi-pass vs single-pass is <5%
+
+---
+
+### 12.3 Increment 3: FloatExp Type in WGSL
 
 **Deliverable:** GPU-accelerated rendering up to ~10^300 zoom depth.
 
@@ -1049,7 +1197,7 @@ Key invariants:
 
 ---
 
-### 12.3 Increment 3: Robust GPU Rebasing
+### 12.4 Increment 4: Robust GPU Rebasing
 
 **Deliverable:** Correct rebasing on GPU preventing precision loss at all zoom depths.
 
@@ -1122,7 +1270,7 @@ The pixel orbit continues from `Z_reference(0)`, maintaining mathematical correc
 
 ---
 
-### 12.4 Increment 4: BLA Table on GPU
+### 12.5 Increment 5: BLA Table on GPU
 
 **Deliverable:** BLA acceleration on GPU for O(log n) iteration complexity.
 
@@ -1213,7 +1361,7 @@ The validity radius `r` is precomputed such that if `|δz| < r`, the BLA is accu
 
 ---
 
-### 12.5 Increment 5: FloatExp 2x32 (Double-Double Precision)
+### 12.6 Increment 6: FloatExp 2x32 (Double-Double Precision)
 
 **Deliverable:** ~48-bit precision delta iteration on GPU for extreme accuracy.
 
@@ -1300,7 +1448,7 @@ Consumer GPUs (NVIDIA GeForce, AMD Radeon) have severely limited f64 performance
 
 ---
 
-### 12.6 Increment 6: Reference Orbit Compression
+### 12.7 Increment 7: Reference Orbit Compression
 
 **Deliverable:** Support for extremely high iteration counts (100M+) within GPU memory.
 
@@ -1396,16 +1544,17 @@ fn get_reference_value(compressed: CompressedOrbit, m: u32) -> vec2<f32> {
 
 ---
 
-### 12.7 Summary
+### 12.8 Summary
 
 | Increment | Zoom Depth | Precision | Performance | Key Capability |
 |-----------|------------|-----------|-------------|----------------|
 | 1. Basic f32 GPU | ~10^7 | 24 bits | 50-200x CPU | GPU pipeline established |
-| 2. FloatExp | ~10^300 | 24 bits | 10-50x CPU | Extended range |
-| 3. GPU Rebasing | ~10^300 | 24 bits | 10-50x CPU | Precision loss prevention |
-| 4. BLA on GPU | ~10^300 | 24 bits | 100-1000x CPU at high iter | O(log n) iterations |
-| 5. FloatExp 2x32 | ~10^2000 | ~48 bits | 5-20x CPU | Extreme precision |
-| 6. Orbit Compression | ~10^2000 | ~48 bits | Variable | 100M+ iterations |
+| 2. Progressive Passes | ~10^7 | 24 bits | Same | Responsive blocky→sharp UX |
+| 3. FloatExp | ~10^300 | 24 bits | 10-50x CPU | Extended range |
+| 4. GPU Rebasing | ~10^300 | 24 bits | 10-50x CPU | Precision loss prevention |
+| 5. BLA on GPU | ~10^300 | 24 bits | 100-1000x CPU at high iter | O(log n) iterations |
+| 6. FloatExp 2x32 | ~10^2000 | ~48 bits | 5-20x CPU | Extreme precision |
+| 7. Orbit Compression | ~10^2000 | ~48 bits | Variable | 100M+ iterations |
 
 **Dependency Graph:**
 
@@ -1421,26 +1570,32 @@ perturbation-theory.md Increments 1-4 (CPU correctness)
               ▼
     ┌─────────────────────┐
     │ Increment 2:        │
-    │ FloatExp in WGSL    │
+    │ Progressive Passes  │
     └─────────────────────┘
               │
               ▼
     ┌─────────────────────┐
     │ Increment 3:        │
+    │ FloatExp in WGSL    │
+    └─────────────────────┘
+              │
+              ▼
+    ┌─────────────────────┐
+    │ Increment 4:        │
     │ GPU Rebasing        │
     └─────────────────────┘
               │
               ├──────────────────────┐
               ▼                      ▼
     ┌─────────────────────┐  ┌─────────────────────┐
-    │ Increment 4:        │  │ Increment 5:        │
+    │ Increment 5:        │  │ Increment 6:        │
     │ BLA on GPU          │  │ FloatExp 2x32       │
     └─────────────────────┘  └─────────────────────┘
               │                      │
               └──────────┬───────────┘
                          ▼
               ┌─────────────────────┐
-              │ Increment 6:        │
+              │ Increment 7:        │
               │ Orbit Compression   │
               └─────────────────────┘
 ```
