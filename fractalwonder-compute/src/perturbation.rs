@@ -1145,14 +1145,20 @@ mod tests {
             let dc_max = (dx.abs() + dy.abs()).max(0.001);
             let bla_table = BlaTable::compute(&orbit, dc_max);
 
-            let result_no_bla = compute_pixel_perturbation_floatexp(&orbit, delta_c, 1000, TEST_TAU_SQ);
+            let result_no_bla =
+                compute_pixel_perturbation_floatexp(&orbit, delta_c, 1000, TEST_TAU_SQ);
             let result_bla = compute_pixel_perturbation_floatexp_bla(
-                &orbit, &bla_table, delta_c, 1000, TEST_TAU_SQ
+                &orbit,
+                &bla_table,
+                delta_c,
+                1000,
+                TEST_TAU_SQ,
             );
 
             assert_eq!(
                 result_no_bla.escaped, result_bla.escaped,
-                "Escape mismatch for delta ({}, {})", dx, dy
+                "Escape mismatch for delta ({}, {})",
+                dx, dy
             );
             assert_eq!(
                 result_no_bla.iterations, result_bla.iterations,
@@ -1166,10 +1172,7 @@ mod tests {
     fn bla_handles_rebasing() {
         // Use a reference point where rebasing will be triggered
         // but with small enough deltas that BLA remains valid
-        let c_ref = (
-            BigFloat::with_precision(-0.5, 128),
-            BigFloat::zero(128),
-        );
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
         let orbit = ReferenceOrbit::compute(&c_ref, 500);
 
         // Small delta values that will stay within BLA validity
@@ -1177,14 +1180,17 @@ mod tests {
         let bla_table = BlaTable::compute(&orbit, 0.01);
 
         let result_no_bla = compute_pixel_perturbation_floatexp(&orbit, delta_c, 500, TEST_TAU_SQ);
-        let result_bla = compute_pixel_perturbation_floatexp_bla(
-            &orbit, &bla_table, delta_c, 500, TEST_TAU_SQ
-        );
+        let result_bla =
+            compute_pixel_perturbation_floatexp_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
 
         assert_eq!(
-            result_no_bla.escaped, result_bla.escaped,
+            result_no_bla.escaped,
+            result_bla.escaped,
             "Escape mismatch: no_bla={}, bla={}, no_bla_iters={}, bla_iters={}",
-            result_no_bla.escaped, result_bla.escaped, result_no_bla.iterations, result_bla.iterations
+            result_no_bla.escaped,
+            result_bla.escaped,
+            result_no_bla.iterations,
+            result_bla.iterations
         );
         assert_eq!(result_no_bla.iterations, result_bla.iterations);
     }
