@@ -1011,12 +1011,12 @@ CPU                              GPU
 ReferenceOrbit (f64)  ──────►  reference_orbit: array<vec2<f32>>
 delta_c per pixel     ──────►  delta_c: array<vec2<f32>>
                                ▼
-                      ┌────────────────────────┐
-                      │ Compute Shader         │
+                      ┌─────────────────────────┐
+                      │ Compute Shader          │
                       │ - δz' = 2Z·δz + δz² + δc│
-                      │ - Escape check         │
-                      │ - Rebase check         │
-                      └────────────────────────┘
+                      │ - Escape check          │
+                      │ - Rebase check          │
+                      └─────────────────────────┘
                                │
 iteration_counts      ◄──────  results: array<u32>
 ```
