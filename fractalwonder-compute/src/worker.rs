@@ -1,9 +1,10 @@
 // fractalwonder-compute/src/worker.rs
 use crate::{
-    compute_pixel_perturbation, compute_pixel_perturbation_bigfloat, MandelbrotRenderer,
-    ReferenceOrbit, Renderer, TestImageRenderer,
+    compute_pixel_perturbation, compute_pixel_perturbation_bigfloat,
+    compute_pixel_perturbation_floatexp, MandelbrotRenderer, ReferenceOrbit, Renderer,
+    TestImageRenderer,
 };
-use fractalwonder_core::{BigFloat, ComputeData, MainToWorker, Viewport, WorkerToMain};
+use fractalwonder_core::{BigFloat, ComputeData, FloatExp, MainToWorker, Viewport, WorkerToMain};
 use js_sys::Date;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -319,8 +320,13 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
             let mut data = Vec::with_capacity((tile.width * tile.height) as usize);
 
-            if precision <= bigfloat_threshold_bits {
-                // Fast path: use f64 arithmetic (precision below threshold)
+            // Three-tier dispatch based on precision:
+            // 1. precision <= 64: Use fast f64 path
+            // 2. 64 < precision <= bigfloat_threshold_bits: Use FloatExp (10-20x faster than BigFloat)
+            // 3. precision > bigfloat_threshold_bits: Use BigFloat (highest precision)
+
+            if precision <= 64 {
+                // Fast path: f64 arithmetic
                 let delta_origin = (delta_c_origin.0.to_f64(), delta_c_origin.1.to_f64());
                 let delta_step = (delta_c_step.0.to_f64(), delta_c_step.1.to_f64());
 
@@ -339,8 +345,39 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
                     delta_c_row.1 += delta_step.1;
                 }
+            } else if precision <= bigfloat_threshold_bits {
+                // Medium path: FloatExp arithmetic (extended range, f64 precision)
+                let delta_origin = (
+                    FloatExp::from_bigfloat(&delta_c_origin.0),
+                    FloatExp::from_bigfloat(&delta_c_origin.1),
+                );
+                let delta_step = (
+                    FloatExp::from_bigfloat(&delta_c_step.0),
+                    FloatExp::from_bigfloat(&delta_c_step.1),
+                );
+
+                let mut delta_c_row = delta_origin;
+
+                for _py in 0..tile.height {
+                    let mut delta_c = delta_c_row;
+
+                    for _px in 0..tile.width {
+                        let result = compute_pixel_perturbation_floatexp(
+                            &orbit,
+                            delta_c,
+                            max_iterations,
+                            tau_sq,
+                        );
+                        data.push(ComputeData::Mandelbrot(result));
+
+                        delta_c.0 = delta_c.0.add(&delta_step.0);
+                        delta_c.1 = delta_c.1.add(&delta_step.1);
+                    }
+
+                    delta_c_row.1 = delta_c_row.1.add(&delta_step.1);
+                }
             } else {
-                // Deep zoom path: use BigFloat arithmetic (precision exceeds threshold)
+                // Deep zoom path: BigFloat arithmetic (full precision)
                 let delta_c_row_re = delta_c_origin.0.clone();
                 let mut delta_c_row_im = delta_c_origin.1.clone();
 
