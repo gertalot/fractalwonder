@@ -3,6 +3,7 @@
 //! FloatExp = f64 mantissa + i64 exponent, providing unlimited range
 //! with 53-bit precision. 10-20x faster than BigFloat for delta iteration.
 
+use crate::BigFloat;
 use serde::{Deserialize, Serialize};
 
 /// Extended-range floating point: f64 mantissa + i64 exponent.
@@ -134,6 +135,38 @@ impl FloatExp {
         let re_sq = re.mul(re);
         let im_sq = im.mul(im);
         re_sq.add(&im_sq).to_f64()
+    }
+
+    /// Convert from BigFloat, extracting mantissa and exponent.
+    ///
+    /// For values within f64 range, uses direct conversion.
+    /// For extreme values (|log2| > 1000), extracts exponent from BigFloat's
+    /// internal representation to avoid f64 underflow/overflow.
+    pub fn from_bigfloat(bf: &BigFloat) -> Self {
+        // Try direct f64 conversion first (fast path)
+        let f64_val = bf.to_f64();
+        if f64_val != 0.0 && f64_val.is_finite() {
+            return Self::from_f64(f64_val);
+        }
+
+        // Value is zero, infinity, or underflowed - check log2
+        let log2 = bf.log2_approx();
+        if log2 == f64::NEG_INFINITY {
+            return Self::zero();
+        }
+
+        // Extreme value: reconstruct from log2 approximation
+        // log2(mantissa × 2^exp) = log2(mantissa) + exp
+        // With mantissa in [0.5, 1.0), log2(mantissa) is in [-1, 0)
+        // So exp ≈ log2 rounded
+        let exp = log2.round() as i64;
+
+        // Mantissa approximation: we know the value is positive (from log2)
+        // and the magnitude. We can estimate mantissa as 2^(log2 - exp)
+        let mantissa_log2 = log2 - exp as f64;
+        let mantissa = libm::exp2(mantissa_log2);
+
+        Self { mantissa, exp }.normalize()
     }
 
     /// Normalize mantissa to [0.5, 1.0).
@@ -300,5 +333,36 @@ mod tests {
         let re = FloatExp::from_f64(5.0);
         let im = FloatExp::zero();
         assert!((FloatExp::norm_sq(&re, &im) - 25.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn from_bigfloat_f64_range() {
+        use crate::BigFloat;
+        let bf = BigFloat::with_precision(1.234567, 128);
+        let fe = FloatExp::from_bigfloat(&bf);
+        assert!((fe.to_f64() - 1.234567).abs() < 1e-10);
+    }
+
+    #[test]
+    fn from_bigfloat_extreme_small() {
+        use crate::BigFloat;
+        // 10^-500 is far beyond f64 range
+        let bf = BigFloat::from_string("1e-500", 2048).unwrap();
+        let fe = FloatExp::from_bigfloat(&bf);
+
+        // Value should not be zero (f64 underflow)
+        assert!(!fe.is_zero(), "Should not underflow to zero");
+
+        // Exponent should be approximately -500 * log2(10) ≈ -1661
+        assert!(fe.exp < -1600, "Exponent {} should be < -1600", fe.exp);
+        assert!(fe.exp > -1700, "Exponent {} should be > -1700", fe.exp);
+    }
+
+    #[test]
+    fn from_bigfloat_zero() {
+        use crate::BigFloat;
+        let bf = BigFloat::zero(128);
+        let fe = FloatExp::from_bigfloat(&bf);
+        assert!(fe.is_zero());
     }
 }
