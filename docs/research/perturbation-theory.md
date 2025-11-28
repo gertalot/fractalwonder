@@ -1063,7 +1063,7 @@ Current problems:
 
 This section defines self-contained, shippable increments that build progressively toward a world-class deep zoom renderer. Each increment is complete—no "this will be fixed later" dependencies.
 
-### 13.1 Increment 1: Correct Perturbation Core
+### ✅ 13.1 Increment 1: Correct Perturbation Core
 
 **Deliverable:** Mathematically correct perturbation rendering up to ~10^300 zoom.
 
