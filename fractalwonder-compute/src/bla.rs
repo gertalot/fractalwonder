@@ -1,5 +1,7 @@
 //! Bivariate Linear Approximation for iteration skipping.
 
+use crate::ReferenceOrbit;
+
 /// Single BLA entry: skips `l` iterations.
 /// Applies: δz_new = A·δz + B·δc
 #[derive(Clone, Debug, PartialEq)]
@@ -60,9 +62,53 @@ impl BlaEntry {
     }
 }
 
+/// BLA table for a reference orbit, organized as a binary tree.
+pub struct BlaTable {
+    pub entries: Vec<BlaEntry>,
+    pub level_offsets: Vec<usize>,
+    pub num_levels: usize,
+    dc_max: f64,
+}
+
+impl BlaTable {
+    /// Compute BLA table from a reference orbit.
+    pub fn compute(orbit: &ReferenceOrbit, dc_max: f64) -> Self {
+        let m = orbit.orbit.len();
+        if m == 0 {
+            return Self {
+                entries: vec![],
+                level_offsets: vec![0],
+                num_levels: 0,
+                dc_max,
+            };
+        }
+
+        let num_levels = ((m as f64).log2().ceil() as usize).max(1);
+        let mut entries = Vec::with_capacity(2 * m);
+        let mut level_offsets = Vec::with_capacity(num_levels);
+
+        // Level 0: single-iteration BLAs
+        level_offsets.push(0);
+        for &(z_re, z_im) in &orbit.orbit {
+            entries.push(BlaEntry::from_orbit_point(z_re, z_im));
+        }
+
+        // Higher levels will be added in next task
+
+        Self {
+            entries,
+            level_offsets,
+            num_levels,
+            dc_max,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ReferenceOrbit;
+    use fractalwonder_core::BigFloat;
 
     #[test]
     fn bla_entry_from_orbit_point() {
@@ -87,10 +133,10 @@ mod tests {
     #[test]
     fn bla_entry_merge_two_single_iterations() {
         // Two single-iteration BLAs should merge into one that skips 2
-        let x = BlaEntry::from_orbit_point(1.0, 0.0);  // Z = 1
-        let y = BlaEntry::from_orbit_point(0.5, 0.0);  // Z = 0.5
+        let x = BlaEntry::from_orbit_point(1.0, 0.0); // Z = 1
+        let y = BlaEntry::from_orbit_point(0.5, 0.0); // Z = 0.5
 
-        let dc_max = 0.001;  // Small delta_c
+        let dc_max = 0.001; // Small delta_c
         let merged = BlaEntry::merge(&x, &y, dc_max);
 
         // l should be 2
@@ -104,5 +150,24 @@ mod tests {
         // B_merged = A_y * B_x + B_y = (1,0)*(1,0) + (1,0) = (2,0)
         assert!((merged.b_re - 2.0).abs() < 1e-14);
         assert!((merged.b_im - 0.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn bla_table_level_0_has_one_entry_per_orbit_point() {
+        // Create a simple reference orbit
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 100);
+
+        let dc_max = 0.01;
+        let table = BlaTable::compute(&orbit, dc_max);
+
+        // Level 0 should have orbit.len() entries
+        assert!(table.entries.len() >= orbit.orbit.len());
+
+        // First entry should match first orbit point
+        let z0 = orbit.orbit[0];
+        let expected = BlaEntry::from_orbit_point(z0.0, z0.1);
+        assert_eq!(table.entries[0].l, expected.l);
+        assert!((table.entries[0].a_re - expected.a_re).abs() < 1e-14);
     }
 }
