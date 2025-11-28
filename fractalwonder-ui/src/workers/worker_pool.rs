@@ -1038,6 +1038,7 @@ impl WorkerPool {
                 c_ref: orbit.c_ref,
                 orbit: orbit.orbit.clone(),
                 escaped_at: orbit.escaped_at,
+                dc_max: self.perturbation.dc_max,
             };
 
             for worker_id in 0..self.workers.len() {
