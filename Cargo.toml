@@ -1,5 +1,10 @@
 [workspace]
-members = ["fractalwonder-core", "fractalwonder-compute", "fractalwonder-ui"]
+members = [
+    "fractalwonder-core",
+    "fractalwonder-compute",
+    "fractalwonder-ui",
+    "fractalwonder-gpu",
+]
 resolver = "2"
 
 [workspace.dependencies]

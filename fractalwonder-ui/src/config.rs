@@ -47,6 +47,9 @@ pub struct FractalConfig {
     /// Enable BLA (Bivariate Linear Approximation) for iteration skipping.
     /// Provides significant speedup at deep zoom levels.
     pub bla_enabled: bool,
+    /// Enable GPU acceleration via WebGPU compute shaders.
+    /// Falls back to CPU if GPU unavailable or disabled.
+    pub gpu_enabled: bool,
 }
 
 impl FractalConfig {
@@ -78,6 +81,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         iteration_power: 2.5,
         bigfloat_threshold_bits: 1024,
         bla_enabled: false,
+        gpu_enabled: false,
     },
     FractalConfig {
         id: "mandelbrot",
@@ -92,6 +96,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         iteration_power: 2.7,
         bigfloat_threshold_bits: 1024, // ~10^300 zoom
         bla_enabled: true,
+        gpu_enabled: true,
     },
 ];
 
