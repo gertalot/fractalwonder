@@ -262,8 +262,14 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             dc_max,
             bla_enabled,
         } => {
-            // Conditionally build BLA table
-            let bla_table = if bla_enabled {
+            // BLA only helps when dc_max is very small (deep zoom, FloatExp path).
+            // At f64-compatible zoom levels (dc_max > ~1e-300), the BLA validity
+            // radius shrinks too fast during merging to skip iterations effectively.
+            // Threshold: dc_max < 1e-300 means we're in FloatExp territory.
+            let dc_max_log2 = dc_max.log2();
+            let bla_useful = dc_max_log2 < -900.0; // Roughly 10^-270
+
+            let bla_table = if bla_enabled && bla_useful {
                 let ref_orbit = ReferenceOrbit {
                     c_ref,
                     orbit: orbit.clone(),
@@ -272,14 +278,24 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                 let table = BlaTable::compute(&ref_orbit, dc_max);
                 web_sys::console::log_1(
                     &format!(
-                        "[Worker] Built BLA table: {} entries, {} levels",
+                        "[Worker] Built BLA table: {} entries, {} levels (dc_max={:.2e})",
                         table.entries.len(),
-                        table.num_levels
+                        table.num_levels,
+                        dc_max
                     )
                     .into(),
                 );
                 Some(table)
             } else {
+                if bla_enabled && !bla_useful {
+                    web_sys::console::log_1(
+                        &format!(
+                            "[Worker] Skipping BLA table: dc_max={:.2e} too large (log2={:.0})",
+                            dc_max, dc_max_log2
+                        )
+                        .into(),
+                    );
+                }
                 None
             };
 
@@ -361,6 +377,9 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
             if deltas_fit_f64 {
                 // Fast path: f64 arithmetic
+                // Note: BLA is disabled for f64 path because at zoom levels where f64
+                // deltas are valid, the BLA validity radius (r_sq) becomes too small
+                // after merging, providing no iteration skipping benefit.
                 let delta_origin = (delta_c_origin.0.to_f64(), delta_c_origin.1.to_f64());
                 let delta_step = (delta_c_step.0.to_f64(), delta_c_step.1.to_f64());
 

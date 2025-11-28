@@ -137,8 +137,8 @@ impl BlaTable {
             return None;
         }
 
-        // When |δz|² = 0, all BLAs are valid (linear approx is exact)
-        // Start from highest level for maximum skip
+        // Fast path: when |δz|² = 0, try highest level first (common case at iteration start)
+        // But still verify r_sq > 0 (accounts for dc_max)
         if dz_mag_sq == 0.0 {
             let highest_level = self.num_levels - 1;
             let level_start = self.level_offsets[highest_level];
@@ -153,8 +153,13 @@ impl BlaTable {
             };
 
             if entry_idx < level_end {
-                return Some(&self.entries[entry_idx]);
+                let entry = &self.entries[entry_idx];
+                // Only return if r_sq > 0 (BLA is actually valid for this dc_max)
+                if entry.r_sq > 0.0 {
+                    return Some(entry);
+                }
             }
+            // Fall through to linear search if highest level invalid
         }
 
         // Search from highest level (largest skips) down to level 0
@@ -316,14 +321,33 @@ mod tests {
     fn bla_table_find_valid_returns_some_for_tiny_dz() {
         let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
         let orbit = ReferenceOrbit::compute(&c_ref, 100);
-        let table = BlaTable::compute(&orbit, 0.01);
+        // Use small dc_max so merged entries have r > 0
+        let table = BlaTable::compute(&orbit, 1e-10);
 
-        // With |δz|² = 0 (at start), some BLA should be valid
-        let result = table.find_valid(0, 0.0);
-        assert!(result.is_some(), "Zero |δz| should allow BLA");
+        // At m=0, Z_0 = 0 so r = 0, no BLA valid there.
+        // At m=1 onwards, |Z_m| > 0 so r > 0 and BLA can be valid.
+        // Test at m=1 where the reference orbit has non-zero magnitude.
+        let result = table.find_valid(1, 0.0);
+        assert!(
+            result.is_some(),
+            "Zero |δz| at m=1 should allow BLA (r > 0)"
+        );
 
-        // Should skip multiple iterations
+        // Should skip at least 1 iteration
         let bla = result.unwrap();
         assert!(bla.l >= 1);
+    }
+
+    #[test]
+    fn bla_find_valid_at_origin_returns_none() {
+        // At m=0, the reference orbit starts at Z_0 = 0, so r = ε * 0 = 0.
+        // This means no BLA is valid at m=0, which is correct.
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 100);
+        let table = BlaTable::compute(&orbit, 0.01);
+
+        // Even with |δz|² = 0, BLA at m=0 should be None (r = 0)
+        let result = table.find_valid(0, 0.0);
+        assert!(result.is_none(), "BLA at m=0 should be None since Z_0 = 0");
     }
 }

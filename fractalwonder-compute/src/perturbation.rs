@@ -468,6 +468,102 @@ pub fn compute_pixel_perturbation(
     }
 }
 
+/// f64 perturbation with BLA (Bivariate Linear Approximation) iteration skipping.
+/// Uses the BLA table to skip iterations where linear approximation is valid.
+pub fn compute_pixel_perturbation_bla(
+    orbit: &ReferenceOrbit,
+    bla_table: &BlaTable,
+    delta_c: (f64, f64),
+    max_iterations: u32,
+    tau_sq: f64,
+) -> MandelbrotData {
+    let mut dz = (0.0_f64, 0.0_f64);
+    let mut m: usize = 0;
+    let mut glitched = false;
+
+    let orbit_len = orbit.orbit.len();
+    if orbit_len == 0 {
+        return MandelbrotData {
+            iterations: 0,
+            max_iterations,
+            escaped: false,
+            glitched: true,
+        };
+    }
+
+    let mut n = 0u32;
+
+    while n < max_iterations {
+        let z_m = orbit.orbit[m % orbit_len];
+
+        // z = Z_m + δz
+        let z = (z_m.0 + dz.0, z_m.1 + dz.1);
+
+        let z_mag_sq = z.0 * z.0 + z.1 * z.1;
+        let z_m_mag_sq = z_m.0 * z_m.0 + z_m.1 * z_m.1;
+        let dz_mag_sq = dz.0 * dz.0 + dz.1 * dz.1;
+
+        // 1. Escape check
+        if z_mag_sq > 4.0 {
+            return MandelbrotData {
+                iterations: n,
+                max_iterations,
+                escaped: true,
+                glitched,
+            };
+        }
+
+        // 2. Pauldelbrot glitch detection
+        if z_m_mag_sq > 1e-20 && z_mag_sq < tau_sq * z_m_mag_sq {
+            glitched = true;
+        }
+
+        // 3. Rebase check
+        if z_mag_sq < dz_mag_sq {
+            dz = z;
+            m = 0;
+            n += 1;
+            continue;
+        }
+
+        // 4. Try BLA acceleration
+        if let Some(bla) = bla_table.find_valid(m, dz_mag_sq) {
+            // Apply BLA: δz_new = A·δz + B·δc
+            // Complex multiplication for A·δz and B·δc
+            let new_dz_re =
+                bla.a_re * dz.0 - bla.a_im * dz.1 + bla.b_re * delta_c.0 - bla.b_im * delta_c.1;
+            let new_dz_im =
+                bla.a_im * dz.0 + bla.a_re * dz.1 + bla.b_im * delta_c.0 + bla.b_re * delta_c.1;
+
+            dz = (new_dz_re, new_dz_im);
+            m += bla.l as usize;
+            n += bla.l;
+        } else {
+            // 5. Standard delta iteration (no valid BLA)
+            let two_z_dz = (
+                2.0 * (z_m.0 * dz.0 - z_m.1 * dz.1),
+                2.0 * (z_m.0 * dz.1 + z_m.1 * dz.0),
+            );
+            let dz_sq = (dz.0 * dz.0 - dz.1 * dz.1, 2.0 * dz.0 * dz.1);
+
+            dz = (
+                two_z_dz.0 + dz_sq.0 + delta_c.0,
+                two_z_dz.1 + dz_sq.1 + delta_c.1,
+            );
+
+            m += 1;
+            n += 1;
+        }
+    }
+
+    MandelbrotData {
+        iterations: max_iterations,
+        max_iterations,
+        escaped: false,
+        glitched,
+    }
+}
+
 use crate::bla::BlaTable;
 
 #[cfg(test)]
@@ -1193,5 +1289,119 @@ mod tests {
             result_bla.iterations
         );
         assert_eq!(result_no_bla.iterations, result_bla.iterations);
+    }
+
+    // ========== f64 BLA Tests ==========
+
+    #[test]
+    fn f64_bla_matches_non_bla_for_escaping_point() {
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 500);
+
+        // Small delta that escapes (f64 values)
+        let delta_c = (0.1, 0.1);
+        let dc_max = 0.15;
+        let bla_table = BlaTable::compute(&orbit, dc_max);
+
+        // Non-BLA version
+        let result_no_bla = compute_pixel_perturbation(&orbit, delta_c, 500, TEST_TAU_SQ);
+
+        // BLA version
+        let result_bla =
+            compute_pixel_perturbation_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
+
+        assert_eq!(
+            result_no_bla.escaped, result_bla.escaped,
+            "Escape mismatch: no_bla escaped={}, bla escaped={}",
+            result_no_bla.escaped, result_bla.escaped
+        );
+        assert_eq!(
+            result_no_bla.iterations, result_bla.iterations,
+            "Iteration mismatch: no_bla={}, bla={}",
+            result_no_bla.iterations, result_bla.iterations
+        );
+    }
+
+    #[test]
+    fn f64_bla_matches_non_bla_for_in_set_point() {
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 500);
+
+        // Small delta within main cardioid (f64 values)
+        let delta_c = (0.001, 0.001);
+        let dc_max = 0.01;
+        let bla_table = BlaTable::compute(&orbit, dc_max);
+
+        let result_no_bla = compute_pixel_perturbation(&orbit, delta_c, 500, TEST_TAU_SQ);
+        let result_bla =
+            compute_pixel_perturbation_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
+
+        assert_eq!(
+            result_no_bla.escaped, result_bla.escaped,
+            "Escape mismatch: no_bla escaped={}, bla escaped={}",
+            result_no_bla.escaped, result_bla.escaped
+        );
+        assert_eq!(
+            result_no_bla.iterations, result_bla.iterations,
+            "Iteration mismatch: no_bla={}, bla={}",
+            result_no_bla.iterations, result_bla.iterations
+        );
+    }
+
+    #[test]
+    fn f64_bla_matches_non_bla_for_many_deltas() {
+        // Test with reference at center of main cardioid
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 1000);
+
+        // Use dc_max that covers typical 1x zoom viewport (width ~4)
+        let dc_max = 3.0;
+        let bla_table = BlaTable::compute(&orbit, dc_max);
+
+        // Test grid of deltas covering typical 1x zoom range
+        let deltas = [
+            (0.0, 0.0),   // Reference point itself
+            (1.0, 0.0),   // Point at (0.5, 0) - escapes
+            (-1.0, 0.0),  // Point at (-1.5, 0) - escapes quickly
+            (0.0, 1.0),   // Point at (-0.5, 1) - escapes
+            (2.0, 0.0),   // Point at (1.5, 0) - escapes immediately
+            (0.5, 0.5),   // Point at (0, 0.5) - escapes
+            (-0.25, 0.0), // Point at (-0.75, 0) - boundary region
+            (0.1, 0.1),   // Small offset - likely escapes
+            (-0.1, -0.1), // Small offset other direction
+        ];
+
+        let mut mismatches = Vec::new();
+
+        for &delta_c in &deltas {
+            let result_no_bla = compute_pixel_perturbation(&orbit, delta_c, 1000, TEST_TAU_SQ);
+            let result_bla =
+                compute_pixel_perturbation_bla(&orbit, &bla_table, delta_c, 1000, TEST_TAU_SQ);
+
+            if result_no_bla.escaped != result_bla.escaped
+                || result_no_bla.iterations != result_bla.iterations
+            {
+                mismatches.push((
+                    delta_c,
+                    result_no_bla.escaped,
+                    result_no_bla.iterations,
+                    result_bla.escaped,
+                    result_bla.iterations,
+                ));
+            }
+        }
+
+        assert!(
+            mismatches.is_empty(),
+            "f64 BLA vs non-BLA mismatches:\n{}",
+            mismatches
+                .iter()
+                .map(|(d, e1, i1, e2, i2)| format!(
+                    "  delta=({:.2},{:.2}): no_bla(escaped={}, iter={}) vs bla(escaped={}, iter={})",
+                    d.0, d.1, e1, i1, e2, i2
+                ))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
     }
 }
