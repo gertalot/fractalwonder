@@ -695,6 +695,45 @@ mod tests {
     }
 
     #[test]
+    fn bigfloat_matches_f64_for_shallow_zoom() {
+        // At shallow zoom where f64 suffices, both versions should produce identical results
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 500);
+
+        // Test multiple delta values within f64 range
+        let test_deltas = [
+            (0.01, 0.01),
+            (-0.005, 0.002),
+            (0.1, -0.05),
+            (0.0, 0.001),
+        ];
+
+        for (dx, dy) in test_deltas {
+            // f64 version
+            let f64_result = compute_pixel_perturbation(&orbit, (dx, dy), 500, TEST_TAU_SQ);
+
+            // BigFloat version
+            let bigfloat_delta = (
+                BigFloat::with_precision(dx, 128),
+                BigFloat::with_precision(dy, 128),
+            );
+            let bigfloat_result =
+                compute_pixel_perturbation_bigfloat(&orbit, &bigfloat_delta, 500, TEST_TAU_SQ);
+
+            assert_eq!(
+                f64_result.escaped, bigfloat_result.escaped,
+                "Escape status should match for delta ({}, {})",
+                dx, dy
+            );
+            assert_eq!(
+                f64_result.iterations, bigfloat_result.iterations,
+                "Iteration count should match for delta ({}, {})",
+                dx, dy
+            );
+        }
+    }
+
+    #[test]
     fn high_precision_orbit_differs_from_low_precision() {
         // Compare orbit computed with different precision levels
         // This demonstrates why we need arbitrary precision at deep zoom
