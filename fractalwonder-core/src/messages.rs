@@ -35,6 +35,8 @@ pub enum MainToWorker {
         c_ref: (f64, f64),
         orbit: Vec<(f64, f64)>,
         escaped_at: Option<u32>,
+        /// Maximum |δc| for any pixel in viewport (for BLA table construction)
+        dc_max: f64,
     },
 
     /// Render a tile using perturbation with extended precision deltas.
@@ -201,6 +203,7 @@ mod tests {
             c_ref: (-0.5, 0.0),
             orbit: vec![(0.0, 0.0), (-0.5, 0.0), (-0.25, 0.0)],
             escaped_at: None,
+            dc_max: 0.01,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: MainToWorker = serde_json::from_str(&json).unwrap();
@@ -294,6 +297,25 @@ mod tests {
         let parsed: WorkerToMain = serde_json::from_str(&json).unwrap();
         match parsed {
             WorkerToMain::OrbitStored { orbit_id } => assert_eq!(orbit_id, 42),
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn store_reference_orbit_with_dc_max_roundtrip() {
+        let msg = MainToWorker::StoreReferenceOrbit {
+            orbit_id: 1,
+            c_ref: (-0.5, 0.0),
+            orbit: vec![(0.0, 0.0), (-0.5, 0.0)],
+            escaped_at: None,
+            dc_max: 0.001,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: MainToWorker = serde_json::from_str(&json).unwrap();
+        match parsed {
+            MainToWorker::StoreReferenceOrbit { dc_max, .. } => {
+                assert!((dc_max - 0.001).abs() < 1e-12);
+            }
             _ => panic!("Wrong variant"),
         }
     }
