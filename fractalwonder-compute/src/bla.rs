@@ -28,6 +28,36 @@ impl BlaEntry {
             r_sq: r * r,
         }
     }
+
+    /// Merge two BLAs: x (first) then y (second).
+    /// Result skips l_x + l_y iterations.
+    pub fn merge(x: &BlaEntry, y: &BlaEntry, dc_max: f64) -> BlaEntry {
+        // A_merged = A_y * A_x (complex multiplication)
+        let a_re = y.a_re * x.a_re - y.a_im * x.a_im;
+        let a_im = y.a_re * x.a_im + y.a_im * x.a_re;
+
+        // B_merged = A_y * B_x + B_y
+        let b_re = (y.a_re * x.b_re - y.a_im * x.b_im) + y.b_re;
+        let b_im = (y.a_re * x.b_im + y.a_im * x.b_re) + y.b_im;
+
+        // r_merged = min(r_x, max(0, (r_y - |B_x|·dc_max) / |A_x|))
+        let r_x = x.r_sq.sqrt();
+        let r_y = y.r_sq.sqrt();
+        let b_x_mag = (x.b_re * x.b_re + x.b_im * x.b_im).sqrt();
+        let a_x_mag = (x.a_re * x.a_re + x.a_im * x.a_im).sqrt();
+
+        let r_adjusted = (r_y - b_x_mag * dc_max).max(0.0) / a_x_mag.max(1e-300);
+        let r = r_x.min(r_adjusted);
+
+        BlaEntry {
+            a_re,
+            a_im,
+            b_re,
+            b_im,
+            l: x.l + y.l,
+            r_sq: r * r,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -52,5 +82,27 @@ mod tests {
         let epsilon = 2.0_f64.powi(-53);
         let expected_r_sq = (epsilon * z_mag).powi(2);
         assert!((entry.r_sq - expected_r_sq).abs() < 1e-40);
+    }
+
+    #[test]
+    fn bla_entry_merge_two_single_iterations() {
+        // Two single-iteration BLAs should merge into one that skips 2
+        let x = BlaEntry::from_orbit_point(1.0, 0.0);  // Z = 1
+        let y = BlaEntry::from_orbit_point(0.5, 0.0);  // Z = 0.5
+
+        let dc_max = 0.001;  // Small delta_c
+        let merged = BlaEntry::merge(&x, &y, dc_max);
+
+        // l should be 2
+        assert_eq!(merged.l, 2);
+
+        // A_merged = A_y * A_x = (1.0, 0) * (2.0, 0) = (2.0, 0)
+        // (complex multiply: (1)(2) - (0)(0) = 2, (1)(0) + (0)(2) = 0)
+        assert!((merged.a_re - 2.0).abs() < 1e-14);
+        assert!((merged.a_im - 0.0).abs() < 1e-14);
+
+        // B_merged = A_y * B_x + B_y = (1,0)*(1,0) + (1,0) = (2,0)
+        assert!((merged.b_re - 2.0).abs() < 1e-14);
+        assert!((merged.b_im - 0.0).abs() < 1e-14);
     }
 }
