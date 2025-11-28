@@ -7,6 +7,7 @@ edition = "2021"
 dashu = { workspace = true }
 dashu-base = { workspace = true }
 dashu-float = { workspace = true }
+libm = "0.2.15"
 serde = { workspace = true }
 serde_json = { workspace = true }
 
