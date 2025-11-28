@@ -62,6 +62,7 @@ impl FloatExp {
     }
 
     /// Multiply two FloatExp values.
+    #[inline]
     pub fn mul(&self, other: &Self) -> Self {
         if self.mantissa == 0.0 || other.mantissa == 0.0 {
             return Self::zero();
@@ -74,6 +75,7 @@ impl FloatExp {
     }
 
     /// Multiply by f64 scalar (for 2·Z·δz where Z is f64).
+    #[inline]
     pub fn mul_f64(&self, scalar: f64) -> Self {
         if self.mantissa == 0.0 || scalar == 0.0 {
             return Self::zero();
@@ -86,6 +88,7 @@ impl FloatExp {
     }
 
     /// Add two FloatExp values.
+    #[inline]
     pub fn add(&self, other: &Self) -> Self {
         if self.mantissa == 0.0 {
             return *other;
@@ -104,12 +107,13 @@ impl FloatExp {
             return *other;
         }
 
-        // Align to larger exponent, add mantissas
+        // Align to larger exponent using ldexp (faster than exp2)
+        // exp_diff is guaranteed to be in [-53, 53], so i32 cast is safe
         let (mantissa, exp) = if exp_diff >= 0 {
-            let scaled_other = other.mantissa * libm::exp2(-exp_diff as f64);
+            let scaled_other = libm::ldexp(other.mantissa, -(exp_diff as i32));
             (self.mantissa + scaled_other, self.exp)
         } else {
-            let scaled_self = self.mantissa * libm::exp2(exp_diff as f64);
+            let scaled_self = libm::ldexp(self.mantissa, exp_diff as i32);
             (scaled_self + other.mantissa, other.exp)
         };
 
@@ -117,11 +121,13 @@ impl FloatExp {
     }
 
     /// Subtract other from self.
+    #[inline]
     pub fn sub(&self, other: &Self) -> Self {
         self.add(&other.neg())
     }
 
     /// Negate value.
+    #[inline]
     pub fn neg(&self) -> Self {
         Self {
             mantissa: -self.mantissa,
@@ -131,6 +137,7 @@ impl FloatExp {
 
     /// Squared magnitude of complex number (re, im).
     /// Returns f64 since result is bounded for escape testing (|z|² compared to 4).
+    #[inline]
     pub fn norm_sq(re: &FloatExp, im: &FloatExp) -> f64 {
         let re_sq = re.mul(re);
         let im_sq = im.mul(im);
@@ -170,10 +177,18 @@ impl FloatExp {
     }
 
     /// Normalize mantissa to [0.5, 1.0).
+    /// Optimized: only calls frexp when mantissa is actually out of range.
+    #[inline]
     fn normalize(self) -> Self {
         if self.mantissa == 0.0 {
             return Self::zero();
         }
+        let abs_m = self.mantissa.abs();
+        // Fast path: mantissa already in [0.5, 1.0)
+        if (0.5..1.0).contains(&abs_m) {
+            return self;
+        }
+        // Slow path: need to renormalize
         let (m, e) = libm::frexp(self.mantissa);
         Self {
             mantissa: m,

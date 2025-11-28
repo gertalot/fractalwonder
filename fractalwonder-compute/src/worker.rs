@@ -318,14 +318,19 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             let start_time = Date::now();
             let precision = delta_c_origin.0.precision_bits();
 
+            // Check if deltas fit in f64 range (roughly 10^-300 to 10^300)
+            // log2 of ~10^-300 is about -1000, so we use -900 as safe threshold
+            let delta_log2 = delta_c_origin.0.log2_approx().max(delta_c_origin.1.log2_approx());
+            let deltas_fit_f64 = delta_log2 > -900.0 && delta_log2 < 900.0;
+
             let mut data = Vec::with_capacity((tile.width * tile.height) as usize);
 
-            // Three-tier dispatch based on precision:
-            // 1. precision <= 64: Use fast f64 path
-            // 2. 64 < precision <= bigfloat_threshold_bits: Use FloatExp (10-20x faster than BigFloat)
-            // 3. precision > bigfloat_threshold_bits: Use BigFloat (highest precision)
+            // Three-tier dispatch based on delta magnitude (not precision):
+            // 1. Deltas fit in f64 range: Use fast f64 path (most common case)
+            // 2. Deltas exceed f64 but precision <= threshold: Use FloatExp
+            // 3. Precision > threshold: Use BigFloat (highest precision)
 
-            if precision <= 64 {
+            if deltas_fit_f64 {
                 // Fast path: f64 arithmetic
                 let delta_origin = (delta_c_origin.0.to_f64(), delta_c_origin.1.to_f64());
                 let delta_step = (delta_c_step.0.to_f64(), delta_c_step.1.to_f64());
@@ -345,8 +350,8 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
                     delta_c_row.1 += delta_step.1;
                 }
-            } else if precision <= bigfloat_threshold_bits {
-                // Medium path: FloatExp arithmetic (extended range, f64 precision)
+            } else if delta_log2 > -1000.0 || precision <= bigfloat_threshold_bits {
+                // Medium path: FloatExp - deltas exceed f64 range but don't need full BigFloat precision
                 let delta_origin = (
                     FloatExp::from_bigfloat(&delta_c_origin.0),
                     FloatExp::from_bigfloat(&delta_c_origin.1),
