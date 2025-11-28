@@ -47,6 +47,8 @@ struct PerturbationState {
     pending_orbit_request: Option<PendingOrbitRequest>,
     /// Glitch detection threshold squared (τ²)
     tau_sq: f64,
+    /// Maximum |δc| for BLA table construction
+    dc_max: f64,
 }
 
 impl Default for PerturbationState {
@@ -59,6 +61,7 @@ impl Default for PerturbationState {
             delta_step: (BigFloat::zero(64), BigFloat::zero(64)),
             pending_orbit_request: None,
             tau_sq: 1e-6,
+            dc_max: 0.0,
         }
     }
 }
@@ -109,6 +112,17 @@ fn performance_now() -> f64 {
         .and_then(|w| w.performance())
         .map(|p| p.now())
         .unwrap_or(0.0)
+}
+
+/// Calculate maximum |δc| for any pixel in the viewport.
+/// This is the distance from viewport center to the farthest corner.
+fn calculate_dc_max(viewport: &Viewport, _canvas_size: (u32, u32)) -> f64 {
+    // Half-width and half-height in fractal coordinates
+    let half_width = viewport.width.to_f64() / 2.0;
+    let half_height = viewport.height.to_f64() / 2.0;
+
+    // Euclidean distance to corner
+    (half_width * half_width + half_height * half_height).sqrt()
 }
 
 fn create_workers(count: usize, pool: Rc<RefCell<WorkerPool>>) -> Result<Vec<Worker>, JsValue> {
@@ -396,6 +410,7 @@ impl WorkerPool {
                             c_ref,
                             orbit: orbit.clone(),
                             escaped_at,
+                            dc_max: self.perturbation.dc_max,
                         },
                     );
                 }
@@ -669,6 +684,8 @@ impl WorkerPool {
         self.perturbation.max_iterations = max_iterations;
         self.perturbation.delta_step = delta_step;
         self.perturbation.tau_sq = config.map(|c| c.tau_sq).unwrap_or(1e-6);
+        // Calculate dc_max for BLA table construction
+        self.perturbation.dc_max = calculate_dc_max(&viewport, canvas_size);
 
         web_sys::console::log_1(
             &format!(
