@@ -940,4 +940,46 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn floatexp_matches_bigfloat_at_deep_zoom() {
+        let precision = 2048;
+
+        // Reference at origin
+        let c_ref = (BigFloat::zero(precision), BigFloat::zero(precision));
+        let orbit = ReferenceOrbit::compute(&c_ref, 500);
+
+        // Delta at 10^-500 scale
+        let delta_bf = (
+            BigFloat::from_string("1e-500", precision).unwrap(),
+            BigFloat::from_string("2e-500", precision).unwrap(),
+        );
+
+        // Convert to FloatExp
+        let delta_fe = (
+            FloatExp::from_bigfloat(&delta_bf.0),
+            FloatExp::from_bigfloat(&delta_bf.1),
+        );
+
+        // BigFloat version (reference implementation)
+        let bf_result = compute_pixel_perturbation_bigfloat(
+            &orbit,
+            &delta_bf.0,
+            &delta_bf.1,
+            500,
+            TEST_TAU_SQ,
+        );
+
+        // FloatExp version (optimized)
+        let fe_result = compute_pixel_perturbation_floatexp(&orbit, delta_fe, 500, TEST_TAU_SQ);
+
+        assert_eq!(
+            bf_result.escaped, fe_result.escaped,
+            "Escape status should match at deep zoom"
+        );
+        assert_eq!(
+            bf_result.iterations, fe_result.iterations,
+            "Iteration count should match at deep zoom"
+        );
+    }
 }
