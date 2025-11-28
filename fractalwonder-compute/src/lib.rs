@@ -7,7 +7,8 @@ use fractalwonder_core::Viewport;
 
 pub use mandelbrot::MandelbrotRenderer;
 pub use perturbation::{
-    compute_pixel_perturbation, compute_pixel_perturbation_bigfloat, ReferenceOrbit,
+    compute_pixel_perturbation, compute_pixel_perturbation_bigfloat,
+    compute_pixel_perturbation_floatexp, ReferenceOrbit,
 };
 pub use test_image::TestImageRenderer;
 
