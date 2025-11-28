@@ -67,7 +67,7 @@ pub struct BlaTable {
     pub entries: Vec<BlaEntry>,
     pub level_offsets: Vec<usize>,
     pub num_levels: usize,
-    #[allow(dead_code)] // Used in find_valid (Task 5)
+    #[allow(dead_code)] // Will be used in validity checks in future optimizations
     dc_max: f64,
 }
 
@@ -128,6 +128,64 @@ impl BlaTable {
             num_levels: num_levels_actual,
             dc_max,
         }
+    }
+
+    /// Find the largest valid BLA at reference index `m` for current |δz|².
+    /// Returns None if no BLA is valid (fallback to standard iteration).
+    pub fn find_valid(&self, m: usize, dz_mag_sq: f64) -> Option<&BlaEntry> {
+        if self.entries.is_empty() {
+            return None;
+        }
+
+        // When |δz|² = 0, all BLAs are valid (linear approx is exact)
+        // Start from highest level for maximum skip
+        if dz_mag_sq == 0.0 {
+            let highest_level = self.num_levels - 1;
+            let level_start = self.level_offsets[highest_level];
+            let skip_size = 1usize << highest_level;
+            let idx_in_level = m / skip_size;
+            let entry_idx = level_start + idx_in_level;
+
+            let level_end = if highest_level + 1 < self.level_offsets.len() {
+                self.level_offsets[highest_level + 1]
+            } else {
+                self.entries.len()
+            };
+
+            if entry_idx < level_end {
+                return Some(&self.entries[entry_idx]);
+            }
+        }
+
+        // Search from highest level (largest skips) down to level 0
+        for level in (0..self.num_levels).rev() {
+            let level_start = self.level_offsets[level];
+            let skip_size = 1usize << level; // 2^level iterations per entry at this level
+
+            // Index within this level for reference index m
+            let idx_in_level = m / skip_size;
+            let entry_idx = level_start + idx_in_level;
+
+            // Check bounds
+            let level_end = if level + 1 < self.level_offsets.len() {
+                self.level_offsets[level + 1]
+            } else {
+                self.entries.len()
+            };
+
+            if entry_idx >= level_end {
+                continue;
+            }
+
+            let entry = &self.entries[entry_idx];
+
+            // Check validity: |δz|² < r²
+            if dz_mag_sq < entry.r_sq {
+                return Some(entry);
+            }
+        }
+
+        None
     }
 }
 
@@ -241,5 +299,31 @@ mod tests {
             let level2_start = table.level_offsets[2];
             assert_eq!(table.entries[level2_start].l, 4);
         }
+    }
+
+    #[test]
+    fn bla_table_find_valid_returns_none_for_large_dz() {
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 100);
+        let table = BlaTable::compute(&orbit, 0.01);
+
+        // With |δz|² = 1.0 (huge), no BLA should be valid
+        let result = table.find_valid(0, 1.0);
+        assert!(result.is_none(), "Large |δz| should invalidate all BLAs");
+    }
+
+    #[test]
+    fn bla_table_find_valid_returns_some_for_tiny_dz() {
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 100);
+        let table = BlaTable::compute(&orbit, 0.01);
+
+        // With |δz|² = 0 (at start), some BLA should be valid
+        let result = table.find_valid(0, 0.0);
+        assert!(result.is_some(), "Zero |δz| should allow BLA");
+
+        // Should skip multiple iterations
+        let bla = result.unwrap();
+        assert!(bla.l >= 1);
     }
 }
