@@ -128,6 +128,14 @@ impl FloatExp {
         }
     }
 
+    /// Squared magnitude of complex number (re, im).
+    /// Returns f64 since result is bounded for escape testing (|z|² compared to 4).
+    pub fn norm_sq(re: &FloatExp, im: &FloatExp) -> f64 {
+        let re_sq = re.mul(re);
+        let im_sq = im.mul(im);
+        re_sq.add(&im_sq).to_f64()
+    }
+
     /// Normalize mantissa to [0.5, 1.0).
     fn normalize(self) -> Self {
         if self.mantissa == 0.0 {
@@ -270,5 +278,27 @@ mod tests {
     fn neg_basic() {
         let a = FloatExp::from_f64(5.0);
         assert!((a.neg().to_f64() - (-5.0)).abs() < 1e-14);
+    }
+
+    #[test]
+    fn norm_sq_basic() {
+        // |3 + 4i|² = 9 + 16 = 25
+        let re = FloatExp::from_f64(3.0);
+        let im = FloatExp::from_f64(4.0);
+        let norm = FloatExp::norm_sq(&re, &im);
+        assert!((norm - 25.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn norm_sq_zero() {
+        let z = FloatExp::zero();
+        assert_eq!(FloatExp::norm_sq(&z, &z), 0.0);
+    }
+
+    #[test]
+    fn norm_sq_pure_real() {
+        let re = FloatExp::from_f64(5.0);
+        let im = FloatExp::zero();
+        assert!((FloatExp::norm_sq(&re, &im) - 25.0).abs() < 1e-14);
     }
 }
