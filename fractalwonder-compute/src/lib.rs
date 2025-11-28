@@ -6,7 +6,7 @@ pub mod worker;
 use fractalwonder_core::Viewport;
 
 pub use mandelbrot::MandelbrotRenderer;
-pub use perturbation::{compute_pixel_perturbation, ReferenceOrbit};
+pub use perturbation::{compute_pixel_perturbation, compute_pixel_perturbation_bigfloat, ReferenceOrbit};
 pub use test_image::TestImageRenderer;
 
 /// Renders a viewport to a grid of computed data.

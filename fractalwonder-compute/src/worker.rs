@@ -1,6 +1,7 @@
 // fractalwonder-compute/src/worker.rs
 use crate::{
-    compute_pixel_perturbation, MandelbrotRenderer, ReferenceOrbit, Renderer, TestImageRenderer,
+    compute_pixel_perturbation_bigfloat, MandelbrotRenderer, ReferenceOrbit, Renderer,
+    TestImageRenderer,
 };
 use fractalwonder_core::{BigFloat, ComputeData, MainToWorker, Viewport, WorkerToMain};
 use js_sys::Date;
@@ -272,11 +273,33 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             render_id,
             tile,
             orbit_id,
-            delta_c_origin,
-            delta_c_step,
+            delta_c_origin_json,
+            delta_c_step_json,
             max_iterations,
             tau_sq,
         } => {
+            // Parse BigFloat deltas from JSON
+            let delta_c_origin: (BigFloat, BigFloat) = match serde_json::from_str(&delta_c_origin_json)
+            {
+                Ok(d) => d,
+                Err(e) => {
+                    post_message(&WorkerToMain::Error {
+                        message: format!("Failed to parse delta_c_origin: {}", e),
+                    });
+                    return;
+                }
+            };
+
+            let delta_c_step: (BigFloat, BigFloat) = match serde_json::from_str(&delta_c_step_json) {
+                Ok(d) => d,
+                Err(e) => {
+                    post_message(&WorkerToMain::Error {
+                        message: format!("Failed to parse delta_c_step: {}", e),
+                    });
+                    return;
+                }
+            };
+
             // Get cached orbit
             let cached = match state.orbit_cache.get(&orbit_id) {
                 Some(c) => c,
@@ -291,22 +314,25 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             let orbit = cached.to_reference_orbit();
             let start_time = Date::now();
 
-            // Compute all pixels in tile
+            // Compute all pixels in tile using BigFloat deltas
             let mut data = Vec::with_capacity((tile.width * tile.height) as usize);
-            let mut delta_c_row = delta_c_origin;
+            let delta_c_row_re = delta_c_origin.0.clone();
+            let mut delta_c_row_im = delta_c_origin.1.clone();
 
             for _py in 0..tile.height {
-                let mut delta_c = delta_c_row;
+                let mut delta_c_re = delta_c_row_re.clone();
+                let delta_c_im = delta_c_row_im.clone();
 
                 for _px in 0..tile.width {
+                    let delta_c = (delta_c_re.clone(), delta_c_im.clone());
                     let result =
-                        compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq);
+                        compute_pixel_perturbation_bigfloat(&orbit, &delta_c, max_iterations, tau_sq);
                     data.push(ComputeData::Mandelbrot(result));
 
-                    delta_c.0 += delta_c_step.0;
+                    delta_c_re = delta_c_re.add(&delta_c_step.0);
                 }
 
-                delta_c_row.1 += delta_c_step.1;
+                delta_c_row_im = delta_c_row_im.add(&delta_c_step.1);
             }
 
             let compute_time_ms = Date::now() - start_time;
