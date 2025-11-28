@@ -67,6 +67,7 @@ pub struct BlaTable {
     pub entries: Vec<BlaEntry>,
     pub level_offsets: Vec<usize>,
     pub num_levels: usize,
+    #[allow(dead_code)] // Used in find_valid (Task 5)
     dc_max: f64,
 }
 
@@ -83,7 +84,7 @@ impl BlaTable {
             };
         }
 
-        let num_levels = ((m as f64).log2().ceil() as usize).max(1);
+        let num_levels = ((m as f64).log2().ceil() as usize).max(1) + 1;
         let mut entries = Vec::with_capacity(2 * m);
         let mut level_offsets = Vec::with_capacity(num_levels);
 
@@ -93,12 +94,38 @@ impl BlaTable {
             entries.push(BlaEntry::from_orbit_point(z_re, z_im));
         }
 
-        // Higher levels will be added in next task
+        // Build higher levels by merging pairs
+        let mut prev_level_size = m;
+        for _level in 1..num_levels {
+            let prev_offset = *level_offsets.last().unwrap();
+            level_offsets.push(entries.len());
 
+            let this_level_size = prev_level_size.div_ceil(2);
+
+            for i in 0..this_level_size {
+                let x_idx = prev_offset + 2 * i;
+                let y_idx = prev_offset + 2 * i + 1;
+
+                if y_idx >= entries.len() {
+                    // Odd number: copy last entry unchanged
+                    entries.push(entries[x_idx].clone());
+                } else {
+                    let merged = BlaEntry::merge(&entries[x_idx], &entries[y_idx], dc_max);
+                    entries.push(merged);
+                }
+            }
+
+            prev_level_size = this_level_size;
+            if this_level_size <= 1 {
+                break;
+            }
+        }
+
+        let num_levels_actual = level_offsets.len();
         Self {
             entries,
             level_offsets,
-            num_levels,
+            num_levels: num_levels_actual,
             dc_max,
         }
     }
@@ -169,5 +196,50 @@ mod tests {
         let expected = BlaEntry::from_orbit_point(z0.0, z0.1);
         assert_eq!(table.entries[0].l, expected.l);
         assert!((table.entries[0].a_re - expected.a_re).abs() < 1e-14);
+    }
+
+    #[test]
+    fn bla_table_has_multiple_levels() {
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 16);
+
+        let table = BlaTable::compute(&orbit, 0.01);
+
+        // 16 entries -> should have ~log2(16)+1 = 5 levels
+        // Level 0: 16 entries (skip 1)
+        // Level 1: 8 entries (skip 2)
+        // Level 2: 4 entries (skip 4)
+        // Level 3: 2 entries (skip 8)
+        // Level 4: 1 entry (skip 16)
+        assert!(
+            table.num_levels >= 4,
+            "Expected at least 4 levels, got {}",
+            table.num_levels
+        );
+        assert!(table.level_offsets.len() >= 4);
+
+        // Total entries should be ~2M
+        assert!(table.entries.len() >= 16 + 8 + 4 + 2);
+    }
+
+    #[test]
+    fn bla_table_higher_level_entries_skip_more() {
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 16);
+
+        let table = BlaTable::compute(&orbit, 0.01);
+
+        // Level 0 entries skip 1
+        assert_eq!(table.entries[0].l, 1);
+
+        // Level 1 entries skip 2
+        let level1_start = table.level_offsets[1];
+        assert_eq!(table.entries[level1_start].l, 2);
+
+        // Level 2 entries skip 4
+        if table.level_offsets.len() > 2 {
+            let level2_start = table.level_offsets[2];
+            assert_eq!(table.entries[level2_start].l, 4);
+        }
     }
 }
