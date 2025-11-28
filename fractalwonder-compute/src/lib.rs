@@ -1,3 +1,4 @@
+mod bla;
 mod mandelbrot;
 mod perturbation;
 mod test_image;
@@ -5,6 +6,8 @@ pub mod worker;
 
 use fractalwonder_core::Viewport;
 
+pub use bla::BlaEntry;
+// pub use bla::BlaTable;  // Will be added in later task
 pub use mandelbrot::MandelbrotRenderer;
 pub use perturbation::{
     compute_pixel_perturbation, compute_pixel_perturbation_bigfloat,
