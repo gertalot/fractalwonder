@@ -59,6 +59,42 @@ impl FloatExp {
     pub fn is_zero(&self) -> bool {
         self.mantissa == 0.0
     }
+
+    /// Multiply two FloatExp values.
+    pub fn mul(&self, other: &Self) -> Self {
+        if self.mantissa == 0.0 || other.mantissa == 0.0 {
+            return Self::zero();
+        }
+        Self {
+            mantissa: self.mantissa * other.mantissa,
+            exp: self.exp + other.exp,
+        }
+        .normalize()
+    }
+
+    /// Multiply by f64 scalar (for 2·Z·δz where Z is f64).
+    pub fn mul_f64(&self, scalar: f64) -> Self {
+        if self.mantissa == 0.0 || scalar == 0.0 {
+            return Self::zero();
+        }
+        Self {
+            mantissa: self.mantissa * scalar,
+            exp: self.exp,
+        }
+        .normalize()
+    }
+
+    /// Normalize mantissa to [0.5, 1.0).
+    fn normalize(self) -> Self {
+        if self.mantissa == 0.0 {
+            return Self::zero();
+        }
+        let (m, e) = libm::frexp(self.mantissa);
+        Self {
+            mantissa: m,
+            exp: self.exp + e as i64,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -109,5 +145,37 @@ mod tests {
                 v
             );
         }
+    }
+
+    #[test]
+    fn mul_basic() {
+        let a = FloatExp::from_f64(2.0);
+        let b = FloatExp::from_f64(3.0);
+        let c = a.mul(&b);
+        assert!((c.to_f64() - 6.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn mul_by_zero() {
+        let a = FloatExp::from_f64(5.0);
+        let z = FloatExp::zero();
+        assert!(a.mul(&z).is_zero());
+        assert!(z.mul(&a).is_zero());
+    }
+
+    #[test]
+    fn mul_negative() {
+        let a = FloatExp::from_f64(-2.0);
+        let b = FloatExp::from_f64(3.0);
+        assert!((a.mul(&b).to_f64() - (-6.0)).abs() < 1e-14);
+    }
+
+    #[test]
+    fn mul_small_values() {
+        let a = FloatExp::from_f64(1e-100);
+        let b = FloatExp::from_f64(1e-100);
+        let c = a.mul(&b);
+        // Result is 1e-200, well within FloatExp range
+        assert!((c.to_f64() - 1e-200).abs() < 1e-214);
     }
 }
