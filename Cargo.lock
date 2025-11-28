@@ -665,6 +665,8 @@ name = "fractalwonder-gpu"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "fractalwonder-compute",
+ "fractalwonder-core",
  "futures-channel",
  "log",
  "pollster",
