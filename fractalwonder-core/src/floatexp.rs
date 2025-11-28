@@ -84,6 +84,50 @@ impl FloatExp {
         .normalize()
     }
 
+    /// Add two FloatExp values.
+    pub fn add(&self, other: &Self) -> Self {
+        if self.mantissa == 0.0 {
+            return *other;
+        }
+        if other.mantissa == 0.0 {
+            return *self;
+        }
+
+        let exp_diff = self.exp - other.exp;
+
+        // If difference > 53 bits, smaller value is negligible
+        if exp_diff > 53 {
+            return *self;
+        }
+        if exp_diff < -53 {
+            return *other;
+        }
+
+        // Align to larger exponent, add mantissas
+        let (mantissa, exp) = if exp_diff >= 0 {
+            let scaled_other = other.mantissa * libm::exp2(-exp_diff as f64);
+            (self.mantissa + scaled_other, self.exp)
+        } else {
+            let scaled_self = self.mantissa * libm::exp2(exp_diff as f64);
+            (scaled_self + other.mantissa, other.exp)
+        };
+
+        Self { mantissa, exp }.normalize()
+    }
+
+    /// Subtract other from self.
+    pub fn sub(&self, other: &Self) -> Self {
+        self.add(&other.neg())
+    }
+
+    /// Negate value.
+    pub fn neg(&self) -> Self {
+        Self {
+            mantissa: -self.mantissa,
+            exp: self.exp,
+        }
+    }
+
     /// Normalize mantissa to [0.5, 1.0).
     fn normalize(self) -> Self {
         if self.mantissa == 0.0 {
@@ -177,5 +221,54 @@ mod tests {
         let c = a.mul(&b);
         // Result is 1e-200, well within FloatExp range
         assert!((c.to_f64() - 1e-200).abs() < 1e-214);
+    }
+
+    #[test]
+    fn add_basic() {
+        let a = FloatExp::from_f64(2.0);
+        let b = FloatExp::from_f64(3.0);
+        assert!((a.add(&b).to_f64() - 5.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn add_zero() {
+        let a = FloatExp::from_f64(5.0);
+        let z = FloatExp::zero();
+        assert!((a.add(&z).to_f64() - 5.0).abs() < 1e-14);
+        assert!((z.add(&a).to_f64() - 5.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn add_different_magnitudes() {
+        // Adding 1e10 + 1e-10 should be approximately 1e10
+        let big = FloatExp::from_f64(1e10);
+        let small = FloatExp::from_f64(1e-10);
+        let sum = big.add(&small);
+        assert!((sum.to_f64() - 1e10).abs() < 1.0); // Small value negligible
+    }
+
+    #[test]
+    fn add_very_different_exponents_returns_larger() {
+        // When exponent difference > 53, smaller value is negligible
+        let big = FloatExp::from_f64(1.0);
+        let tiny = FloatExp {
+            mantissa: 0.5,
+            exp: -100,
+        }; // 2^-101
+        let sum = big.add(&tiny);
+        assert!((sum.to_f64() - 1.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn sub_basic() {
+        let a = FloatExp::from_f64(5.0);
+        let b = FloatExp::from_f64(3.0);
+        assert!((a.sub(&b).to_f64() - 2.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn neg_basic() {
+        let a = FloatExp::from_f64(5.0);
+        assert!((a.neg().to_f64() - (-5.0)).abs() < 1e-14);
     }
 }
