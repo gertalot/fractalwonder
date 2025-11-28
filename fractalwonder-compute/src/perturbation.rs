@@ -256,6 +256,114 @@ pub fn compute_pixel_perturbation_floatexp(
     }
 }
 
+/// Compute pixel using perturbation with FloatExp deltas and BLA acceleration.
+pub fn compute_pixel_perturbation_floatexp_bla(
+    orbit: &ReferenceOrbit,
+    bla_table: &BlaTable,
+    delta_c: (FloatExp, FloatExp),
+    max_iterations: u32,
+    tau_sq: f64,
+) -> MandelbrotData {
+    let (dc_re, dc_im) = delta_c;
+    let mut dz_re = FloatExp::zero();
+    let mut dz_im = FloatExp::zero();
+    let mut m: usize = 0;
+    let mut glitched = false;
+
+    let orbit_len = orbit.orbit.len();
+    if orbit_len == 0 {
+        return MandelbrotData {
+            iterations: 0,
+            max_iterations,
+            escaped: false,
+            glitched: true,
+        };
+    }
+
+    let mut n = 0u32;
+
+    while n < max_iterations {
+        let (z_m_re, z_m_im) = orbit.orbit[m % orbit_len];
+
+        // z = Z_m + δz
+        let z_re = FloatExp::from_f64(z_m_re).add(&dz_re);
+        let z_im = FloatExp::from_f64(z_m_im).add(&dz_im);
+
+        let z_mag_sq = FloatExp::norm_sq(&z_re, &z_im);
+        let z_m_mag_sq = z_m_re * z_m_re + z_m_im * z_m_im;
+        let dz_mag_sq = FloatExp::norm_sq(&dz_re, &dz_im);
+
+        // 1. Escape check
+        if z_mag_sq > 4.0 {
+            return MandelbrotData {
+                iterations: n,
+                max_iterations,
+                escaped: true,
+                glitched,
+            };
+        }
+
+        // 2. Pauldelbrot glitch detection
+        if z_m_mag_sq > 1e-20 && z_mag_sq < tau_sq * z_m_mag_sq {
+            glitched = true;
+        }
+
+        // 3. Rebase check
+        if z_mag_sq < dz_mag_sq {
+            dz_re = z_re;
+            dz_im = z_im;
+            m = 0;
+            n += 1;
+            continue;
+        }
+
+        // 4. Try BLA acceleration
+        if let Some(bla) = bla_table.find_valid(m, dz_mag_sq) {
+            // Apply BLA: δz_new = A·δz + B·δc
+            let new_dz_re = dz_re
+                .mul_f64(bla.a_re)
+                .sub(&dz_im.mul_f64(bla.a_im))
+                .add(&dc_re.mul_f64(bla.b_re))
+                .sub(&dc_im.mul_f64(bla.b_im));
+            let new_dz_im = dz_re
+                .mul_f64(bla.a_im)
+                .add(&dz_im.mul_f64(bla.a_re))
+                .add(&dc_re.mul_f64(bla.b_im))
+                .add(&dc_im.mul_f64(bla.b_re));
+
+            dz_re = new_dz_re;
+            dz_im = new_dz_im;
+            m += bla.l as usize;
+            n += bla.l;
+        } else {
+            // 5. Standard delta iteration (no valid BLA)
+            let two_z_dz_re = dz_re
+                .mul_f64(z_m_re)
+                .sub(&dz_im.mul_f64(z_m_im))
+                .mul_f64(2.0);
+            let two_z_dz_im = dz_re
+                .mul_f64(z_m_im)
+                .add(&dz_im.mul_f64(z_m_re))
+                .mul_f64(2.0);
+
+            let dz_sq_re = dz_re.mul(&dz_re).sub(&dz_im.mul(&dz_im));
+            let dz_sq_im = dz_re.mul(&dz_im).mul_f64(2.0);
+
+            dz_re = two_z_dz_re.add(&dz_sq_re).add(&dc_re);
+            dz_im = two_z_dz_im.add(&dz_sq_im).add(&dc_im);
+            m += 1;
+            n += 1;
+        }
+    }
+
+    MandelbrotData {
+        iterations: max_iterations,
+        max_iterations,
+        escaped: false,
+        glitched,
+    }
+}
+
 /// Compute a single pixel using perturbation from a reference orbit.
 ///
 /// Uses f64 delta iterations with automatic rebasing when |z|² < |δz|².
@@ -359,6 +467,8 @@ pub fn compute_pixel_perturbation(
         glitched,
     }
 }
+
+use crate::bla::BlaTable;
 
 #[cfg(test)]
 mod tests {
@@ -976,5 +1086,43 @@ mod tests {
             bf_result.iterations, fe_result.iterations,
             "Iteration count should match at deep zoom"
         );
+    }
+
+    #[test]
+    fn bla_version_matches_non_bla_for_escaping_point() {
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 500);
+
+        // Small delta that escapes
+        let delta_c = (FloatExp::from_f64(0.1), FloatExp::from_f64(0.1));
+        let dc_max = 0.15;
+        let bla_table = BlaTable::compute(&orbit, dc_max);
+
+        // Non-BLA version
+        let result_no_bla = compute_pixel_perturbation_floatexp(&orbit, delta_c, 500, TEST_TAU_SQ);
+
+        // BLA version
+        let result_bla =
+            compute_pixel_perturbation_floatexp_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
+
+        assert_eq!(result_no_bla.escaped, result_bla.escaped);
+        assert_eq!(result_no_bla.iterations, result_bla.iterations);
+    }
+
+    #[test]
+    fn bla_version_matches_non_bla_for_in_set_point() {
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 500);
+
+        let delta_c = (FloatExp::from_f64(0.01), FloatExp::from_f64(0.01));
+        let dc_max = 0.02;
+        let bla_table = BlaTable::compute(&orbit, dc_max);
+
+        let result_no_bla = compute_pixel_perturbation_floatexp(&orbit, delta_c, 500, TEST_TAU_SQ);
+        let result_bla =
+            compute_pixel_perturbation_floatexp_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
+
+        assert_eq!(result_no_bla.escaped, result_bla.escaped);
+        assert_eq!(result_no_bla.iterations, result_bla.iterations);
     }
 }

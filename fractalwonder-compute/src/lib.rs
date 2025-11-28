@@ -10,7 +10,7 @@ pub use bla::{BlaEntry, BlaTable};
 pub use mandelbrot::MandelbrotRenderer;
 pub use perturbation::{
     compute_pixel_perturbation, compute_pixel_perturbation_bigfloat,
-    compute_pixel_perturbation_floatexp, ReferenceOrbit,
+    compute_pixel_perturbation_floatexp, compute_pixel_perturbation_floatexp_bla, ReferenceOrbit,
 };
 pub use test_image::TestImageRenderer;
 
