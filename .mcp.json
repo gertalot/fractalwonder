@@ -10,7 +10,7 @@
         "-y",
         "chrome-devtools-mcp@latest",
         "--browserUrl=http://localhost:9223",
-        "--logFile=/tmp/chrome-devtools-mcp.log",
+        "--logFile=/tmp/chrome-devtools-mcp-fractalwonder.log",
         "--no-category-emulation",
         "--no-category-performance",
         "--no-category-network"

@@ -3,8 +3,8 @@ use crate::rendering::RenderProgress;
 use crate::workers::quadtree::{Bounds, QuadtreeCell};
 use fractalwonder_compute::ReferenceOrbit;
 use fractalwonder_core::{
-    calculate_max_iterations_perturbation, pixel_to_fractal, ComputeData, MainToWorker, PixelRect,
-    Viewport, WorkerToMain,
+    calculate_max_iterations, pixel_to_fractal, ComputeData, MainToWorker, PixelRect, Viewport,
+    WorkerToMain,
 };
 use leptos::*;
 use std::cell::RefCell;
@@ -146,10 +146,17 @@ impl WorkerPool {
     where
         F: Fn(TileResult) + 'static,
     {
-        let worker_count = web_sys::window()
-            .map(|w| w.navigator().hardware_concurrency() as usize)
-            .unwrap_or(4)
-            .max(1);
+        // Determine worker count from config (0 = use hardware concurrency)
+        let config_worker_count = get_config(renderer_id).map(|c| c.worker_count).unwrap_or(0);
+
+        let worker_count = if config_worker_count == 0 {
+            web_sys::window()
+                .map(|w| w.navigator().hardware_concurrency() as usize)
+                .unwrap_or(4)
+                .max(1)
+        } else {
+            config_worker_count
+        };
 
         let pool = Rc::new(RefCell::new(Self {
             workers: Vec::new(),
@@ -614,7 +621,13 @@ impl WorkerPool {
         } else {
             0.0 // Fallback for edge cases
         };
-        let max_iterations = calculate_max_iterations_perturbation(zoom_exponent);
+        // Get config for iteration and glitch parameters
+        let config = get_config("mandelbrot");
+        let max_iterations = calculate_max_iterations(
+            zoom_exponent,
+            config.map(|c| c.iteration_multiplier).unwrap_or(200.0),
+            config.map(|c| c.iteration_power).unwrap_or(2.5),
+        );
 
         // Calculate delta step (per pixel in fractal space)
         let delta_step = (
@@ -624,8 +637,7 @@ impl WorkerPool {
 
         self.perturbation.max_iterations = max_iterations;
         self.perturbation.delta_step = delta_step;
-        // Get tau_sq from fractal config (defaults to 1e-6)
-        self.perturbation.tau_sq = get_config("mandelbrot").map(|c| c.tau_sq).unwrap_or(1e-6);
+        self.perturbation.tau_sq = config.map(|c| c.tau_sq).unwrap_or(1e-6);
 
         web_sys::console::log_1(
             &format!(
@@ -838,7 +850,12 @@ impl WorkerPool {
 
         // Compute max_iterations from zoom level
         let zoom_exponent = viewport.width.to_f64().abs().log2().abs();
-        let max_iterations = calculate_max_iterations_perturbation(zoom_exponent);
+        let config = get_config("mandelbrot");
+        let max_iterations = calculate_max_iterations(
+            zoom_exponent,
+            config.map(|c| c.iteration_multiplier).unwrap_or(200.0),
+            config.map(|c| c.iteration_power).unwrap_or(2.5),
+        );
 
         web_sys::console::log_1(
             &format!(

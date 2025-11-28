@@ -2,7 +2,7 @@
 use crate::components::{DropdownMenu, FullscreenButton, HomeButton, InfoButton};
 use crate::config::FractalConfig;
 use crate::rendering::RenderProgress;
-use fractalwonder_core::{calculate_max_iterations_perturbation, BigFloat, Viewport};
+use fractalwonder_core::{calculate_max_iterations, BigFloat, Viewport};
 use leptos::*;
 
 #[component]
@@ -101,7 +101,11 @@ pub fn UIPanel(
 
                             // Calculate max iterations from zoom exponent (log10)
                             let zoom_exponent = zoom_log2 / LOG2_10;
-                            let max_iter = calculate_max_iterations_perturbation(zoom_exponent);
+                            let max_iter = calculate_max_iterations(
+                                zoom_exponent,
+                                cfg.iteration_multiplier,
+                                cfg.iteration_power,
+                            );
 
                             let cx = format_signed_coordinate(&vp.center.0);
                             let cy = format_signed_coordinate(&vp.center.1);

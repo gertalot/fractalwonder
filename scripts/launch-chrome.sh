@@ -4,6 +4,24 @@
 
 set -e
 
+# Default port
+PORT=9223
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --port)
+      PORT="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: $0 [--port PORT]"
+      exit 1
+      ;;
+  esac
+done
+
 # Detect Chrome binary location based on OS
 detect_chrome() {
     # macOS
@@ -49,7 +67,7 @@ fi
 
 echo "Found Chrome at: $CHROME_PATH"
 echo ""
-echo "Starting Chrome with remote debugging on port 9222..."
+echo "Starting Chrome with remote debugging on port $PORT..."
 echo ""
 echo "IMPORTANT: This Chrome instance is configured for debugging and should"
 echo "NOT be used for regular browsing or handling sensitive data."
@@ -63,7 +81,7 @@ echo '      "command": "npx",'
 echo '      "args": ['
 echo '        "-y",'
 echo '        "chrome-devtools-mcp@latest",'
-echo '        "--browserUrl=http://localhost:9222",'
+echo "        \"--browserUrl=http://localhost:$PORT\","
 echo '        "--logFile=/tmp/chrome-devtools-mcp.log"'
 echo '      ]'
 echo '    }'
@@ -72,15 +90,14 @@ echo '}'
 echo ""
 
 # Set up user data directory
-USER_DATA_DIR="${HOME}/.chrome-claude-devcontainer"
+# FIXED 2025-10-24: Copied Local Storage + WebStorage from chrome-playwright
+# This contains the Developer Mode authorization for Word for Web
+USER_DATA_DIR="${HOME}/.config/chrome-devtools-fractalwonder"
 mkdir -p "$USER_DATA_DIR"
 
 # Launch Chrome with debugging enabled
 "$CHROME_PATH" \
-  --remote-debugging-port=9222 \
-  --disable-extensions \
-  --ignore-certificate-errors \
-  --ignore-certificate-errors-spki-list \
+  --remote-debugging-port="$PORT" \
   --allow-insecure-localhost \
   --disable-web-security \
   --disable-features=IsolateOrigins,site-per-process \

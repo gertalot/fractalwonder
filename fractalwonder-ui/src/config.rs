@@ -33,6 +33,13 @@ pub struct FractalConfig {
     /// Default 1e-6 corresponds to τ = 10⁻³ (standard).
     /// See docs/research/perturbation-theory.md Section 2.5.
     pub tau_sq: f64,
+    /// Number of web workers for parallel rendering.
+    /// 0 = use all available hardware threads (hardware_concurrency).
+    pub worker_count: usize,
+    /// Multiplier for max iterations formula: multiplier * zoom_exp^power.
+    pub iteration_multiplier: f64,
+    /// Power for max iterations formula: multiplier * zoom_exp^power.
+    pub iteration_power: f64,
 }
 
 impl FractalConfig {
@@ -58,7 +65,10 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         default_width: "100.0",
         default_height: "100.0",
         renderer_type: RendererType::Simple,
-        tau_sq: 1e-6, // Not used for test_image, but required field
+        tau_sq: 1e-6,
+        worker_count: 1,
+        iteration_multiplier: 200.0,
+        iteration_power: 2.5,
     },
     FractalConfig {
         id: "mandelbrot",
@@ -67,7 +77,10 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         default_width: "4.0",
         default_height: "4.0",
         renderer_type: RendererType::Perturbation,
-        tau_sq: 1e-6, // τ = 10⁻³, standard threshold
+        tau_sq: 1e-6,
+        worker_count: 2,
+        iteration_multiplier: 200.0,
+        iteration_power: 2.7,
     },
 ];
 
