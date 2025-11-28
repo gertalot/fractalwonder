@@ -522,6 +522,11 @@ impl WorkerPool {
                 let delta_c_step_json =
                     serde_json::to_string(&self.perturbation.delta_step).unwrap_or_default();
 
+                // Get BigFloat threshold from config (default to 1024 bits = ~10^300 zoom)
+                let bigfloat_threshold_bits = get_config(&self.renderer_id)
+                    .map(|c| c.bigfloat_threshold_bits)
+                    .unwrap_or(1024);
+
                 self.send_to_worker(
                     worker_id,
                     &MainToWorker::RenderTilePerturbation {
@@ -532,6 +537,7 @@ impl WorkerPool {
                         delta_c_step_json,
                         max_iterations: self.perturbation.max_iterations,
                         tau_sq: self.perturbation.tau_sq,
+                        bigfloat_threshold_bits,
                     },
                 );
             } else {

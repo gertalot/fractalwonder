@@ -49,6 +49,9 @@ pub enum MainToWorker {
         max_iterations: u32,
         /// Glitch detection threshold squared (τ²).
         tau_sq: f64,
+        /// Precision threshold for BigFloat arithmetic (bits).
+        /// Below this, use fast f64; above, use BigFloat.
+        bigfloat_threshold_bits: usize,
     },
 
     /// Discard a cached orbit.
@@ -233,6 +236,7 @@ mod tests {
             delta_c_step_json: serde_json::to_string(&delta_step).unwrap(),
             max_iterations: 10000,
             tau_sq: 1e-6,
+            bigfloat_threshold_bits: 1024,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: MainToWorker = serde_json::from_str(&json).unwrap();

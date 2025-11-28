@@ -40,6 +40,10 @@ pub struct FractalConfig {
     pub iteration_multiplier: f64,
     /// Power for max iterations formula: multiplier * zoom_exp^power.
     pub iteration_power: f64,
+    /// Minimum precision bits before switching to BigFloat delta arithmetic.
+    /// Below this threshold, fast f64 arithmetic is used.
+    /// 1024 bits ≈ 10^300 zoom depth.
+    pub bigfloat_threshold_bits: usize,
 }
 
 impl FractalConfig {
@@ -69,6 +73,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         worker_count: 1,
         iteration_multiplier: 200.0,
         iteration_power: 2.5,
+        bigfloat_threshold_bits: 1024,
     },
     FractalConfig {
         id: "mandelbrot",
@@ -81,6 +86,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         worker_count: 0, // all available workers
         iteration_multiplier: 200.0,
         iteration_power: 2.7,
+        bigfloat_threshold_bits: 1024, // ~10^300 zoom
     },
 ];
 

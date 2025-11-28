@@ -277,6 +277,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             delta_c_step_json,
             max_iterations,
             tau_sq,
+            bigfloat_threshold_bits,
         } => {
             // Parse BigFloat deltas from JSON
             let delta_c_origin: (BigFloat, BigFloat) =
@@ -318,8 +319,8 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
             let mut data = Vec::with_capacity((tile.width * tile.height) as usize);
 
-            if precision <= 64 {
-                // Fast path: use f64 arithmetic
+            if precision <= bigfloat_threshold_bits {
+                // Fast path: use f64 arithmetic (precision below threshold)
                 let delta_origin = (delta_c_origin.0.to_f64(), delta_c_origin.1.to_f64());
                 let delta_step = (delta_c_step.0.to_f64(), delta_c_step.1.to_f64());
 
@@ -339,7 +340,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     delta_c_row.1 += delta_step.1;
                 }
             } else {
-                // Deep zoom path: use BigFloat arithmetic
+                // Deep zoom path: use BigFloat arithmetic (precision exceeds threshold)
                 let delta_c_row_re = delta_c_origin.0.clone();
                 let mut delta_c_row_im = delta_c_origin.1.clone();
 
