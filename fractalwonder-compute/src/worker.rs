@@ -1,8 +1,8 @@
 // fractalwonder-compute/src/worker.rs
 use crate::{
     compute_pixel_perturbation, compute_pixel_perturbation_bigfloat,
-    compute_pixel_perturbation_floatexp, compute_pixel_perturbation_floatexp_bla, BlaTable,
-    MandelbrotRenderer, ReferenceOrbit, Renderer, TestImageRenderer,
+    compute_pixel_perturbation_floatexp_bla, BlaTable, MandelbrotRenderer, ReferenceOrbit,
+    Renderer, TestImageRenderer,
 };
 use fractalwonder_core::{BigFloat, ComputeData, FloatExp, MainToWorker, Viewport, WorkerToMain};
 use js_sys::Date;
@@ -376,7 +376,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     delta_c_row.1 += delta_step.1;
                 }
             } else if delta_log2 > -1000.0 || precision <= bigfloat_threshold_bits {
-                // Medium path: FloatExp - deltas exceed f64 range but don't need full BigFloat precision
+                // Medium path: FloatExp with BLA acceleration
                 let delta_origin = (
                     FloatExp::from_bigfloat(&delta_c_origin.0),
                     FloatExp::from_bigfloat(&delta_c_origin.1),
@@ -392,8 +392,9 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     let mut delta_c = delta_c_row;
 
                     for _px in 0..tile.width {
-                        let result = compute_pixel_perturbation_floatexp(
+                        let result = compute_pixel_perturbation_floatexp_bla(
                             &orbit,
+                            &cached.bla_table,
                             delta_c,
                             max_iterations,
                             tau_sq,
