@@ -59,6 +59,112 @@ impl ReferenceOrbit {
     }
 }
 
+/// Compute a single pixel using perturbation with BigFloat deltas.
+///
+/// This version supports extreme zoom depths (10^1000+) where f64 deltas
+/// would underflow to zero. The algorithm is identical to `compute_pixel_perturbation`
+/// but uses BigFloat arithmetic for delta values.
+///
+/// # Arguments
+/// * `orbit` - Pre-computed reference orbit (f64 values, bounded by escape radius)
+/// * `delta_c` - Offset from reference point as BigFloat (can be 10^-1000 scale)
+/// * `max_iterations` - Maximum iterations before declaring point in set
+/// * `tau_sq` - Pauldelbrot glitch detection threshold squared (τ²)
+pub fn compute_pixel_perturbation_bigfloat(
+    orbit: &ReferenceOrbit,
+    delta_c: &(BigFloat, BigFloat),
+    max_iterations: u32,
+    tau_sq: f64,
+) -> MandelbrotData {
+    let precision = delta_c.0.precision_bits();
+
+    // δz starts at origin
+    let mut dz_re = BigFloat::zero(precision);
+    let mut dz_im = BigFloat::zero(precision);
+
+    // m = reference orbit index
+    let mut m: usize = 0;
+    // Track precision loss via Pauldelbrot criterion
+    let mut glitched = false;
+
+    let orbit_len = orbit.orbit.len();
+    if orbit_len == 0 {
+        return MandelbrotData {
+            iterations: 0,
+            max_iterations,
+            escaped: false,
+            glitched: true,
+        };
+    }
+
+    // Pre-create constants
+    let two = BigFloat::with_precision(2.0, precision);
+
+    for n in 0..max_iterations {
+        // Get Z_m with wrap-around for non-escaping references
+        let z_m = orbit.orbit[m % orbit_len];
+        let z_m_re = BigFloat::with_precision(z_m.0, precision);
+        let z_m_im = BigFloat::with_precision(z_m.1, precision);
+
+        // Full pixel value: z = Z_m + δz
+        let z_re = z_m_re.add(&dz_re);
+        let z_im = z_m_im.add(&dz_im);
+
+        // Compute magnitudes squared (convert to f64 for comparisons - magnitudes are bounded)
+        let z_mag_sq = z_re.mul(&z_re).add(&z_im.mul(&z_im)).to_f64();
+        let z_m_mag_sq = z_m.0 * z_m.0 + z_m.1 * z_m.1;
+        let dz_mag_sq = dz_re.mul(&dz_re).add(&dz_im.mul(&dz_im)).to_f64();
+
+        // 1. Escape check: |z|² > 4
+        if z_mag_sq > 4.0 {
+            return MandelbrotData {
+                iterations: n,
+                max_iterations,
+                escaped: true,
+                glitched,
+            };
+        }
+
+        // 2. Pauldelbrot glitch detection: |z|² < τ²|Z_m|²
+        if z_m_mag_sq > 1e-20 && z_mag_sq < tau_sq * z_m_mag_sq {
+            glitched = true;
+        }
+
+        // 3. Rebase check: |z|² < |δz|²
+        if z_mag_sq < dz_mag_sq {
+            dz_re = z_re;
+            dz_im = z_im;
+            m = 0;
+            continue;
+        }
+
+        // 4. Delta iteration: δz' = 2·Z_m·δz + δz² + δc
+        // 2·Z_m·δz = 2·(z_m_re·dz_re - z_m_im·dz_im, z_m_re·dz_im + z_m_im·dz_re)
+        let z_m_re_big = BigFloat::with_precision(z_m.0, precision);
+        let z_m_im_big = BigFloat::with_precision(z_m.1, precision);
+
+        let two_z_dz_re = two.mul(&z_m_re_big.mul(&dz_re).sub(&z_m_im_big.mul(&dz_im)));
+        let two_z_dz_im = two.mul(&z_m_re_big.mul(&dz_im).add(&z_m_im_big.mul(&dz_re)));
+
+        // δz² = (dz_re² - dz_im², 2·dz_re·dz_im)
+        let dz_sq_re = dz_re.mul(&dz_re).sub(&dz_im.mul(&dz_im));
+        let dz_sq_im = two.mul(&dz_re).mul(&dz_im);
+
+        // δz' = 2·Z·δz + δz² + δc
+        dz_re = two_z_dz_re.add(&dz_sq_re).add(&delta_c.0);
+        dz_im = two_z_dz_im.add(&dz_sq_im).add(&delta_c.1);
+
+        m += 1;
+    }
+
+    MandelbrotData {
+        iterations: max_iterations,
+        max_iterations,
+        escaped: false,
+        glitched,
+    }
+}
+
 /// Compute a single pixel using perturbation from a reference orbit.
 ///
 /// Uses f64 delta iterations with automatic rebasing when |z|² < |δz|².
