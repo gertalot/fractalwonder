@@ -1,7 +1,7 @@
 // fractalwonder-compute/src/worker.rs
 use crate::{
-    compute_pixel_perturbation_bigfloat, MandelbrotRenderer, ReferenceOrbit, Renderer,
-    TestImageRenderer,
+    compute_pixel_perturbation, compute_pixel_perturbation_bigfloat, MandelbrotRenderer,
+    ReferenceOrbit, Renderer, TestImageRenderer,
 };
 use fractalwonder_core::{BigFloat, ComputeData, MainToWorker, Viewport, WorkerToMain};
 use js_sys::Date;
@@ -314,29 +314,53 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
             let orbit = cached.to_reference_orbit();
             let start_time = Date::now();
+            let precision = delta_c_origin.0.precision_bits();
 
-            // Compute all pixels in tile using BigFloat deltas
             let mut data = Vec::with_capacity((tile.width * tile.height) as usize);
-            let delta_c_row_re = delta_c_origin.0.clone();
-            let mut delta_c_row_im = delta_c_origin.1.clone();
 
-            for _py in 0..tile.height {
-                let mut delta_c_re = delta_c_row_re.clone();
+            if precision <= 64 {
+                // Fast path: use f64 arithmetic
+                let delta_origin = (delta_c_origin.0.to_f64(), delta_c_origin.1.to_f64());
+                let delta_step = (delta_c_step.0.to_f64(), delta_c_step.1.to_f64());
 
-                for _px in 0..tile.width {
-                    let result = compute_pixel_perturbation_bigfloat(
-                        &orbit,
-                        &delta_c_re,
-                        &delta_c_row_im,
-                        max_iterations,
-                        tau_sq,
-                    );
-                    data.push(ComputeData::Mandelbrot(result));
+                let mut delta_c_row = delta_origin;
 
-                    delta_c_re = delta_c_re.add(&delta_c_step.0);
+                for _py in 0..tile.height {
+                    let mut delta_c = delta_c_row;
+
+                    for _px in 0..tile.width {
+                        let result =
+                            compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq);
+                        data.push(ComputeData::Mandelbrot(result));
+
+                        delta_c.0 += delta_step.0;
+                    }
+
+                    delta_c_row.1 += delta_step.1;
                 }
+            } else {
+                // Deep zoom path: use BigFloat arithmetic
+                let delta_c_row_re = delta_c_origin.0.clone();
+                let mut delta_c_row_im = delta_c_origin.1.clone();
 
-                delta_c_row_im = delta_c_row_im.add(&delta_c_step.1);
+                for _py in 0..tile.height {
+                    let mut delta_c_re = delta_c_row_re.clone();
+
+                    for _px in 0..tile.width {
+                        let result = compute_pixel_perturbation_bigfloat(
+                            &orbit,
+                            &delta_c_re,
+                            &delta_c_row_im,
+                            max_iterations,
+                            tau_sq,
+                        );
+                        data.push(ComputeData::Mandelbrot(result));
+
+                        delta_c_re = delta_c_re.add(&delta_c_step.0);
+                    }
+
+                    delta_c_row_im = delta_c_row_im.add(&delta_c_step.1);
+                }
             }
 
             let compute_time_ms = Date::now() - start_time;

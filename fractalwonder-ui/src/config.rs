@@ -78,7 +78,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         default_height: "4.0",
         renderer_type: RendererType::Perturbation,
         tau_sq: 1e-6,
-        worker_count: 2,
+        worker_count: 0, // all available workers
         iteration_multiplier: 200.0,
         iteration_power: 2.7,
     },
