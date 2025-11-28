@@ -3,8 +3,8 @@ use crate::rendering::RenderProgress;
 use crate::workers::quadtree::{Bounds, QuadtreeCell};
 use fractalwonder_compute::ReferenceOrbit;
 use fractalwonder_core::{
-    calculate_max_iterations, pixel_to_fractal, ComputeData, MainToWorker, PixelRect, Viewport,
-    WorkerToMain,
+    calculate_max_iterations, pixel_to_fractal, BigFloat, ComputeData, MainToWorker, PixelRect,
+    Viewport, WorkerToMain,
 };
 use leptos::*;
 use std::cell::RefCell;
@@ -32,7 +32,6 @@ struct PendingOrbitRequest {
 }
 
 /// State for perturbation rendering flow.
-#[derive(Default)]
 struct PerturbationState {
     /// Current orbit ID being used
     orbit_id: u32,
@@ -42,12 +41,26 @@ struct PerturbationState {
     pending_orbit: Option<OrbitData>,
     /// Maximum iterations for perturbation tiles
     max_iterations: u32,
-    /// Delta step per pixel in fractal space
-    delta_step: (f64, f64),
+    /// Delta step per pixel in fractal space (BigFloat for deep zoom)
+    delta_step: (BigFloat, BigFloat),
     /// Pending orbit computation (waiting for worker to initialize)
     pending_orbit_request: Option<PendingOrbitRequest>,
     /// Glitch detection threshold squared (τ²)
     tau_sq: f64,
+}
+
+impl Default for PerturbationState {
+    fn default() -> Self {
+        Self {
+            orbit_id: 0,
+            workers_with_orbit: HashSet::new(),
+            pending_orbit: None,
+            max_iterations: 0,
+            delta_step: (BigFloat::zero(64), BigFloat::zero(64)),
+            pending_orbit_request: None,
+            tau_sq: 1e-6,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -479,7 +492,7 @@ impl WorkerPool {
                     return;
                 };
 
-                // Calculate delta_c_origin for this tile's top-left pixel
+                // Calculate delta_c_origin for this tile's top-left pixel using BigFloat
                 //
                 // PRECISION FIX: At deep zoom (10^14+), computing tile fractal coords
                 // then subtracting c_ref causes catastrophic cancellation because both
@@ -489,16 +502,25 @@ impl WorkerPool {
                 //   delta = (tile_pos - canvas_center) * pixel_size
                 // This avoids adding a tiny delta to a large coordinate then subtracting.
                 let (canvas_width, canvas_height) = self.canvas_size;
-                let vp_width = viewport.width.to_f64();
-                let vp_height = viewport.height.to_f64();
+                let precision = viewport.width.precision_bits();
 
                 // Tile top-left pixel offset from canvas center in normalized coords [-0.5, 0.5]
                 let norm_x = tile.x as f64 / canvas_width as f64 - 0.5;
                 let norm_y = tile.y as f64 / canvas_height as f64 - 0.5;
 
-                // Delta from reference point (viewport center) computed directly
-                // This preserves full f64 precision for the small delta values
-                let delta_c_origin = (norm_x * vp_width, norm_y * vp_height);
+                // Delta from reference point (viewport center) computed using BigFloat
+                let norm_x_bf = BigFloat::with_precision(norm_x, precision);
+                let norm_y_bf = BigFloat::with_precision(norm_y, precision);
+                let delta_c_origin = (
+                    norm_x_bf.mul(&viewport.width),
+                    norm_y_bf.mul(&viewport.height),
+                );
+
+                // Serialize BigFloat deltas to JSON strings
+                let delta_c_origin_json =
+                    serde_json::to_string(&delta_c_origin).unwrap_or_default();
+                let delta_c_step_json =
+                    serde_json::to_string(&self.perturbation.delta_step).unwrap_or_default();
 
                 self.send_to_worker(
                     worker_id,
@@ -506,8 +528,8 @@ impl WorkerPool {
                         render_id: self.current_render_id,
                         tile,
                         orbit_id: self.perturbation.orbit_id,
-                        delta_c_origin,
-                        delta_c_step: self.perturbation.delta_step,
+                        delta_c_origin_json,
+                        delta_c_step_json,
                         max_iterations: self.perturbation.max_iterations,
                         tau_sq: self.perturbation.tau_sq,
                     },
@@ -629,10 +651,13 @@ impl WorkerPool {
             config.map(|c| c.iteration_power).unwrap_or(2.5),
         );
 
-        // Calculate delta step (per pixel in fractal space)
+        // Calculate delta step (per pixel in fractal space) using BigFloat for precision
+        let precision = viewport.width.precision_bits();
+        let canvas_width_bf = BigFloat::with_precision(canvas_size.0 as f64, precision);
+        let canvas_height_bf = BigFloat::with_precision(canvas_size.1 as f64, precision);
         let delta_step = (
-            vp_width / canvas_size.0 as f64,
-            vp_height / canvas_size.1 as f64,
+            viewport.width.div(&canvas_width_bf),
+            viewport.height.div(&canvas_height_bf),
         );
 
         self.perturbation.max_iterations = max_iterations;

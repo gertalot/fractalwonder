@@ -279,18 +279,19 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             tau_sq,
         } => {
             // Parse BigFloat deltas from JSON
-            let delta_c_origin: (BigFloat, BigFloat) = match serde_json::from_str(&delta_c_origin_json)
-            {
-                Ok(d) => d,
-                Err(e) => {
-                    post_message(&WorkerToMain::Error {
-                        message: format!("Failed to parse delta_c_origin: {}", e),
-                    });
-                    return;
-                }
-            };
+            let delta_c_origin: (BigFloat, BigFloat) =
+                match serde_json::from_str(&delta_c_origin_json) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        post_message(&WorkerToMain::Error {
+                            message: format!("Failed to parse delta_c_origin: {}", e),
+                        });
+                        return;
+                    }
+                };
 
-            let delta_c_step: (BigFloat, BigFloat) = match serde_json::from_str(&delta_c_step_json) {
+            let delta_c_step: (BigFloat, BigFloat) = match serde_json::from_str(&delta_c_step_json)
+            {
                 Ok(d) => d,
                 Err(e) => {
                     post_message(&WorkerToMain::Error {
@@ -325,8 +326,12 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
                 for _px in 0..tile.width {
                     let delta_c = (delta_c_re.clone(), delta_c_im.clone());
-                    let result =
-                        compute_pixel_perturbation_bigfloat(&orbit, &delta_c, max_iterations, tau_sq);
+                    let result = compute_pixel_perturbation_bigfloat(
+                        &orbit,
+                        &delta_c,
+                        max_iterations,
+                        tau_sq,
+                    );
                     data.push(ComputeData::Mandelbrot(result));
 
                     delta_c_re = delta_c_re.add(&delta_c_step.0);

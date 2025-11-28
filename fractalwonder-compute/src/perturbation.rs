@@ -683,8 +683,16 @@ mod tests {
 
         // This should NOT underflow - delta_c should remain non-zero
         let log2_delta = delta_c.0.log2_approx();
-        assert!(log2_delta > -2000.0, "Delta should not underflow: log2 = {}", log2_delta);
-        assert!(log2_delta < -1600.0, "Delta should be around 10^-500: log2 = {}", log2_delta);
+        assert!(
+            log2_delta > -2000.0,
+            "Delta should not underflow: log2 = {}",
+            log2_delta
+        );
+        assert!(
+            log2_delta < -1600.0,
+            "Delta should be around 10^-500: log2 = {}",
+            log2_delta
+        );
 
         // Compute pixel - should complete without panic
         let result = compute_pixel_perturbation_bigfloat(&orbit, &delta_c, 100, TEST_TAU_SQ);
@@ -701,12 +709,7 @@ mod tests {
         let orbit = ReferenceOrbit::compute(&c_ref, 500);
 
         // Test multiple delta values within f64 range
-        let test_deltas = [
-            (0.01, 0.01),
-            (-0.005, 0.002),
-            (0.1, -0.05),
-            (0.0, 0.001),
-        ];
+        let test_deltas = [(0.01, 0.01), (-0.005, 0.002), (0.1, -0.05), (0.0, 0.001)];
 
         for (dx, dy) in test_deltas {
             // f64 version
@@ -754,13 +757,20 @@ mod tests {
         let result = compute_pixel_perturbation_bigfloat(&orbit, &delta_c, 1000, TEST_TAU_SQ);
 
         // Nearby point should have similar behavior to reference
-        assert!(!result.escaped, "Point very close to reference should be in set");
+        assert!(
+            !result.escaped,
+            "Point very close to reference should be in set"
+        );
         assert_eq!(result.iterations, 1000, "Should reach max iterations");
 
         // Verify delta didn't underflow (would cause all points to behave identically)
         let log2_delta = delta_c.0.log2_approx();
         assert!(log2_delta.is_finite(), "Delta log2 should be finite");
-        assert!(log2_delta < -3000.0, "Delta should be extremely small: {}", log2_delta);
+        assert!(
+            log2_delta < -3000.0,
+            "Delta should be extremely small: {}",
+            log2_delta
+        );
     }
 
     #[test]
