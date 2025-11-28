@@ -1163,7 +1163,7 @@ struct FloatExp {
 
 ---
 
-### 13.4 Increment 4: BLA Acceleration
+### ✅ 13.4 Increment 4: BLA Acceleration
 
 **Deliverable:** Skip iterations using Bivariate Linear Approximation.
 

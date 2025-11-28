@@ -49,6 +49,8 @@ struct PerturbationState {
     tau_sq: f64,
     /// Maximum |δc| for BLA table construction
     dc_max: f64,
+    /// Enable BLA (Bivariate Linear Approximation) for iteration skipping
+    bla_enabled: bool,
 }
 
 impl Default for PerturbationState {
@@ -62,6 +64,7 @@ impl Default for PerturbationState {
             pending_orbit_request: None,
             tau_sq: 1e-6,
             dc_max: 0.0,
+            bla_enabled: true,
         }
     }
 }
@@ -553,6 +556,7 @@ impl WorkerPool {
                         max_iterations: self.perturbation.max_iterations,
                         tau_sq: self.perturbation.tau_sq,
                         bigfloat_threshold_bits,
+                        bla_enabled: self.perturbation.bla_enabled,
                     },
                 );
             } else {
@@ -686,6 +690,7 @@ impl WorkerPool {
         self.perturbation.tau_sq = config.map(|c| c.tau_sq).unwrap_or(1e-6);
         // Calculate dc_max for BLA table construction
         self.perturbation.dc_max = calculate_dc_max(&viewport, canvas_size);
+        self.perturbation.bla_enabled = config.map(|c| c.bla_enabled).unwrap_or(true);
 
         web_sys::console::log_1(
             &format!(

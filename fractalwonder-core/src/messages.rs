@@ -54,6 +54,8 @@ pub enum MainToWorker {
         /// Precision threshold for BigFloat arithmetic (bits).
         /// Below this, use fast f64; above, use BigFloat.
         bigfloat_threshold_bits: usize,
+        /// Enable BLA (Bivariate Linear Approximation) for iteration skipping.
+        bla_enabled: bool,
     },
 
     /// Discard a cached orbit.
@@ -240,6 +242,7 @@ mod tests {
             max_iterations: 10000,
             tau_sq: 1e-6,
             bigfloat_threshold_bits: 1024,
+            bla_enabled: true,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: MainToWorker = serde_json::from_str(&json).unwrap();
