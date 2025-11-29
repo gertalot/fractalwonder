@@ -233,6 +233,35 @@ pub fn App() -> impl IntoView {
                         );
                     }
                 }
+                "ArrowUp" | "ArrowDown" => {
+                    // Cycle through color schemes
+                    let opts = colorizer_options.get_untracked();
+                    if opts.is_empty() {
+                        return;
+                    }
+
+                    let current_id = selected_colorizer_id.get_untracked();
+                    let current_idx = opts
+                        .iter()
+                        .position(|(id, _)| *id == current_id)
+                        .unwrap_or(0);
+
+                    let new_idx = if e.key() == "ArrowUp" {
+                        // Previous (wrap to end)
+                        if current_idx == 0 {
+                            opts.len() - 1
+                        } else {
+                            current_idx - 1
+                        }
+                    } else {
+                        // Next (wrap to start)
+                        (current_idx + 1) % opts.len()
+                    };
+
+                    let (new_id, new_name) = &opts[new_idx];
+                    set_selected_colorizer_id.set(new_id.clone());
+                    web_sys::console::log_1(&format!("[App] Color scheme: {}", new_name).into());
+                }
                 _ => {}
             }
         }) as Box<dyn FnMut(web_sys::KeyboardEvent)>);

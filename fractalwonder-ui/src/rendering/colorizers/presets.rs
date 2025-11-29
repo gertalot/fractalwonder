@@ -13,6 +13,7 @@ pub struct ColorSchemePreset {
 /// Get all available color scheme presets.
 pub fn presets() -> Vec<ColorSchemePreset> {
     vec![
+        // Non-cycling palettes
         ColorSchemePreset {
             name: "Classic",
             palette: Palette::ultra_fractal(),
@@ -36,6 +37,37 @@ pub fn presets() -> Vec<ColorSchemePreset> {
         ColorSchemePreset {
             name: "Grayscale",
             palette: Palette::grayscale(),
+            colorizer: ColorizerKind::SmoothIteration(SmoothIterationColorizer),
+        },
+        // Cycling palettes - seamless wrap-around for more color detail
+        ColorSchemePreset {
+            name: "Rainbow",
+            palette: Palette::rainbow(),
+            colorizer: ColorizerKind::SmoothIteration(SmoothIterationColorizer),
+        },
+        ColorSchemePreset {
+            name: "Neon",
+            palette: Palette::neon(),
+            colorizer: ColorizerKind::SmoothIteration(SmoothIterationColorizer),
+        },
+        ColorSchemePreset {
+            name: "Twilight",
+            palette: Palette::twilight(),
+            colorizer: ColorizerKind::SmoothIteration(SmoothIterationColorizer),
+        },
+        ColorSchemePreset {
+            name: "Candy",
+            palette: Palette::candy(),
+            colorizer: ColorizerKind::SmoothIteration(SmoothIterationColorizer),
+        },
+        ColorSchemePreset {
+            name: "Inferno",
+            palette: Palette::inferno(),
+            colorizer: ColorizerKind::SmoothIteration(SmoothIterationColorizer),
+        },
+        ColorSchemePreset {
+            name: "Aurora",
+            palette: Palette::aurora(),
             colorizer: ColorizerKind::SmoothIteration(SmoothIterationColorizer),
         },
     ]

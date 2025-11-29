@@ -500,6 +500,16 @@ fn schedule_adam7_pass(
         *gpu_renderer_spawn.borrow_mut() = Some(renderer);
         gpu_in_use_spawn.set(false);
 
+        // Check generation after await - abort if render was superseded during GPU computation
+        if generation_spawn.get() != expected_gen {
+            log::debug!(
+                "Render {} superseded after pass {} completed",
+                expected_gen,
+                pass.step()
+            );
+            return;
+        }
+
         match pass_result {
             Ok(result) => {
                 log::info!(

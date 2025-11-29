@@ -1246,7 +1246,7 @@ minimal compute changes.
 
 ---
 
-### 8.4 Increment 1: Color Palettes
+### ✅ 8.4 Increment 1: Color Palettes
 
 **Deliverable**: Rich, customizable color palettes replacing grayscale.
 
@@ -1325,7 +1325,7 @@ impl Palette {
 
 ---
 
-### 8.5 Increment 2: Smooth Iteration Count
+### ✅ 8.5 Increment 2: Smooth Iteration Count
 
 **Deliverable**: Eliminate iteration banding with continuous coloring.
 

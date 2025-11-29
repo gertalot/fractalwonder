@@ -3,7 +3,7 @@
 //! Colors are pre-computed into a lookup table at construction time for fast sampling.
 
 use super::color_space::{
-    linear_rgb_to_oklab, linear_to_srgb, oklab_to_linear_rgb, srgb_to_linear,
+    linear_rgb_to_oklab, linear_to_srgb, oklab_to_linear_rgb, oklch_to_srgb, srgb_to_linear,
 };
 
 /// Number of entries in the pre-computed lookup table.
@@ -163,6 +163,118 @@ impl Palette {
             1.0,
         )
     }
+
+    // ============================================================
+    // Cyclical palettes - designed for seamless wrapping with cycling
+    // ============================================================
+
+    /// Create a hue-cycling palette using OKLCH color space.
+    /// Generates `steps` colors around the hue wheel at constant lightness and chroma.
+    /// Seamlessly cyclical - first and last colors are adjacent on the wheel.
+    fn hue_cycle(lightness: f64, chroma: f64, steps: usize, cycle_count: f64) -> Self {
+        let colors: Vec<[u8; 3]> = (0..steps)
+            .map(|i| {
+                let hue = (i as f64 / steps as f64) * std::f64::consts::TAU;
+                oklch_to_srgb(lightness, chroma, hue)
+            })
+            .collect();
+
+        Self::new(colors, cycle_count)
+    }
+
+    /// Rainbow: Full spectrum hue cycle at vibrant saturation.
+    /// Cycles 3x for more color variation across iteration range.
+    pub fn rainbow() -> Self {
+        Self::hue_cycle(0.75, 0.15, 64, 3.0)
+    }
+
+    /// Neon: Bright, saturated hue cycle.
+    /// High lightness and chroma for electric, glowing appearance.
+    /// Cycles 5x for dense color bands.
+    pub fn neon() -> Self {
+        Self::hue_cycle(0.85, 0.18, 48, 5.0)
+    }
+
+    /// Twilight: Warm to cool cycling palette.
+    /// Orange → magenta → purple → blue → cyan → back to orange.
+    /// Designed for seamless cycling with 4 repeats.
+    pub fn twilight() -> Self {
+        Self::new(
+            vec![
+                [255, 100, 50],  // Warm orange
+                [255, 50, 100],  // Coral
+                [200, 50, 150],  // Magenta
+                [150, 50, 200],  // Purple
+                [80, 80, 220],   // Blue-violet
+                [50, 150, 255],  // Sky blue
+                [80, 200, 200],  // Cyan
+                [150, 200, 150], // Soft green
+                [200, 180, 100], // Gold
+                [255, 100, 50],  // Back to warm orange (seamless)
+            ],
+            4.0,
+        )
+    }
+
+    /// Candy: Pastel cycling palette.
+    /// Soft, desaturated colors that cycle smoothly.
+    /// Great for high-iteration deep zooms.
+    pub fn candy() -> Self {
+        Self::new(
+            vec![
+                [255, 180, 200], // Pink
+                [200, 180, 255], // Lavender
+                [180, 220, 255], // Baby blue
+                [180, 255, 220], // Mint
+                [220, 255, 180], // Lime
+                [255, 240, 180], // Cream
+                [255, 200, 180], // Peach
+                [255, 180, 200], // Back to pink (seamless)
+            ],
+            6.0,
+        )
+    }
+
+    /// Inferno: Dark cycling palette with hot accents.
+    /// Black → deep red → orange → gold → black.
+    /// Dramatic contrast, cycles 3x.
+    pub fn inferno() -> Self {
+        Self::new(
+            vec![
+                [5, 0, 10],      // Near black (purple tint)
+                [40, 0, 20],     // Dark burgundy
+                [100, 10, 10],   // Dark red
+                [180, 40, 0],    // Red-orange
+                [255, 100, 0],   // Orange
+                [255, 180, 50],  // Gold
+                [200, 150, 100], // Muted tan
+                [80, 50, 40],    // Brown
+                [20, 10, 20],    // Dark purple
+                [5, 0, 10],      // Back to near black (seamless)
+            ],
+            3.0,
+        )
+    }
+
+    /// Aurora: Northern lights inspired palette.
+    /// Green → cyan → blue → purple → green.
+    /// Ethereal, glowing appearance with 4 cycles.
+    pub fn aurora() -> Self {
+        Self::new(
+            vec![
+                [50, 255, 100],  // Bright green
+                [50, 255, 180],  // Cyan-green
+                [50, 200, 255],  // Cyan
+                [80, 120, 255],  // Blue
+                [150, 80, 255],  // Purple
+                [200, 100, 200], // Magenta
+                [150, 150, 150], // Gray (dimmer band)
+                [100, 200, 100], // Soft green
+                [50, 255, 100],  // Back to bright green (seamless)
+            ],
+            4.0,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -229,5 +341,55 @@ mod tests {
         let palette = Palette::grayscale();
         assert_eq!(palette.sample(0.0), [0, 0, 0]);
         assert_eq!(palette.sample(1.0), [255, 255, 255]);
+    }
+
+    #[test]
+    fn rainbow_is_cyclical() {
+        let palette = Palette::rainbow();
+        // Rainbow uses hue cycling - colors at 0 and 1 should be similar
+        // (wraps around the hue wheel)
+        let at_start = palette.sample(0.0);
+        let at_end = palette.sample(0.999);
+        // With 3 cycles, 0.999 wraps close to 0, colors should be close
+        let diff_r = (at_start[0] as i32 - at_end[0] as i32).abs();
+        let diff_g = (at_start[1] as i32 - at_end[1] as i32).abs();
+        let diff_b = (at_start[2] as i32 - at_end[2] as i32).abs();
+        assert!(
+            diff_r < 30 && diff_g < 30 && diff_b < 30,
+            "Rainbow should be nearly seamless, got diff ({diff_r}, {diff_g}, {diff_b})"
+        );
+    }
+
+    #[test]
+    fn cyclical_palettes_have_distinct_colors() {
+        // Verify cycling palettes produce varied colors
+        for palette in [
+            Palette::rainbow(),
+            Palette::neon(),
+            Palette::twilight(),
+            Palette::candy(),
+            Palette::inferno(),
+            Palette::aurora(),
+        ] {
+            let samples: Vec<_> = (0..10).map(|i| palette.sample(i as f64 / 10.0)).collect();
+            // At least some colors should be different
+            let all_same = samples.windows(2).all(|w| w[0] == w[1]);
+            assert!(!all_same, "Palette should have color variation");
+        }
+    }
+
+    #[test]
+    fn twilight_is_seamless() {
+        let palette = Palette::twilight();
+        // Twilight's first and last control points are identical
+        // At cycle boundaries, it should wrap seamlessly
+        let at_zero = palette.sample(0.0);
+        let near_cycle = palette.sample(0.2499); // Just before 0.25 (one full cycle with 4x)
+        let at_cycle = palette.sample(0.25); // Exactly one full cycle
+                                             // at_cycle should equal at_zero (wrapped)
+        assert_eq!(at_zero, at_cycle, "Should wrap at cycle boundary");
+        // near_cycle should be close to at_zero
+        let diff_r = (at_zero[0] as i32 - near_cycle[0] as i32).abs();
+        assert!(diff_r < 40, "Should be close to wrap point");
     }
 }
