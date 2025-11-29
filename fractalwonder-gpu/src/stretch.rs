@@ -1,48 +1,105 @@
 // fractalwonder-gpu/src/stretch.rs
 
-use fractalwonder_core::ComputeData;
+use fractalwonder_core::{ComputeData, MandelbrotData};
 
-/// Stretches a small ComputeData buffer to target canvas size by duplicating pixels.
+/// Sentinel value indicating a pixel was not computed in the current Adam7 pass.
+pub const SENTINEL_NOT_COMPUTED: u32 = 0xFFFFFFFF;
+
+/// Accumulator for Adam7 progressive rendering.
 ///
-/// Each source pixel becomes approximately a `scale × scale` block in the output,
-/// but output is clamped to exactly `target_w × target_h` pixels.
-/// Output is in row-major order, suitable for colorization.
-pub fn stretch_compute_data(
-    small: &[ComputeData],
-    small_w: u32,
-    small_h: u32,
-    target_w: u32,
-    target_h: u32,
-    scale: u32,
-) -> Vec<ComputeData> {
-    debug_assert_eq!(
-        small.len(),
-        (small_w * small_h) as usize,
-        "Input size mismatch"
-    );
+/// Collects results across multiple Adam7 passes, merging each pass's computed
+/// pixels into a full-resolution buffer.
+pub struct Adam7Accumulator {
+    data: Vec<Option<ComputeData>>,
+    width: u32,
+    #[allow(dead_code)]
+    height: u32,
+}
 
-    if scale == 1 {
-        return small.to_vec();
-    }
-
-    let mut full = Vec::with_capacity((target_w * target_h) as usize);
-
-    for ty in 0..target_h {
-        let sy = ty / scale;
-        for tx in 0..target_w {
-            let sx = tx / scale;
-            let src = &small[(sy * small_w + sx) as usize];
-            full.push(src.clone());
+impl Adam7Accumulator {
+    /// Create a new accumulator for the given dimensions.
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            data: vec![None; (width * height) as usize],
+            width,
+            height,
         }
     }
 
-    full
+    /// Merge GPU results into accumulator.
+    ///
+    /// Only updates pixels where GPU returned valid data (not sentinel).
+    pub fn merge(&mut self, gpu_result: &[ComputeData]) {
+        for (i, computed) in gpu_result.iter().enumerate() {
+            if let ComputeData::Mandelbrot(m) = computed {
+                if m.iterations != SENTINEL_NOT_COMPUTED {
+                    self.data[i] = Some(computed.clone());
+                }
+            }
+        }
+    }
+
+    /// Export to Vec<ComputeData> for colorization.
+    ///
+    /// Uncomputed pixels (None) are filled from left neighbor, or top neighbor
+    /// if at left edge. First pixel defaults to black if uncomputed.
+    pub fn to_display_buffer(&self) -> Vec<ComputeData> {
+        let mut result = Vec::with_capacity(self.data.len());
+        let width = self.width as usize;
+
+        for (i, pixel) in self.data.iter().enumerate() {
+            match pixel {
+                Some(d) => result.push(d.clone()),
+                None => {
+                    // Try left neighbor first, then top neighbor
+                    let fallback = if i % width > 0 {
+                        result.get(i - 1).cloned()
+                    } else if i >= width {
+                        result.get(i - width).cloned()
+                    } else {
+                        None
+                    };
+
+                    result.push(fallback.unwrap_or_else(Self::black_pixel));
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Export final complete buffer for caching.
+    ///
+    /// After pass 7, all pixels should be computed. Panics if any are missing.
+    pub fn to_final_buffer(&self) -> Vec<ComputeData> {
+        self.data
+            .iter()
+            .map(|opt| {
+                opt.clone()
+                    .expect("All pixels should be computed after pass 7")
+            })
+            .collect()
+    }
+
+    /// Check if all pixels have been computed.
+    pub fn is_complete(&self) -> bool {
+        self.data.iter().all(|opt| opt.is_some())
+    }
+
+    /// Default black pixel for uncomputed areas.
+    fn black_pixel() -> ComputeData {
+        ComputeData::Mandelbrot(MandelbrotData {
+            iterations: 0,
+            max_iterations: 1,
+            escaped: false,
+            glitched: false,
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fractalwonder_core::MandelbrotData;
 
     fn make_data(iterations: u32) -> ComputeData {
         ComputeData::Mandelbrot(MandelbrotData {
@@ -53,113 +110,114 @@ mod tests {
         })
     }
 
-    #[test]
-    fn test_stretch_scale_1() {
-        let small = vec![make_data(10), make_data(20), make_data(30), make_data(40)];
-        let result = stretch_compute_data(&small, 2, 2, 2, 2, 1);
-        assert_eq!(result.len(), 4);
-
-        // Verify each element matches
-        let expected_iters: Vec<u32> = vec![10, 20, 30, 40];
-        let actual_iters: Vec<u32> = result
-            .iter()
-            .map(|d| match d {
-                ComputeData::Mandelbrot(m) => m.iterations,
-                _ => panic!("Expected Mandelbrot"),
-            })
-            .collect();
-        assert_eq!(actual_iters, expected_iters);
-    }
-
-    #[test]
-    fn test_stretch_scale_2() {
-        // 2x2 input, scale 2 -> 4x4 output
-        let small = vec![make_data(1), make_data(2), make_data(3), make_data(4)];
-        let result = stretch_compute_data(&small, 2, 2, 4, 4, 2);
-        assert_eq!(result.len(), 16);
-
-        // Expected layout:
-        // 1 1 2 2
-        // 1 1 2 2
-        // 3 3 4 4
-        // 3 3 4 4
-        let expected_iters: Vec<u32> = vec![
-            1, 1, 2, 2, // row 0
-            1, 1, 2, 2, // row 1
-            3, 3, 4, 4, // row 2
-            3, 3, 4, 4, // row 3
-        ];
-
-        let actual_iters: Vec<u32> = result
-            .iter()
-            .map(|d| match d {
-                ComputeData::Mandelbrot(m) => m.iterations,
-                _ => panic!("Expected Mandelbrot"),
-            })
-            .collect();
-
-        assert_eq!(actual_iters, expected_iters);
-    }
-
-    #[test]
-    fn test_stretch_scale_16() {
-        // 1x1 input, scale 16 -> 16x16 output
-        let small = vec![make_data(42)];
-        let result = stretch_compute_data(&small, 1, 1, 16, 16, 16);
-        assert_eq!(result.len(), 256);
-
-        // All pixels should have iterations = 42
-        for d in &result {
-            match d {
-                ComputeData::Mandelbrot(m) => assert_eq!(m.iterations, 42),
-                _ => panic!("Expected Mandelbrot"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_stretch_preserves_glitch_flag() {
-        let small = vec![ComputeData::Mandelbrot(MandelbrotData {
-            iterations: 100,
+    fn make_sentinel() -> ComputeData {
+        ComputeData::Mandelbrot(MandelbrotData {
+            iterations: SENTINEL_NOT_COMPUTED,
             max_iterations: 1000,
-            escaped: true,
-            glitched: true,
-        })];
-        let result = stretch_compute_data(&small, 1, 1, 4, 4, 4);
-        assert_eq!(result.len(), 16);
-
-        for d in &result {
-            match d {
-                ComputeData::Mandelbrot(m) => {
-                    assert!(m.glitched);
-                    assert!(m.escaped);
-                }
-                _ => panic!("Expected Mandelbrot"),
-            }
-        }
+            escaped: false,
+            glitched: false,
+        })
     }
 
-    #[test]
-    fn test_stretch_to_non_multiple_target() {
-        // 2x2 input with scale 16, but target is 25x25 (not a multiple of 16)
-        // This simulates the real-world case where canvas isn't a perfect multiple
-        let small = vec![make_data(1), make_data(2), make_data(3), make_data(4)];
-        let result = stretch_compute_data(&small, 2, 2, 25, 25, 16);
-        assert_eq!(result.len(), 625); // 25 * 25
-
-        // Check corners
-        let get_iter = |idx: usize| match &result[idx] {
+    fn get_iterations(data: &ComputeData) -> u32 {
+        match data {
             ComputeData::Mandelbrot(m) => m.iterations,
             _ => panic!("Expected Mandelbrot"),
-        };
+        }
+    }
 
-        // Top-left (0,0) -> small[0] = 1
-        assert_eq!(get_iter(0), 1);
-        // Top-right (24,0) -> 24/16 = 1 -> small[1] = 2
-        assert_eq!(get_iter(24), 2);
-        // Bottom-left (0,24) -> 24/16 = 1 -> small[2] = 3
-        assert_eq!(get_iter(24 * 25), 3);
-        // Bottom-right (24,24) -> (1,1) -> small[3] = 4
-        assert_eq!(get_iter(24 * 25 + 24), 4);
+    #[test]
+    fn test_new_accumulator() {
+        let acc = Adam7Accumulator::new(10, 10);
+        assert_eq!(acc.data.len(), 100);
+        assert!(acc.data.iter().all(|x| x.is_none()));
+    }
+
+    #[test]
+    fn test_merge_skips_sentinel() {
+        let mut acc = Adam7Accumulator::new(2, 2);
+
+        // GPU returns: computed, sentinel, sentinel, computed
+        let gpu_result = vec![
+            make_data(100),
+            make_sentinel(),
+            make_sentinel(),
+            make_data(200),
+        ];
+
+        acc.merge(&gpu_result);
+
+        assert!(acc.data[0].is_some());
+        assert!(acc.data[1].is_none());
+        assert!(acc.data[2].is_none());
+        assert!(acc.data[3].is_some());
+    }
+
+    #[test]
+    fn test_to_display_buffer_fills_gaps() {
+        let mut acc = Adam7Accumulator::new(4, 1);
+
+        // Only first and last computed
+        acc.data[0] = Some(make_data(100));
+        acc.data[3] = Some(make_data(200));
+
+        let display = acc.to_display_buffer();
+
+        // Gaps filled from left neighbor
+        assert_eq!(get_iterations(&display[0]), 100);
+        assert_eq!(get_iterations(&display[1]), 100); // from left
+        assert_eq!(get_iterations(&display[2]), 100); // from left
+        assert_eq!(get_iterations(&display[3]), 200);
+    }
+
+    #[test]
+    fn test_to_display_buffer_uses_top_at_edge() {
+        let mut acc = Adam7Accumulator::new(2, 2);
+
+        // Row 0: [100, 200]
+        // Row 1: [None, 300]
+        acc.data[0] = Some(make_data(100));
+        acc.data[1] = Some(make_data(200));
+        acc.data[3] = Some(make_data(300));
+
+        let display = acc.to_display_buffer();
+
+        // acc.data[2] (row 1, col 0) should copy from top (acc.data[0])
+        assert_eq!(get_iterations(&display[2]), 100);
+    }
+
+    #[test]
+    fn test_is_complete() {
+        let mut acc = Adam7Accumulator::new(2, 2);
+        assert!(!acc.is_complete());
+
+        acc.data[0] = Some(make_data(1));
+        acc.data[1] = Some(make_data(2));
+        acc.data[2] = Some(make_data(3));
+        assert!(!acc.is_complete());
+
+        acc.data[3] = Some(make_data(4));
+        assert!(acc.is_complete());
+    }
+
+    #[test]
+    fn test_to_final_buffer() {
+        let mut acc = Adam7Accumulator::new(2, 2);
+        acc.data[0] = Some(make_data(1));
+        acc.data[1] = Some(make_data(2));
+        acc.data[2] = Some(make_data(3));
+        acc.data[3] = Some(make_data(4));
+
+        let final_buf = acc.to_final_buffer();
+        assert_eq!(final_buf.len(), 4);
+        assert_eq!(get_iterations(&final_buf[0]), 1);
+        assert_eq!(get_iterations(&final_buf[3]), 4);
+    }
+
+    #[test]
+    #[should_panic(expected = "All pixels should be computed")]
+    fn test_to_final_buffer_panics_if_incomplete() {
+        let acc = Adam7Accumulator::new(2, 2);
+        acc.to_final_buffer();
     }
 }

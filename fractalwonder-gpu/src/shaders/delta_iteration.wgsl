@@ -1,4 +1,5 @@
 // Delta iteration compute shader for f32 perturbation rendering.
+// Supports Adam7 progressive rendering via adam7_step uniform.
 
 struct Uniforms {
     width: u32,
@@ -10,6 +11,7 @@ struct Uniforms {
     dc_origin_im: f32,
     dc_step_re: f32,
     dc_step_im: f32,
+    adam7_step: u32,  // 0 = compute all, 1-7 = Adam7 pass
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -17,13 +19,45 @@ struct Uniforms {
 @group(0) @binding(2) var<storage, read_write> results: array<u32>;
 @group(0) @binding(3) var<storage, read_write> glitch_flags: array<u32>;
 
+// Adam7 interlacing matrix (8x8 pattern, values 1-7)
+fn get_adam7_pass(x: u32, y: u32) -> u32 {
+    // Row-major 8x8 matrix indexed by [y % 8][x % 8]
+    let row = y % 8u;
+    let col = x % 8u;
+
+    // Pattern encodes which pass (1-7) each pixel belongs to
+    let matrix = array<array<u32, 8>, 8>(
+        array<u32, 8>(1u, 6u, 4u, 6u, 2u, 6u, 4u, 6u),
+        array<u32, 8>(7u, 7u, 7u, 7u, 7u, 7u, 7u, 7u),
+        array<u32, 8>(5u, 6u, 5u, 6u, 5u, 6u, 5u, 6u),
+        array<u32, 8>(7u, 7u, 7u, 7u, 7u, 7u, 7u, 7u),
+        array<u32, 8>(3u, 6u, 4u, 6u, 3u, 6u, 4u, 6u),
+        array<u32, 8>(7u, 7u, 7u, 7u, 7u, 7u, 7u, 7u),
+        array<u32, 8>(5u, 6u, 5u, 6u, 5u, 6u, 5u, 6u),
+        array<u32, 8>(7u, 7u, 7u, 7u, 7u, 7u, 7u, 7u),
+    );
+
+    return matrix[row][col];
+}
+
+// Sentinel value for uncomputed pixels
+const SENTINEL_NOT_COMPUTED: u32 = 0xFFFFFFFFu;
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    if (gid.x >= uniforms.width || gid.y >= uniforms.height) {
+    if gid.x >= uniforms.width || gid.y >= uniforms.height {
         return;
     }
 
     let idx = gid.y * uniforms.width + gid.x;
+
+    // Adam7 early exit: skip pixels not in current pass
+    if uniforms.adam7_step > 0u && get_adam7_pass(gid.x, gid.y) != uniforms.adam7_step {
+        // Write sentinel to indicate "not computed this pass"
+        results[idx] = SENTINEL_NOT_COMPUTED;
+        glitch_flags[idx] = 0u;
+        return;
+    }
 
     // Compute delta-c for this pixel
     let dc = vec2<f32>(
@@ -45,19 +79,19 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let dz_sq = dot(dz, dz);
 
         // Escape check
-        if (z_sq > uniforms.escape_radius_sq) {
+        if z_sq > uniforms.escape_radius_sq {
             results[idx] = n;
             glitch_flags[idx] = select(0u, 1u, glitched);
             return;
         }
 
         // Pauldelbrot glitch detection: |z|^2 < tau^2 * |Z|^2
-        if (Z_sq > 1e-20 && z_sq < uniforms.tau_sq * Z_sq) {
+        if Z_sq > 1e-20 && z_sq < uniforms.tau_sq * Z_sq {
             glitched = true;
         }
 
         // Rebase check: |z|^2 < |dz|^2
-        if (z_sq < dz_sq) {
+        if z_sq < dz_sq {
             dz = z;
             m = 0u;
             continue;
@@ -75,7 +109,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         );
 
         m = m + 1u;
-        if (m >= orbit_len) {
+        if m >= orbit_len {
             m = 0u;
         }
     }

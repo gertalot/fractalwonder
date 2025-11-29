@@ -1,6 +1,6 @@
 //! Tests for GPU renderer - verifies GPU output matches CPU perturbation.
 
-use crate::{GpuAvailability, GpuContext, GpuRenderer};
+use crate::{Adam7Pass, GpuAvailability, GpuContext, GpuRenderer};
 use fractalwonder_compute::{compute_pixel_perturbation, ReferenceOrbit};
 use fractalwonder_core::{BigFloat, ComputeData, MandelbrotData};
 
@@ -73,6 +73,7 @@ fn gpu_matches_cpu_iteration_counts() {
                 height,
                 max_iter,
                 tau_sq,
+                Adam7Pass::all_pixels(),
             )
             .await
             .expect("GPU render should succeed");
@@ -163,6 +164,7 @@ fn gpu_glitch_detection_works() {
                 height,
                 max_iter,
                 1e-6,
+                Adam7Pass::all_pixels(),
             )
             .await
             .expect("GPU render should succeed");
@@ -211,6 +213,7 @@ fn gpu_in_set_points_reach_max_iter() {
                 height,
                 max_iter,
                 1e-6,
+                Adam7Pass::all_pixels(),
             )
             .await
             .expect("GPU render should succeed");
@@ -260,6 +263,7 @@ fn gpu_escaping_points_escape_quickly() {
                 height,
                 max_iter,
                 1e-6,
+                Adam7Pass::all_pixels(),
             )
             .await
             .expect("GPU render should succeed");

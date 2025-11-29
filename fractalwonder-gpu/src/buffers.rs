@@ -15,7 +15,8 @@ pub struct Uniforms {
     pub dc_origin_im: f32,
     pub dc_step_re: f32,
     pub dc_step_im: f32,
-    pub _padding: [u32; 3],
+    pub adam7_step: u32, // 0 = compute all, 1-7 = Adam7 pass
+    pub _padding: [u32; 2],
 }
 
 impl Uniforms {
@@ -26,6 +27,7 @@ impl Uniforms {
         tau_sq: f32,
         dc_origin: (f32, f32),
         dc_step: (f32, f32),
+        adam7_step: u32,
     ) -> Self {
         Self {
             width,
@@ -37,7 +39,8 @@ impl Uniforms {
             dc_origin_im: dc_origin.1,
             dc_step_re: dc_step.0,
             dc_step_im: dc_step.1,
-            _padding: [0; 3],
+            adam7_step,
+            _padding: [0; 2],
         }
     }
 }

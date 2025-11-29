@@ -13,10 +13,10 @@ mod tests;
 pub use buffers::{GpuBuffers, Uniforms};
 pub use device::{GpuAvailability, GpuContext};
 pub use error::GpuError;
-pub use pass::Pass;
+pub use pass::Adam7Pass;
 pub use pipeline::GpuPipeline;
 pub use renderer::{GpuRenderResult, GpuRenderer};
-pub use stretch::stretch_compute_data;
+pub use stretch::{Adam7Accumulator, SENTINEL_NOT_COMPUTED};
 
 // Re-export ComputeData for convenience
 pub use fractalwonder_core::{ComputeData, MandelbrotData};

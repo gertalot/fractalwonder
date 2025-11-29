@@ -4,7 +4,8 @@ use crate::buffers::{GpuBuffers, Uniforms};
 use crate::device::GpuContext;
 use crate::error::GpuError;
 use crate::pipeline::GpuPipeline;
-use crate::Pass;
+use crate::stretch::SENTINEL_NOT_COMPUTED;
+use crate::Adam7Pass;
 use fractalwonder_core::{ComputeData, MandelbrotData};
 
 /// Result of a GPU render operation.
@@ -16,7 +17,7 @@ pub struct GpuRenderResult {
 impl GpuRenderResult {
     pub fn has_glitches(&self) -> bool {
         self.data.iter().any(|d| match d {
-            ComputeData::Mandelbrot(m) => m.glitched,
+            ComputeData::Mandelbrot(m) => m.glitched && m.iterations != SENTINEL_NOT_COMPUTED,
             _ => false,
         })
     }
@@ -25,7 +26,7 @@ impl GpuRenderResult {
         self.data
             .iter()
             .filter(|d| match d {
-                ComputeData::Mandelbrot(m) => m.glitched,
+                ComputeData::Mandelbrot(m) => m.glitched && m.iterations != SENTINEL_NOT_COMPUTED,
                 _ => false,
             })
             .count()
@@ -53,17 +54,10 @@ impl GpuRenderer {
         }
     }
 
-    /// Render the Mandelbrot set using GPU compute shader.
+    /// Render a single Adam7 pass.
     ///
-    /// # Arguments
-    /// * `orbit` - Reference orbit as slice of (re, im) pairs
-    /// * `orbit_id` - ID to track orbit changes (skip re-upload if unchanged)
-    /// * `dc_origin` - Delta-c at top-left pixel
-    /// * `dc_step` - Delta-c step per pixel
-    /// * `width` - Image width in pixels
-    /// * `height` - Image height in pixels
-    /// * `max_iterations` - Maximum iteration count
-    /// * `tau_sq` - Pauldelbrot threshold squared
+    /// Returns ComputeData for all pixels, but only pixels matching the Adam7
+    /// pass will have valid data. Non-matching pixels have iterations = SENTINEL_NOT_COMPUTED.
     #[allow(clippy::too_many_arguments)]
     pub async fn render(
         &mut self,
@@ -75,6 +69,7 @@ impl GpuRenderer {
         height: u32,
         max_iterations: u32,
         tau_sq: f32,
+        pass: Adam7Pass,
     ) -> Result<GpuRenderResult, GpuError> {
         let start = Self::now();
 
@@ -108,8 +103,16 @@ impl GpuRenderer {
             self.cached_orbit_id = Some(orbit_id);
         }
 
-        // Write uniforms
-        let uniforms = Uniforms::new(width, height, max_iterations, tau_sq, dc_origin, dc_step);
+        // Write uniforms with Adam7 step
+        let uniforms = Uniforms::new(
+            width,
+            height,
+            max_iterations,
+            tau_sq,
+            dc_origin,
+            dc_step,
+            pass.step() as u32,
+        );
         self.context
             .queue
             .write_buffer(&buffers.uniforms, 0, bytemuck::bytes_of(&uniforms));
@@ -150,13 +153,13 @@ impl GpuRenderer {
                 });
 
         {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("delta_iteration_pass"),
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&self.pipeline.compute_pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
-            pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
+            compute_pass.set_pipeline(&self.pipeline.compute_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
         }
 
         // Copy results to staging buffers
@@ -182,7 +185,7 @@ impl GpuRenderer {
             .read_buffer(&buffers.staging_glitches, pixel_count)
             .await?;
 
-        // Convert to ComputeData (same format as CPU)
+        // Convert to ComputeData
         let data: Vec<ComputeData> = iterations
             .iter()
             .zip(glitch_data.iter())
@@ -190,7 +193,7 @@ impl GpuRenderer {
                 ComputeData::Mandelbrot(MandelbrotData {
                     iterations: iter,
                     max_iterations,
-                    escaped: iter < max_iterations,
+                    escaped: iter < max_iterations && iter != SENTINEL_NOT_COMPUTED,
                     glitched: glitch_flag != 0,
                 })
             })
@@ -202,47 +205,6 @@ impl GpuRenderer {
             data,
             compute_time_ms: end - start,
         })
-    }
-
-    /// Render a single pass at reduced resolution/iterations.
-    ///
-    /// Returns ComputeData for `pass.dimensions()` pixels, NOT full canvas size.
-    /// Caller is responsible for stretching to full size.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn render_pass(
-        &mut self,
-        orbit: &[(f64, f64)],
-        orbit_id: u32,
-        dc_origin: (f32, f32),
-        viewport_width: f32,
-        viewport_height: f32,
-        canvas_width: u32,
-        canvas_height: u32,
-        max_iterations: u32,
-        tau_sq: f32,
-        pass: Pass,
-    ) -> Result<GpuRenderResult, GpuError> {
-        let (pass_w, pass_h) = pass.dimensions(canvas_width, canvas_height);
-        let pass_max_iter = pass.max_iterations(max_iterations);
-        let pass_tau_sq = if pass.is_final() { tau_sq } else { 0.0 };
-
-        // Compute dc_step for this pass resolution
-        let dc_step = (
-            viewport_width / pass_w as f32,
-            viewport_height / pass_h as f32,
-        );
-
-        self.render(
-            orbit,
-            orbit_id,
-            dc_origin,
-            dc_step,
-            pass_w,
-            pass_h,
-            pass_max_iter,
-            pass_tau_sq,
-        )
-        .await
     }
 
     async fn read_buffer(
@@ -257,9 +219,6 @@ impl GpuRenderer {
             let _ = tx.send(result);
         });
 
-        // On native, poll drives the callback. On web, poll is a no-op but
-        // the browser handles GPU completion - the await below yields to the
-        // event loop which allows the browser to process GPU work.
         #[cfg(not(target_arch = "wasm32"))]
         self.context.device.poll(wgpu::Maintain::Wait);
 
