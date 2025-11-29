@@ -1105,6 +1105,19 @@ impl WorkerPool {
         self.renderer_id = renderer_id.to_string();
         self.recreate_workers(); // Must recreate workers with new renderer
     }
+
+    /// Get the current reference orbit if available.
+    pub fn get_orbit(&self) -> Option<(Vec<(f64, f64)>, u32)> {
+        self.perturbation
+            .pending_orbit
+            .as_ref()
+            .map(|o| (o.orbit.clone(), self.perturbation.orbit_id))
+    }
+
+    /// Get max iterations for current render.
+    pub fn get_max_iterations(&self) -> u32 {
+        self.perturbation.max_iterations
+    }
 }
 
 impl Drop for WorkerPool {
