@@ -125,7 +125,7 @@ pub fn compute_pixel_perturbation_bigfloat(
                 max_iterations,
                 escaped: true,
                 glitched,
-                final_z_norm_sq: 0.0,
+                final_z_norm_sq: z_mag_sq as f32,
             };
         }
 
@@ -214,7 +214,7 @@ pub fn compute_pixel_perturbation_floatexp(
                 max_iterations,
                 escaped: true,
                 glitched,
-                final_z_norm_sq: 0.0,
+                final_z_norm_sq: z_mag_sq as f32,
             };
         }
 
@@ -307,7 +307,7 @@ pub fn compute_pixel_perturbation_floatexp_bla(
                 max_iterations,
                 escaped: true,
                 glitched,
-                final_z_norm_sq: 0.0,
+                final_z_norm_sq: z_mag_sq as f32,
             };
         }
 
@@ -433,7 +433,7 @@ pub fn compute_pixel_perturbation(
                 max_iterations,
                 escaped: true,
                 glitched,
-                final_z_norm_sq: 0.0,
+                final_z_norm_sq: z_mag_sq as f32,
             };
         }
 
@@ -523,7 +523,7 @@ pub fn compute_pixel_perturbation_bla(
                 max_iterations,
                 escaped: true,
                 glitched,
-                final_z_norm_sq: 0.0,
+                final_z_norm_sq: z_mag_sq as f32,
             };
         }
 
@@ -683,13 +683,15 @@ mod tests {
         for n in 0..max_iter {
             let x_sq = x.mul(&x);
             let y_sq = y.mul(&y);
-            if x_sq.add(&y_sq).gt(&four) {
+            let z_mag_sq_bf = x_sq.add(&y_sq);
+            if z_mag_sq_bf.gt(&four) {
+                let z_mag_sq = z_mag_sq_bf.to_f64();
                 return MandelbrotData {
                     iterations: n,
                     max_iterations: max_iter,
                     escaped: true,
                     glitched: false,
-                    final_z_norm_sq: 0.0,
+                    final_z_norm_sq: z_mag_sq as f32,
                 };
             }
             let two = BigFloat::with_precision(2.0, precision);
