@@ -5,6 +5,7 @@ use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
 use crate::workers::{TileResult, WorkerPool};
 use fractalwonder_core::Viewport;
+use fractalwonder_gpu::{GpuAvailability, GpuContext, GpuRenderer};
 use leptos::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -20,6 +21,12 @@ pub struct ParallelRenderer {
     xray_enabled: Rc<Cell<bool>>,
     /// Stored tile results for re-colorizing without recompute
     tile_results: Rc<RefCell<Vec<TileResult>>>,
+    /// GPU renderer, lazily initialized when gpu_enabled
+    gpu_renderer: Rc<RefCell<Option<GpuRenderer>>>,
+    /// Whether GPU initialization has been attempted
+    gpu_init_attempted: Rc<Cell<bool>>,
+    /// Canvas dimensions for GPU rendering
+    canvas_size: Rc<Cell<(u32, u32)>>,
 }
 
 impl ParallelRenderer {
@@ -28,6 +35,9 @@ impl ParallelRenderer {
         let canvas_ctx: Rc<RefCell<Option<CanvasRenderingContext2d>>> = Rc::new(RefCell::new(None));
         let xray_enabled: Rc<Cell<bool>> = Rc::new(Cell::new(false));
         let tile_results: Rc<RefCell<Vec<TileResult>>> = Rc::new(RefCell::new(Vec::new()));
+        let gpu_renderer: Rc<RefCell<Option<GpuRenderer>>> = Rc::new(RefCell::new(None));
+        let gpu_init_attempted: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+        let canvas_size: Rc<Cell<(u32, u32)>> = Rc::new(Cell::new((0, 0)));
 
         let ctx_clone = Rc::clone(&canvas_ctx);
         let xray_clone = Rc::clone(&xray_enabled);
@@ -61,6 +71,9 @@ impl ParallelRenderer {
             canvas_ctx,
             xray_enabled,
             tile_results,
+            gpu_renderer,
+            gpu_init_attempted,
+            canvas_size,
         })
     }
 
