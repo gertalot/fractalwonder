@@ -3,6 +3,7 @@
 mod buffers;
 mod device;
 mod error;
+mod pass;
 mod pipeline;
 mod renderer;
 #[cfg(test)]
@@ -11,6 +12,7 @@ mod tests;
 pub use buffers::{GpuBuffers, Uniforms};
 pub use device::{GpuAvailability, GpuContext};
 pub use error::GpuError;
+pub use pass::Pass;
 pub use pipeline::GpuPipeline;
 pub use renderer::{GpuRenderResult, GpuRenderer};
 
