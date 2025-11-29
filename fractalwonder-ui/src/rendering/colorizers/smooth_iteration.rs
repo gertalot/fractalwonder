@@ -39,7 +39,7 @@ impl SmoothIterationColorizer {
         // Since we have |z|²: ln(|z|) = ln(|z|²) / 2
         let smooth = if data.final_z_norm_sq > 1.0 {
             let z_norm_sq = data.final_z_norm_sq as f64;
-            let log_z = z_norm_sq.ln() / 2.0;              // ln(|z|)
+            let log_z = z_norm_sq.ln() / 2.0; // ln(|z|)
             let nu = log_z.ln() / std::f64::consts::LN_2; // log₂(ln(|z|))
             data.iterations as f64 + 1.0 - nu
         } else {

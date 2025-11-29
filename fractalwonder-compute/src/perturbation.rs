@@ -20,14 +20,14 @@ impl ReferenceOrbit {
     /// Compute a reference orbit using BigFloat precision.
     ///
     /// The orbit is computed at full precision but stored as f64
-    /// since orbit values are bounded by escape radius (~2).
+    /// since orbit values are bounded by escape radius (256).
     pub fn compute(c_ref: &(BigFloat, BigFloat), max_iterations: u32) -> Self {
         let precision = c_ref.0.precision_bits();
         let mut orbit = Vec::with_capacity(max_iterations as usize);
 
         let mut x = BigFloat::zero(precision);
         let mut y = BigFloat::zero(precision);
-        let four = BigFloat::with_precision(4.0, precision);
+        let escape_radius_sq = BigFloat::with_precision(65536.0, precision);
 
         let mut escaped_at = None;
 
@@ -35,10 +35,10 @@ impl ReferenceOrbit {
             // Store current X_n as f64
             orbit.push((x.to_f64(), y.to_f64()));
 
-            // Check escape: |z|^2 > 4
+            // Check escape: |z|^2 > 65536
             let x_sq = x.mul(&x);
             let y_sq = y.mul(&y);
-            if x_sq.add(&y_sq).gt(&four) {
+            if x_sq.add(&y_sq).gt(&escape_radius_sq) {
                 escaped_at = Some(n);
                 break;
             }
@@ -118,8 +118,8 @@ pub fn compute_pixel_perturbation_bigfloat(
         let z_m_mag_sq = z_m.0 * z_m.0 + z_m.1 * z_m.1;
         let dz_mag_sq = dz_re.mul(&dz_re).add(&dz_im.mul(&dz_im)).to_f64();
 
-        // 1. Escape check: |z|² > 4
-        if z_mag_sq > 4.0 {
+        // 1. Escape check: |z|² > 65536
+        if z_mag_sq > 65536.0 {
             return MandelbrotData {
                 iterations: n,
                 max_iterations,
@@ -208,7 +208,7 @@ pub fn compute_pixel_perturbation_floatexp(
         let dz_mag_sq = FloatExp::norm_sq(&dz_re, &dz_im);
 
         // 1. Escape check
-        if z_mag_sq > 4.0 {
+        if z_mag_sq > 65536.0 {
             return MandelbrotData {
                 iterations: n,
                 max_iterations,
@@ -301,7 +301,7 @@ pub fn compute_pixel_perturbation_floatexp_bla(
         let dz_mag_sq = FloatExp::norm_sq(&dz_re, &dz_im);
 
         // 1. Escape check
-        if z_mag_sq > 4.0 {
+        if z_mag_sq > 65536.0 {
             return MandelbrotData {
                 iterations: n,
                 max_iterations,
@@ -384,7 +384,7 @@ pub fn compute_pixel_perturbation_floatexp_bla(
 /// 2. For each iteration n:
 ///    a. Z_m = orbit[m % len] (wrap-around)
 ///    b. z = Z_m + δz
-///    c. Escape: |z|² > 4 → return escaped
+///    c. Escape: |z|² > 65536 → return escaped
 ///    d. Glitch: |z|² < τ²|Z|² → mark glitched
 ///    e. Rebase: |z|² < |δz|² → δz = z, m = 0
 ///    f. δz = 2·Z_m·δz + δz² + δc
@@ -426,8 +426,8 @@ pub fn compute_pixel_perturbation(
         let z_m_mag_sq = z_m.0 * z_m.0 + z_m.1 * z_m.1;
         let dz_mag_sq = dz.0 * dz.0 + dz.1 * dz.1;
 
-        // 1. Escape check: |z|² > 4
-        if z_mag_sq > 4.0 {
+        // 1. Escape check: |z|² > 65536
+        if z_mag_sq > 65536.0 {
             return MandelbrotData {
                 iterations: n,
                 max_iterations,
@@ -517,7 +517,7 @@ pub fn compute_pixel_perturbation_bla(
         let dz_mag_sq = dz.0 * dz.0 + dz.1 * dz.1;
 
         // 1. Escape check
-        if z_mag_sq > 4.0 {
+        if z_mag_sq > 65536.0 {
             return MandelbrotData {
                 iterations: n,
                 max_iterations,
@@ -618,7 +618,7 @@ mod tests {
 
         for (x, y) in &orbit.orbit {
             let mag_sq = x * x + y * y;
-            assert!(mag_sq <= 4.0, "Orbit value escaped: ({}, {})", x, y);
+            assert!(mag_sq <= 65536.0, "Orbit value escaped: ({}, {})", x, y);
         }
     }
 

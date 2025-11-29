@@ -33,7 +33,7 @@ impl Uniforms {
             width,
             height,
             max_iterations,
-            escape_radius_sq: 4.0,
+            escape_radius_sq: 65536.0, // 256² for smooth coloring
             tau_sq,
             dc_origin_re: dc_origin.0,
             dc_origin_im: dc_origin.1,

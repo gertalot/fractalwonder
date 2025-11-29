@@ -38,15 +38,15 @@ impl MandelbrotRenderer {
     fn compute_point(&self, cx: BigFloat, cy: BigFloat, precision: usize) -> MandelbrotData {
         let mut zx = BigFloat::zero(precision);
         let mut zy = BigFloat::zero(precision);
-        let four = BigFloat::with_precision(4.0, precision);
+        let escape_radius_sq = BigFloat::with_precision(65536.0, precision);
         let two = BigFloat::with_precision(2.0, precision);
 
         for i in 0..self.max_iterations {
             let zx_sq = zx.mul(&zx);
             let zy_sq = zy.mul(&zy);
 
-            // Escape check: |z|^2 > 4
-            if zx_sq.add(&zy_sq).gt(&four) {
+            // Escape check: |z|^2 > 65536
+            if zx_sq.add(&zy_sq).gt(&escape_radius_sq) {
                 return MandelbrotData {
                     iterations: i,
                     max_iterations: self.max_iterations,
@@ -102,28 +102,27 @@ mod tests {
 
     #[test]
     fn point_outside_escapes_quickly() {
-        // Point (2, 0) escapes quickly: z0=0, z1=2, z2=6, |z2|^2 = 36 > 4
+        // Point (2, 0) escapes: z0=0, z1=2, z2=6, z3=38, z4=1446, ... |z6|^2 > 65536
         let renderer = MandelbrotRenderer::new(100);
         let precision = 128;
         let cx = BigFloat::with_precision(2.0, precision);
         let cy = BigFloat::zero(precision);
         let result = renderer.compute_point(cx, cy, precision);
         assert!(result.escaped, "Point (2,0) should escape");
-        assert_eq!(result.iterations, 2, "Should escape after 2 iterations");
+        assert!(result.iterations < 10, "Should escape quickly");
     }
 
     #[test]
     fn point_far_outside_escapes_at_zero() {
-        // Point (10, 0): |c|^2 = 100 > 4, escapes at iteration 0
+        // Point (10, 0): |c|^2 = 100, escapes quickly
         let renderer = MandelbrotRenderer::new(100);
         let precision = 128;
         let cx = BigFloat::with_precision(10.0, precision);
         let cy = BigFloat::zero(precision);
         let result = renderer.compute_point(cx, cy, precision);
         assert!(result.escaped);
-        // First iteration: z = 0, then check |z|^2 = 0 < 4, then z = c
-        // Second check: |c|^2 = 100 > 4 -> escape at i=1
-        assert_eq!(result.iterations, 1);
+        // z0=0, z1=10, z2=110, z3=12110, |z4|^2 > 65536
+        assert!(result.iterations < 5, "Should escape very quickly");
     }
 
     #[test]
