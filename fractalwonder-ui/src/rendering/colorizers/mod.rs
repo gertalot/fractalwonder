@@ -1,17 +1,15 @@
 pub mod color_space;
+pub mod colorizer;
 pub mod mandelbrot;
 pub mod palette;
 pub mod test_image;
 
 use fractalwonder_core::ComputeData;
 
+pub use colorizer::Colorizer;
 pub use mandelbrot::colorize as colorize_mandelbrot;
 pub use palette::Palette;
 pub use test_image::colorize as colorize_test_image;
-
-/// Colorizer function type - converts compute data to RGBA pixels.
-/// The bool parameter is xray_enabled.
-pub type Colorizer = fn(&ComputeData, bool) -> [u8; 4];
 
 /// Dispatch colorization based on ComputeData variant.
 /// xray_enabled controls whether glitched pixels are shown in cyan.
