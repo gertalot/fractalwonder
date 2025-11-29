@@ -1,36 +1,94 @@
 //! Color palettes with OKLAB interpolation.
+//!
+//! Colors are pre-computed into a lookup table at construction time for fast sampling.
 
 use super::color_space::{
     linear_rgb_to_oklab, linear_to_srgb, oklab_to_linear_rgb, srgb_to_linear,
 };
 
+/// Number of entries in the pre-computed lookup table.
+const LUT_SIZE: usize = 4096;
+
 /// A color palette that maps normalized values [0,1] to RGB colors.
-/// Interpolation happens in OKLAB space for perceptually uniform gradients.
+/// OKLAB interpolation is pre-computed into a lookup table for fast sampling.
 #[derive(Clone, Debug)]
 pub struct Palette {
-    /// Control points in sRGB [0-255]
-    colors: Vec<[u8; 3]>,
+    /// Pre-computed lookup table with OKLAB-interpolated colors
+    lut: Vec<[u8; 3]>,
     /// How many times to cycle through the palette (1.0 = no cycling)
     cycle_count: f64,
 }
 
 impl Palette {
     /// Create a new palette from control points.
+    /// Pre-computes a lookup table using OKLAB interpolation.
     pub fn new(colors: Vec<[u8; 3]>, cycle_count: f64) -> Self {
         assert!(!colors.is_empty(), "Palette must have at least one color");
-        Self {
-            colors,
-            cycle_count,
+
+        // Convert control points to OKLAB
+        let oklab_colors: Vec<(f64, f64, f64)> = colors
+            .iter()
+            .map(|&rgb| {
+                let r = srgb_to_linear(rgb[0] as f64 / 255.0);
+                let g = srgb_to_linear(rgb[1] as f64 / 255.0);
+                let b = srgb_to_linear(rgb[2] as f64 / 255.0);
+                linear_rgb_to_oklab(r, g, b)
+            })
+            .collect();
+
+        // Build the lookup table
+        let lut = (0..LUT_SIZE)
+            .map(|i| {
+                let t = i as f64 / (LUT_SIZE - 1) as f64;
+                Self::interpolate_oklab(&oklab_colors, t)
+            })
+            .collect();
+
+        Self { lut, cycle_count }
+    }
+
+    /// Interpolate in OKLAB space and convert back to sRGB.
+    fn interpolate_oklab(oklab_colors: &[(f64, f64, f64)], t: f64) -> [u8; 3] {
+        if oklab_colors.len() == 1 {
+            let (l, a, b) = oklab_colors[0];
+            return Self::oklab_to_srgb(l, a, b);
         }
+
+        let t = t.clamp(0.0, 1.0);
+        let scaled = t * (oklab_colors.len() - 1) as f64;
+        let i = scaled.floor() as usize;
+        let frac = scaled.fract();
+
+        // Handle edge case at t=1.0
+        if i >= oklab_colors.len() - 1 {
+            let (l, a, b) = oklab_colors[oklab_colors.len() - 1];
+            return Self::oklab_to_srgb(l, a, b);
+        }
+
+        let (l1, a1, b1) = oklab_colors[i];
+        let (l2, a2, b2) = oklab_colors[i + 1];
+
+        // Linear interpolation in OKLAB space
+        let l = l1 + frac * (l2 - l1);
+        let a = a1 + frac * (a2 - a1);
+        let b = b1 + frac * (b2 - b1);
+
+        Self::oklab_to_srgb(l, a, b)
+    }
+
+    fn oklab_to_srgb(l: f64, a: f64, b: f64) -> [u8; 3] {
+        let (r, g, b) = oklab_to_linear_rgb(l, a, b);
+        [
+            (linear_to_srgb(r) * 255.0).round() as u8,
+            (linear_to_srgb(g) * 255.0).round() as u8,
+            (linear_to_srgb(b) * 255.0).round() as u8,
+        ]
     }
 
     /// Sample the palette at position t ∈ [0,1].
-    /// Interpolates between control points in OKLAB space.
+    /// Fast lookup into pre-computed table.
+    #[inline]
     pub fn sample(&self, t: f64) -> [u8; 3] {
-        if self.colors.len() == 1 {
-            return self.colors[0];
-        }
-
         // Apply cycling and clamp
         let t = if self.cycle_count > 1.0 {
             (t * self.cycle_count).fract()
@@ -38,46 +96,9 @@ impl Palette {
             t.clamp(0.0, 1.0)
         };
 
-        // Scale to color index
-        let scaled = t * (self.colors.len() - 1) as f64;
-        let i = scaled.floor() as usize;
-        let frac = scaled.fract();
-
-        // Handle edge case at t=1.0
-        if i >= self.colors.len() - 1 {
-            return self.colors[self.colors.len() - 1];
-        }
-
-        // Convert both colors to OKLAB
-        let c1 = self.colors[i];
-        let c2 = self.colors[i + 1];
-
-        let (l1, a1, b1) = self.to_oklab(c1);
-        let (l2, a2, b2) = self.to_oklab(c2);
-
-        // Linear interpolation in OKLAB space
-        let l = l1 + frac * (l2 - l1);
-        let a = a1 + frac * (a2 - a1);
-        let b = b1 + frac * (b2 - b1);
-
-        // Convert back to sRGB
-        self.oklab_to_srgb(l, a, b)
-    }
-
-    fn to_oklab(&self, rgb: [u8; 3]) -> (f64, f64, f64) {
-        let r = srgb_to_linear(rgb[0] as f64 / 255.0);
-        let g = srgb_to_linear(rgb[1] as f64 / 255.0);
-        let b = srgb_to_linear(rgb[2] as f64 / 255.0);
-        linear_rgb_to_oklab(r, g, b)
-    }
-
-    fn oklab_to_srgb(&self, l: f64, a: f64, b: f64) -> [u8; 3] {
-        let (r, g, b) = oklab_to_linear_rgb(l, a, b);
-        [
-            (linear_to_srgb(r) * 255.0).round() as u8,
-            (linear_to_srgb(g) * 255.0).round() as u8,
-            (linear_to_srgb(b) * 255.0).round() as u8,
-        ]
+        // Direct lookup into pre-computed LUT
+        let index = ((t * (LUT_SIZE - 1) as f64) as usize).min(LUT_SIZE - 1);
+        self.lut[index]
     }
 
     /// Black to white gradient.

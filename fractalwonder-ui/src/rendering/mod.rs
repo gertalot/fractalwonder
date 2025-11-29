@@ -6,9 +6,7 @@ mod test_pattern;
 mod tiles;
 
 pub use canvas_utils::{draw_pixels_to_canvas, get_2d_context, performance_now, yield_to_browser};
-pub use colorizers::{
-    colorize, colorize_mandelbrot, colorize_test_image, ColorSchemePreset, Colorizer,
-};
+pub use colorizers::{ColorSchemePreset, Colorizer};
 pub use parallel_renderer::ParallelRenderer;
 pub use render_progress::RenderProgress;
 // Only export what's still needed for tests
