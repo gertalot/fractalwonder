@@ -27,6 +27,8 @@ pub struct ParallelRenderer {
     gpu_init_attempted: Rc<Cell<bool>>,
     /// Canvas dimensions for GPU rendering
     canvas_size: Rc<Cell<(u32, u32)>>,
+    /// Render generation counter for interruption handling
+    render_generation: Rc<Cell<u32>>,
 }
 
 impl ParallelRenderer {
@@ -38,6 +40,7 @@ impl ParallelRenderer {
         let gpu_renderer: Rc<RefCell<Option<GpuRenderer>>> = Rc::new(RefCell::new(None));
         let gpu_init_attempted: Rc<Cell<bool>> = Rc::new(Cell::new(false));
         let canvas_size: Rc<Cell<(u32, u32)>> = Rc::new(Cell::new((0, 0)));
+        let render_generation: Rc<Cell<u32>> = Rc::new(Cell::new(0));
 
         let ctx_clone = Rc::clone(&canvas_ctx);
         let xray_clone = Rc::clone(&xray_enabled);
@@ -74,6 +77,7 @@ impl ParallelRenderer {
             gpu_renderer,
             gpu_init_attempted,
             canvas_size,
+            render_generation,
         })
     }
 
