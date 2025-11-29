@@ -18,6 +18,7 @@ struct Uniforms {
 @group(0) @binding(1) var<storage, read> reference_orbit: array<vec2<f32>>;
 @group(0) @binding(2) var<storage, read_write> results: array<u32>;
 @group(0) @binding(3) var<storage, read_write> glitch_flags: array<u32>;
+@group(0) @binding(4) var<storage, read_write> z_norm_sq: array<f32>;
 
 // Adam7 interlacing matrix (8x8 pattern, values 1-7)
 fn get_adam7_pass(x: u32, y: u32) -> u32 {
@@ -82,6 +83,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         if z_sq > uniforms.escape_radius_sq {
             results[idx] = n;
             glitch_flags[idx] = select(0u, 1u, glitched);
+            z_norm_sq[idx] = z_sq;
             return;
         }
 
@@ -116,4 +118,5 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     results[idx] = uniforms.max_iterations;
     glitch_flags[idx] = select(0u, 1u, glitched);
+    z_norm_sq[idx] = 0.0;
 }
