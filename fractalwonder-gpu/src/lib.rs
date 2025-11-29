@@ -6,6 +6,7 @@ mod error;
 mod pass;
 mod pipeline;
 mod renderer;
+mod stretch;
 #[cfg(test)]
 mod tests;
 
@@ -15,6 +16,7 @@ pub use error::GpuError;
 pub use pass::Pass;
 pub use pipeline::GpuPipeline;
 pub use renderer::{GpuRenderResult, GpuRenderer};
+pub use stretch::stretch_compute_data;
 
 // Re-export ComputeData for convenience
 pub use fractalwonder_core::{ComputeData, MandelbrotData};
