@@ -161,6 +161,7 @@ mod tests {
                 max_iterations: 1000,
                 escaped: true,
                 glitched: false,
+                final_z_norm_sq: 0.0,
             })],
             compute_time_ms: 12.5,
         };

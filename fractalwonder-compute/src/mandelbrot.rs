@@ -52,6 +52,7 @@ impl MandelbrotRenderer {
                     max_iterations: self.max_iterations,
                     escaped: true,
                     glitched: false,
+                    final_z_norm_sq: 0.0,
                 };
             }
 
@@ -69,6 +70,7 @@ impl MandelbrotRenderer {
             max_iterations: self.max_iterations,
             escaped: false,
             glitched: false,
+            final_z_norm_sq: 0.0,
         }
     }
 }

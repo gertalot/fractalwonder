@@ -48,6 +48,9 @@ pub struct MandelbrotData {
     /// When true, the colorizer can render this pixel distinctively (e.g., cyan overlay).
     #[serde(default)]
     pub glitched: bool,
+    /// |z|² at escape for smooth iteration coloring. Interior points store 0.0.
+    #[serde(default)]
+    pub final_z_norm_sq: f32,
 }
 
 /// Unified enum for all compute results.

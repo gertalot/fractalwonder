@@ -93,6 +93,7 @@ impl Adam7Accumulator {
             max_iterations: 1,
             escaped: false,
             glitched: false,
+            final_z_norm_sq: 0.0,
         })
     }
 }
@@ -107,6 +108,7 @@ mod tests {
             max_iterations: 1000,
             escaped: iterations < 1000,
             glitched: false,
+            final_z_norm_sq: 0.0,
         })
     }
 
@@ -116,6 +118,7 @@ mod tests {
             max_iterations: 1000,
             escaped: false,
             glitched: false,
+            final_z_norm_sq: 0.0,
         })
     }
 

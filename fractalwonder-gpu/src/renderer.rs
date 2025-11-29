@@ -195,6 +195,7 @@ impl GpuRenderer {
                     max_iterations,
                     escaped: iter < max_iterations && iter != SENTINEL_NOT_COMPUTED,
                     glitched: glitch_flag != 0,
+                    final_z_norm_sq: 0.0,
                 })
             })
             .collect();

@@ -96,6 +96,7 @@ pub fn compute_pixel_perturbation_bigfloat(
             max_iterations,
             escaped: false,
             glitched: true,
+            final_z_norm_sq: 0.0,
         };
     }
 
@@ -124,6 +125,7 @@ pub fn compute_pixel_perturbation_bigfloat(
                 max_iterations,
                 escaped: true,
                 glitched,
+                final_z_norm_sq: 0.0,
             };
         }
 
@@ -164,6 +166,7 @@ pub fn compute_pixel_perturbation_bigfloat(
         max_iterations,
         escaped: false,
         glitched,
+        final_z_norm_sq: 0.0,
     }
 }
 
@@ -188,6 +191,7 @@ pub fn compute_pixel_perturbation_floatexp(
             max_iterations,
             escaped: false,
             glitched: true,
+            final_z_norm_sq: 0.0,
         };
     }
 
@@ -210,6 +214,7 @@ pub fn compute_pixel_perturbation_floatexp(
                 max_iterations,
                 escaped: true,
                 glitched,
+                final_z_norm_sq: 0.0,
             };
         }
 
@@ -253,6 +258,7 @@ pub fn compute_pixel_perturbation_floatexp(
         max_iterations,
         escaped: false,
         glitched,
+        final_z_norm_sq: 0.0,
     }
 }
 
@@ -277,6 +283,7 @@ pub fn compute_pixel_perturbation_floatexp_bla(
             max_iterations,
             escaped: false,
             glitched: true,
+            final_z_norm_sq: 0.0,
         };
     }
 
@@ -300,6 +307,7 @@ pub fn compute_pixel_perturbation_floatexp_bla(
                 max_iterations,
                 escaped: true,
                 glitched,
+                final_z_norm_sq: 0.0,
             };
         }
 
@@ -361,6 +369,7 @@ pub fn compute_pixel_perturbation_floatexp_bla(
         max_iterations,
         escaped: false,
         glitched,
+        final_z_norm_sq: 0.0,
     }
 }
 
@@ -401,6 +410,7 @@ pub fn compute_pixel_perturbation(
             max_iterations,
             escaped: false,
             glitched: true,
+            final_z_norm_sq: 0.0,
         };
     }
 
@@ -423,6 +433,7 @@ pub fn compute_pixel_perturbation(
                 max_iterations,
                 escaped: true,
                 glitched,
+                final_z_norm_sq: 0.0,
             };
         }
 
@@ -465,6 +476,7 @@ pub fn compute_pixel_perturbation(
         max_iterations,
         escaped: false,
         glitched,
+        final_z_norm_sq: 0.0,
     }
 }
 
@@ -488,6 +500,7 @@ pub fn compute_pixel_perturbation_bla(
             max_iterations,
             escaped: false,
             glitched: true,
+            final_z_norm_sq: 0.0,
         };
     }
 
@@ -510,6 +523,7 @@ pub fn compute_pixel_perturbation_bla(
                 max_iterations,
                 escaped: true,
                 glitched,
+                final_z_norm_sq: 0.0,
             };
         }
 
@@ -561,6 +575,7 @@ pub fn compute_pixel_perturbation_bla(
         max_iterations,
         escaped: false,
         glitched,
+        final_z_norm_sq: 0.0,
     }
 }
 
@@ -674,6 +689,7 @@ mod tests {
                     max_iterations: max_iter,
                     escaped: true,
                     glitched: false,
+                    final_z_norm_sq: 0.0,
                 };
             }
             let two = BigFloat::with_precision(2.0, precision);
@@ -687,6 +703,7 @@ mod tests {
             max_iterations: max_iter,
             escaped: false,
             glitched: false,
+            final_z_norm_sq: 0.0,
         }
     }
 
