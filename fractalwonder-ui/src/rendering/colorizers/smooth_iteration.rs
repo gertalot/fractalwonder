@@ -1,12 +1,11 @@
-//! Smooth iteration colorizer - basic palette mapping without smoothing.
-//! (True smooth iteration requires `final_z_norm_sq` in MandelbrotData - Increment 2)
+//! Smooth iteration colorizer using the formula μ = n + 1 - log₂(ln(|z|))
+//! to eliminate banding in exterior regions.
 
 use super::{Colorizer, Palette};
 use fractalwonder_core::{ComputeData, MandelbrotData};
 
-/// Basic colorizer that maps iteration count to palette position.
-/// Currently uses linear mapping; will use smooth iteration formula
-/// once `final_z_norm_sq` is available in MandelbrotData.
+/// Colorizer that uses smooth iteration count to eliminate banding.
+/// Uses the formula μ = n + 1 - log₂(ln(|z|)) where |z| is computed from final_z_norm_sq.
 #[derive(Clone, Debug, Default)]
 pub struct SmoothIterationColorizer;
 
@@ -36,8 +35,19 @@ impl SmoothIterationColorizer {
             return [0, 0, 0, 255];
         }
 
-        // Linear normalization for now (smooth iteration in Increment 2)
-        let t = data.iterations as f64 / data.max_iterations as f64;
+        // Smooth iteration count: μ = n + 1 - log₂(ln(|z|))
+        // Since we have |z|²: ln(|z|) = ln(|z|²) / 2
+        let smooth = if data.final_z_norm_sq > 1.0 {
+            let z_norm_sq = data.final_z_norm_sq as f64;
+            let log_z = z_norm_sq.ln() / 2.0;              // ln(|z|)
+            let nu = log_z.ln() / std::f64::consts::LN_2; // log₂(ln(|z|))
+            data.iterations as f64 + 1.0 - nu
+        } else {
+            // Fallback for edge cases
+            data.iterations as f64
+        };
+
+        let t = (smooth / data.max_iterations as f64).clamp(0.0, 1.0);
         let [r, g, b] = palette.sample(t);
         [r, g, b, 255]
     }
@@ -50,12 +60,16 @@ mod tests {
     use fractalwonder_core::{ComputeData, MandelbrotData};
 
     fn make_escaped(iterations: u32, max_iterations: u32) -> ComputeData {
+        // For smooth coloring, we need a realistic |z|² at escape
+        // With escape radius 256, |z|² should be > 65536
+        // Use a value that gives reasonable smooth adjustment
+        let z_norm_sq = 100000.0_f32; // > 65536, gives smooth adjustment
         ComputeData::Mandelbrot(MandelbrotData {
             iterations,
             max_iterations,
             escaped: true,
             glitched: false,
-            final_z_norm_sq: 0.0,
+            final_z_norm_sq: z_norm_sq,
         })
     }
 
