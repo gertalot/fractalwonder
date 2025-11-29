@@ -2,6 +2,7 @@ pub mod color_space;
 pub mod colorizer;
 pub mod palette;
 pub mod presets;
+pub mod settings;
 pub mod smooth_iteration;
 
 use fractalwonder_core::ComputeData;
@@ -9,6 +10,7 @@ use fractalwonder_core::ComputeData;
 pub use colorizer::{Colorizer, ColorizerKind};
 pub use palette::Palette;
 pub use presets::{presets, ColorSchemePreset};
+pub use settings::ShadingSettings;
 pub use smooth_iteration::SmoothIterationColorizer;
 
 /// Colorize a single pixel using the provided palette and colorizer.
