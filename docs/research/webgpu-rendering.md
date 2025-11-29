@@ -990,7 +990,7 @@ GPU rendering loses the tile-by-tile progress feedback of CPU workers. To restor
 
 ---
 
-### 12.1 Increment 1: GPU Infrastructure and Basic f32 Perturbation
+### ✅ 12.1 Increment 1: GPU Infrastructure and Basic f32 Perturbation
 
 **Deliverable:** GPU-accelerated perturbation rendering up to ~10^7 zoom depth.
 
