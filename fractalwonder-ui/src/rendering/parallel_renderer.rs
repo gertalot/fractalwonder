@@ -3,7 +3,7 @@ use crate::rendering::canvas_utils::{
     draw_full_frame, draw_pixels_to_canvas, get_2d_context, performance_now,
 };
 use crate::rendering::colorizers::{
-    colorize, colorize_with_palette, presets, ColorizerKind, ColorSchemePreset, Palette,
+    colorize_with_palette, presets, ColorSchemePreset, ColorizerKind, Palette,
 };
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
@@ -250,6 +250,8 @@ impl ParallelRenderer {
         let tile_results = Rc::clone(&self.tile_results);
         let worker_pool = Rc::clone(&self.worker_pool);
         let adam7_accumulator = Rc::clone(&self.adam7_accumulator);
+        let palette = Rc::clone(&self.palette);
+        let colorizer = Rc::clone(&self.colorizer);
         let progress = self.progress;
         let config = self.config;
         let viewport_clone = viewport.clone();
@@ -276,6 +278,8 @@ impl ParallelRenderer {
                 let tile_results = Rc::clone(&tile_results);
                 let worker_pool = Rc::clone(&worker_pool);
                 let adam7_accumulator = Rc::clone(&adam7_accumulator);
+                let palette = Rc::clone(&palette);
+                let colorizer = Rc::clone(&colorizer);
                 let viewport = viewport_clone.clone();
                 let tiles = tiles.clone();
                 let orbit_data_init = Rc::clone(&orbit_data);
@@ -326,6 +330,8 @@ impl ParallelRenderer {
                         let worker_pool = Rc::clone(&worker_pool);
                         let adam7_accumulator = Rc::clone(&adam7_accumulator);
                         let orbit_data = Rc::clone(&orbit_data_init);
+                        let palette = Rc::clone(&palette);
+                        let colorizer = Rc::clone(&colorizer);
 
                         // Use requestAnimationFrame to retry
                         request_animation_frame_then(move || {
@@ -356,6 +362,8 @@ impl ParallelRenderer {
                                     render_start_time,
                                     gpu_in_use,
                                     adam7_accumulator,
+                                    palette,
+                                    colorizer,
                                 );
                             } else {
                                 // Still not available, fall back to CPU
@@ -394,6 +402,8 @@ impl ParallelRenderer {
                         render_start_time,
                         Rc::clone(&gpu_in_use),
                         Rc::clone(&adam7_accumulator),
+                        Rc::clone(&palette),
+                        Rc::clone(&colorizer),
                     );
                 });
             },
@@ -434,6 +444,8 @@ fn schedule_adam7_pass(
     render_start_time: f64,
     gpu_in_use: Rc<Cell<bool>>,
     adam7_accumulator: Rc<RefCell<Option<Adam7Accumulator>>>,
+    palette: Rc<RefCell<Palette>>,
+    colorizer: Rc<RefCell<ColorizerKind>>,
 ) {
     log::info!("Scheduling Adam7 pass {}", pass.step());
 
@@ -455,6 +467,8 @@ fn schedule_adam7_pass(
     let tiles_spawn = tiles.clone();
     let orbit_data_spawn = Rc::clone(&orbit_data);
     let adam7_accumulator_spawn = Rc::clone(&adam7_accumulator);
+    let palette_spawn = Rc::clone(&palette);
+    let colorizer_spawn = Rc::clone(&colorizer);
 
     wasm_bindgen_futures::spawn_local(async move {
         let vp_width = viewport_spawn.width.to_f64() as f32;
@@ -520,9 +534,11 @@ fn schedule_adam7_pass(
 
                     // Colorize and draw
                     let xray = xray_enabled_spawn.get();
+                    let pal = palette_spawn.borrow();
+                    let col = colorizer_spawn.borrow();
                     let pixels: Vec<u8> = display_data
                         .iter()
-                        .flat_map(|d| colorize(d, xray))
+                        .flat_map(|d| colorize_with_palette(d, &pal, &col, xray))
                         .collect();
 
                     if let Ok(ctx) = get_2d_context(&canvas_element_spawn) {
@@ -572,6 +588,8 @@ fn schedule_adam7_pass(
                                     render_start_time,
                                     gpu_in_use_spawn,
                                     adam7_accumulator_spawn,
+                                    palette_spawn,
+                                    colorizer_spawn,
                                 );
                             });
                         });

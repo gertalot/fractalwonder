@@ -39,10 +39,10 @@ pub fn App() -> impl IntoView {
     let config =
         create_memo(move |_| get_config(&selected_config_id.get()).unwrap_or_else(default_config));
 
-    // Colorizer options (single default for now)
-    let colorizer_options =
-        Signal::derive(move || vec![("default".to_string(), "Default".to_string())]);
-    let selected_colorizer_id = Signal::derive(move || "default".to_string());
+    // Colorizer options - populated by InteractiveCanvas on mount
+    let (colorizer_options, set_colorizer_options) =
+        create_signal(vec![("Classic".to_string(), "Classic".to_string())]);
+    let (selected_colorizer_id, set_selected_colorizer_id) = create_signal("Classic".to_string());
 
     // Viewport signal - now writable for interaction updates
     let (viewport, set_viewport) = create_signal(Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64));
@@ -261,6 +261,11 @@ pub fn App() -> impl IntoView {
         });
     });
 
+    // Callback for receiving color scheme options from InteractiveCanvas
+    let on_color_schemes = Callback::new(move |schemes: Vec<(String, String)>| {
+        set_colorizer_options.set(schemes);
+    });
+
     view! {
         <InteractiveCanvas
             viewport=viewport.into()
@@ -271,16 +276,18 @@ pub fn App() -> impl IntoView {
             cancel_trigger=cancel_trigger
             subdivide_trigger=subdivide_trigger
             xray_enabled=xray_enabled
+            on_color_schemes=on_color_schemes
+            selected_color_scheme=selected_colorizer_id
         />
         <UIPanel
             viewport=viewport.into()
             config=config.into()
             precision_bits=precision_bits.into()
             on_home_click=on_home_click
-            colorizer_options=colorizer_options
-            selected_colorizer_id=selected_colorizer_id
-            on_colorizer_select=Callback::new(move |_: String| {
-                // No-op for now - colorizer selection in Iteration 8
+            colorizer_options=Signal::derive(move || colorizer_options.get())
+            selected_colorizer_id=Signal::derive(move || selected_colorizer_id.get())
+            on_colorizer_select=Callback::new(move |id: String| {
+                set_selected_colorizer_id.set(id);
             })
             render_progress=render_progress.into()
             is_visible=ui_visibility.is_visible
