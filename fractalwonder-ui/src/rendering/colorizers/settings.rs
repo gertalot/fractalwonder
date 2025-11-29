@@ -1,5 +1,7 @@
 //! Color settings for the colorization pipeline.
 
+use super::Palette;
+
 /// Settings for slope shading effect.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShadingSettings {
@@ -39,6 +41,47 @@ impl ShadingSettings {
     }
 }
 
+/// All settings that affect colorization (not compute).
+#[derive(Clone, Debug)]
+pub struct ColorSettings {
+    /// Color palette for mapping iteration values to colors.
+    pub palette: Palette,
+    /// Number of times to cycle through the palette.
+    pub cycle_count: f64,
+    /// Slope shading settings.
+    pub shading: ShadingSettings,
+}
+
+impl Default for ColorSettings {
+    fn default() -> Self {
+        Self {
+            palette: Palette::ultra_fractal(),
+            cycle_count: 1.0,
+            shading: ShadingSettings::default(),
+        }
+    }
+}
+
+impl ColorSettings {
+    /// Create settings with the given palette and default shading.
+    pub fn with_palette(palette: Palette) -> Self {
+        Self {
+            palette,
+            cycle_count: 1.0,
+            shading: ShadingSettings::default(),
+        }
+    }
+
+    /// Create settings with shading enabled.
+    pub fn with_shading(palette: Palette) -> Self {
+        Self {
+            palette,
+            cycle_count: 1.0,
+            shading: ShadingSettings::enabled(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,5 +99,18 @@ mod tests {
         assert!(settings.light_angle > 0.0);
         assert!(settings.height_factor > 0.0);
         assert!(settings.blend > 0.0 && settings.blend <= 1.0);
+    }
+
+    #[test]
+    fn color_settings_default_has_palette() {
+        let settings = ColorSettings::default();
+        assert_eq!(settings.cycle_count, 1.0);
+        assert!(!settings.shading.enabled);
+    }
+
+    #[test]
+    fn with_shading_enables_shading() {
+        let settings = ColorSettings::with_shading(Palette::grayscale());
+        assert!(settings.shading.enabled);
     }
 }
