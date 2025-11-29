@@ -1022,7 +1022,8 @@ pub fn colorize(data: &MandelbrotData, xray_enabled: bool) -> [u8; 4] {
 
 | Feature | Location | Changes |
 |---------|----------|---------|
-| **Palettes** | `colorizers/palette.rs` (new) | New module, imported by `mandelbrot.rs` |
+| **Color space** | `colorizers/color_space.rs` (new) | OKLAB/OKLCH conversion functions |
+| **Palettes** | `colorizers/palette.rs` (new) | Palette struct, uses OKLAB interpolation |
 | **Smooth iteration** | `fractalwonder-core/src/compute_data.rs` | Add `final_z_norm_sq: f64` to `MandelbrotData` |
 | **Smooth colorizer** | `colorizers/mandelbrot.rs` | Update `colorize()` to use smooth formula |
 | **Slope shading** | `colorizers/shading.rs` (new) | Post-processing module for slope shading |
@@ -1037,7 +1038,200 @@ New colorizer features follow this pattern:
 3. Update `colorize_mandelbrot()` to use the new data/module
 4. Re-export from `colorizers/mod.rs` if needed elsewhere
 
-### 8.2 Visual Impact vs Implementation Effort
+### 8.2 Color Space Strategy
+
+Choosing the right color space for palette interpolation dramatically affects visual quality.
+
+#### 8.2.1 The Problem with RGB/HSL Interpolation
+
+**RGB interpolation** produces muddy grays. Interpolating between yellow `(255,255,0)` and blue
+`(0,0,255)` yields gray `(128,128,128)` at the midpoint—visually unexpected and ugly.
+
+**HSV/HSL** seem better (separate hue channel), but they are *not perceptually uniform*. Yellow and
+cyan appear much lighter than red and blue at the same "L" value. This creates uneven banding in
+fractal gradients where some hue ranges appear compressed while others are stretched.
+
+#### 8.2.2 OKLAB: Perceptually Uniform Color Space
+
+OKLAB solves this by ensuring equal numerical steps produce equal *perceived* color changes. It uses
+three orthogonal coordinates:
+- **L**: Perceptual lightness (0 to 1)
+- **a**: Green-red opponent axis
+- **b**: Blue-yellow opponent axis
+
+OKLAB is now the default interpolation space in Photoshop and CSS Color Level 4.
+
+**OKLCH** is OKLAB in polar coordinates (Lightness, Chroma, Hue)—useful for hue cycling palettes.
+
+#### 8.2.3 Implementation Approach
+
+**Files**:
+- `colorizers/color_space.rs` (new) - OKLAB conversion functions
+- `colorizers/palette.rs` - Use OKLAB for interpolation
+
+**Conversion Functions** (`colorizers/color_space.rs`):
+
+```rust
+/// Convert sRGB [0,1] to linear RGB (remove gamma)
+pub fn srgb_to_linear(c: f64) -> f64 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// Convert linear RGB to sRGB [0,1] (apply gamma)
+pub fn linear_to_srgb(c: f64) -> f64 {
+    if c <= 0.0031308 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+/// Convert linear RGB to OKLAB
+pub fn linear_rgb_to_oklab(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    // RGB to LMS cone responses
+    let l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+    let m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+    let s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+
+    // Cube root (perceptual non-linearity)
+    let l_ = l.cbrt();
+    let m_ = m.cbrt();
+    let s_ = s.cbrt();
+
+    // LMS to OKLAB
+    let L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+    let a = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+    let b = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+
+    (L, a, b)
+}
+
+/// Convert OKLAB to linear RGB
+pub fn oklab_to_linear_rgb(L: f64, a: f64, b: f64) -> (f64, f64, f64) {
+    // OKLAB to LMS (cube-root space)
+    let l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+    let m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+    let s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+
+    // Cube to undo perceptual non-linearity
+    let l = l_ * l_ * l_;
+    let m = m_ * m_ * m_;
+    let s = s_ * s_ * s_;
+
+    // LMS to linear RGB
+    let r =  4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+    let g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+    let b = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
+
+    (r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0))
+}
+```
+
+**Palette Interpolation** (`colorizers/palette.rs`):
+
+```rust
+use super::color_space::{srgb_to_linear, linear_to_srgb, linear_rgb_to_oklab, oklab_to_linear_rgb};
+
+impl Palette {
+    /// Sample the palette with perceptually uniform interpolation.
+    /// Control points are stored as sRGB [0-255], interpolation happens in OKLAB.
+    pub fn sample(&self, t: f64) -> [u8; 3] {
+        let t = t.clamp(0.0, 1.0);
+        let scaled = t * (self.colors.len() - 1) as f64;
+        let i = scaled.floor() as usize;
+        let frac = scaled.fract();
+
+        if i >= self.colors.len() - 1 {
+            return self.colors[self.colors.len() - 1];
+        }
+
+        let c1 = self.colors[i];
+        let c2 = self.colors[i + 1];
+
+        // Convert to OKLAB
+        let (l1, a1, b1) = self.to_oklab(c1);
+        let (l2, a2, b2) = self.to_oklab(c2);
+
+        // Linear interpolation in OKLAB space
+        let L = l1 + frac * (l2 - l1);
+        let a = a1 + frac * (a2 - a1);
+        let b = b1 + frac * (b2 - b1);
+
+        // Convert back to sRGB
+        self.from_oklab(L, a, b)
+    }
+
+    fn to_oklab(&self, rgb: [u8; 3]) -> (f64, f64, f64) {
+        let r = srgb_to_linear(rgb[0] as f64 / 255.0);
+        let g = srgb_to_linear(rgb[1] as f64 / 255.0);
+        let b = srgb_to_linear(rgb[2] as f64 / 255.0);
+        linear_rgb_to_oklab(r, g, b)
+    }
+
+    fn from_oklab(&self, L: f64, a: f64, b: f64) -> [u8; 3] {
+        let (r, g, b) = oklab_to_linear_rgb(L, a, b);
+        [
+            (linear_to_srgb(r) * 255.0).round() as u8,
+            (linear_to_srgb(g) * 255.0).round() as u8,
+            (linear_to_srgb(b) * 255.0).round() as u8,
+        ]
+    }
+}
+```
+
+#### 8.2.4 Performance
+
+OKLAB conversion is fast:
+- Two 3×3 matrix multiplications
+- One cube root (or cube) per channel
+- No iterative calculations
+
+For a 4K image (8M pixels), the overhead is negligible compared to iteration computation.
+
+#### 8.2.5 When to Use OKLCH
+
+OKLCH (polar OKLAB) is useful for:
+- **Hue cycling palettes**: Rotate hue at constant lightness/chroma
+- **Saturation adjustment**: Modify chroma without affecting perceived brightness
+
+For control-point palettes (like Ultra Fractal style), OKLAB is sufficient and simpler.
+
+```rust
+/// Convert OKLAB to OKLCH (polar coordinates)
+pub fn oklab_to_oklch(L: f64, a: f64, b: f64) -> (f64, f64, f64) {
+    let C = (a * a + b * b).sqrt();           // Chroma
+    let h = b.atan2(a);                        // Hue in radians
+    (L, C, h)
+}
+
+/// Convert OKLCH to OKLAB
+pub fn oklch_to_oklab(L: f64, C: f64, h: f64) -> (f64, f64, f64) {
+    let a = C * h.cos();
+    let b = C * h.sin();
+    (L, a, b)
+}
+```
+
+#### 8.2.6 Summary
+
+| Task | Color Space | Rationale |
+|------|-------------|-----------|
+| Store palette control points | sRGB `[u8; 3]` | Standard, compact, familiar |
+| Interpolate between points | OKLAB | Perceptually uniform gradients |
+| Hue cycling palettes | OKLCH | Easy hue rotation |
+| Display output | sRGB | Browser/canvas requirement |
+
+**References**:
+- [OKLAB: A perceptual color space](https://bottosson.github.io/posts/oklab/) - Björn Ottosson
+- [OKLAB color space - Wikipedia](https://en.wikipedia.org/wiki/Oklab_color_space)
+
+---
+
+### 8.3 Visual Impact vs Implementation Effort
 
 | Algorithm | Visual Impact | Implementation Effort | Dependencies |
 |-----------|---------------|----------------------|--------------|
@@ -1052,14 +1246,15 @@ minimal compute changes.
 
 ---
 
-### 8.3 Increment 1: Color Palettes
+### 8.4 Increment 1: Color Palettes
 
 **Deliverable**: Rich, customizable color palettes replacing grayscale.
 
 **Why First**: Biggest visual improvement with zero compute changes. Works with existing `MandelbrotData`.
 
 **Files**:
-- `colorizers/palette.rs` (new) - Palette struct and sampling logic
+- `colorizers/color_space.rs` (new) - OKLAB/OKLCH conversion (see Section 8.2)
+- `colorizers/palette.rs` (new) - Palette struct, uses OKLAB for interpolation
 - `colorizers/mandelbrot.rs` - Import and use palette in `colorize()`
 - `colorizers/mod.rs` - Re-export `Palette` for UI access
 
@@ -1130,7 +1325,7 @@ impl Palette {
 
 ---
 
-### 8.4 Increment 2: Smooth Iteration Count
+### 8.5 Increment 2: Smooth Iteration Count
 
 **Deliverable**: Eliminate iteration banding with continuous coloring.
 
@@ -1227,7 +1422,7 @@ This requires escape radius > 2 (recommend 256 for best smoothing).
 
 ---
 
-### 8.5 Increment 3: Slope Shading (Finite Difference)
+### 8.6 Increment 3: Slope Shading (Finite Difference)
 
 **Deliverable**: 3D lighting effect using iteration count as height field.
 
@@ -1330,7 +1525,7 @@ let height_factor = base_height_factor * (1.0 + zoom_level.log10() / 10.0);
 
 ---
 
-### 8.6 Increment 4: Histogram Equalization
+### 8.7 Increment 4: Histogram Equalization
 
 **Deliverable**: Automatic color distribution adapting to any zoom level.
 
@@ -1458,7 +1653,7 @@ This requires a two-pass approach or buffering all iteration data before coloriz
 
 ---
 
-### 8.7 Increment 5: Distance Estimation
+### 8.8 Increment 5: Distance Estimation
 
 **Deliverable**: Render thin filaments and boundary details smaller than pixels.
 
@@ -1583,21 +1778,22 @@ pub fn colorize_with_distance(
 
 ---
 
-### 8.8 Summary
+### 8.9 Summary
 
 | Increment | Visual Impact | Primary Files | Compute Changes |
 |-----------|---------------|---------------|-----------------|
-| 1. Color Palettes | High | `colorizers/palette.rs` (new) | None |
-| 2. Smooth Iteration | High | `compute_data.rs`, `colorizers/mandelbrot.rs` | Add `final_z_norm_sq` |
-| 3. Slope Shading | Very High | `colorizers/shading.rs` (new) | None |
-| 4. Histogram Eq. | Medium | `colorizers/histogram.rs` (new), `parallel_renderer.rs` | Buffer tiles |
+| 1. Color Palettes | High | `color_space.rs`, `palette.rs` (new) | None |
+| 2. Smooth Iteration | High | `compute_data.rs`, `mandelbrot.rs` | Add `final_z_norm_sq` |
+| 3. Slope Shading | Very High | `shading.rs` (new) | None |
+| 4. Histogram Eq. | Medium | `histogram.rs` (new), `parallel_renderer.rs` | Buffer tiles |
 | 5. Distance Est. | High | `compute_data.rs`, compute modules | Track derivative |
 
 **File Change Summary**:
 
 | File | Increments | Type of Change |
 |------|------------|----------------|
-| `colorizers/palette.rs` | 1 | New module |
+| `colorizers/color_space.rs` | 1 | New module (OKLAB/OKLCH) |
+| `colorizers/palette.rs` | 1 | New module (uses color_space) |
 | `colorizers/mandelbrot.rs` | 1, 2, 5 | Add palette, smooth iteration, distance |
 | `colorizers/shading.rs` | 3 | New module |
 | `colorizers/histogram.rs` | 4 | New module |
