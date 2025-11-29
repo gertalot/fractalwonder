@@ -2,6 +2,7 @@ pub mod color_space;
 pub mod colorizer;
 pub mod mandelbrot;
 pub mod palette;
+pub mod presets;
 pub mod smooth_iteration;
 pub mod test_image;
 
@@ -10,6 +11,7 @@ use fractalwonder_core::ComputeData;
 pub use colorizer::{Colorizer, ColorizerKind};
 pub use mandelbrot::colorize as colorize_mandelbrot;
 pub use palette::Palette;
+pub use presets::{presets, ColorSchemePreset};
 pub use smooth_iteration::SmoothIterationColorizer;
 pub use test_image::colorize as colorize_test_image;
 
