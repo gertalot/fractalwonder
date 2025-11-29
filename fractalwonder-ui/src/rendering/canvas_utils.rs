@@ -55,6 +55,21 @@ pub fn draw_pixels_to_canvas(
     ctx.put_image_data(&image_data, x, y)
 }
 
+/// Draw an entire frame to canvas (for GPU results).
+///
+/// Unlike draw_pixels_to_canvas which draws at an offset for tiles,
+/// this draws the full image starting at (0, 0).
+pub fn draw_full_frame(
+    ctx: &CanvasRenderingContext2d,
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<(), JsValue> {
+    let image_data =
+        ImageData::new_with_u8_clamped_array_and_sh(Clamped(pixels), width, height)?;
+    ctx.put_image_data(&image_data, 0.0, 0.0)
+}
+
 #[cfg(test)]
 mod tests {
     // Note: These are browser-only functions, so unit tests are limited.
