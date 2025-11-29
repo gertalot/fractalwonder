@@ -115,4 +115,40 @@ mod tests {
         let high = colorizer.colorize(&make_escaped(900, 1000), &(), &palette);
         assert!(high[0] > low[0], "Higher iterations should be brighter");
     }
+
+    #[test]
+    fn smooth_iteration_produces_gradual_change() {
+        let colorizer = SmoothIterationColorizer;
+        let palette = Palette::grayscale();
+
+        // Two pixels with same iteration count but different |z|² at escape
+        // should produce different colors due to smooth formula
+        // Using max_iterations of 20 to amplify the fractional difference
+        let data1 = ComputeData::Mandelbrot(MandelbrotData {
+            iterations: 10,
+            max_iterations: 20,
+            escaped: true,
+            glitched: false,
+            final_z_norm_sq: 70000.0, // Just over escape threshold (256² = 65536)
+        });
+
+        let data2 = ComputeData::Mandelbrot(MandelbrotData {
+            iterations: 10,
+            max_iterations: 20,
+            escaped: true,
+            glitched: false,
+            final_z_norm_sq: 100000000.0, // Very large |z|²
+        });
+
+        let color1 = colorizer.colorize(&data1, &(), &palette);
+        let color2 = colorizer.colorize(&data2, &(), &palette);
+
+        // With smooth formula, larger |z|² means lower μ, so darker color
+        assert!(
+            color1[0] > color2[0],
+            "Larger z_norm_sq should produce darker color: {:?} vs {:?}",
+            color1,
+            color2
+        );
+    }
 }
