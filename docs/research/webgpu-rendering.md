@@ -1061,7 +1061,9 @@ iteration_counts      ◄──────  results: array<u32>
 
 ---
 
-### 12.2 Increment 2: Progressive Multi-Pass Rendering
+### ✅ 12.2 Increment 2: Progressive Multi-Pass Rendering
+
+**NOTE: THIS HAS CHANGED TO IMPLEMENTING ADAM7 INTERLACED/PROGRESSIVE RENDERING**
 
 **Deliverable:** Responsive GPU rendering with blocky→sharp visual refinement.
 
