@@ -2,7 +2,9 @@ use crate::config::{FractalConfig, RendererType};
 use crate::rendering::canvas_utils::{
     draw_full_frame, draw_pixels_to_canvas, get_2d_context, performance_now,
 };
-use crate::rendering::colorizers::colorize;
+use crate::rendering::colorizers::{
+    colorize, colorize_with_palette, presets, ColorizerKind, ColorSchemePreset, Palette,
+};
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
 use crate::workers::{OrbitCompleteData, TileResult, WorkerPool};
@@ -36,6 +38,10 @@ pub struct ParallelRenderer {
     render_generation: Rc<Cell<u32>>,
     /// Adam7 accumulator for progressive rendering
     adam7_accumulator: Rc<RefCell<Option<Adam7Accumulator>>>,
+    /// Current palette for colorization
+    palette: Rc<RefCell<Palette>>,
+    /// Current colorizer algorithm
+    colorizer: Rc<RefCell<ColorizerKind>>,
 }
 
 impl ParallelRenderer {
@@ -51,14 +57,28 @@ impl ParallelRenderer {
         let render_generation: Rc<Cell<u32>> = Rc::new(Cell::new(0));
         let adam7_accumulator: Rc<RefCell<Option<Adam7Accumulator>>> = Rc::new(RefCell::new(None));
 
+        // Initialize with default color scheme (Classic preset)
+        let default_preset = &presets()[0];
+        let palette: Rc<RefCell<Palette>> = Rc::new(RefCell::new(default_preset.palette.clone()));
+        let colorizer: Rc<RefCell<ColorizerKind>> =
+            Rc::new(RefCell::new(default_preset.colorizer.clone()));
+
         let ctx_clone = Rc::clone(&canvas_ctx);
         let xray_clone = Rc::clone(&xray_enabled);
         let results_clone = Rc::clone(&tile_results);
+        let palette_clone = Rc::clone(&palette);
+        let colorizer_clone = Rc::clone(&colorizer);
         let on_tile_complete = move |result: TileResult| {
             if let Some(ctx) = ctx_clone.borrow().as_ref() {
-                // Colorize with current xray state
+                // Colorize with current palette, colorizer, and xray state
                 let xray = xray_clone.get();
-                let pixels: Vec<u8> = result.data.iter().flat_map(|d| colorize(d, xray)).collect();
+                let pal = palette_clone.borrow();
+                let col = colorizer_clone.borrow();
+                let pixels: Vec<u8> = result
+                    .data
+                    .iter()
+                    .flat_map(|d| colorize_with_palette(d, &pal, &col, xray))
+                    .collect();
 
                 // Draw to canvas
                 let _ = draw_pixels_to_canvas(
@@ -89,6 +109,8 @@ impl ParallelRenderer {
             canvas_size,
             render_generation,
             adam7_accumulator,
+            palette,
+            colorizer,
         })
     }
 
@@ -100,13 +122,19 @@ impl ParallelRenderer {
     /// Re-colorize all stored tiles with current xray state (no recompute).
     pub fn recolorize(&self) {
         let xray = self.xray_enabled.get();
+        let palette = self.palette.borrow();
+        let colorizer = self.colorizer.borrow();
         let ctx_ref = self.canvas_ctx.borrow();
         let Some(ctx) = ctx_ref.as_ref() else {
             return;
         };
 
         for result in self.tile_results.borrow().iter() {
-            let pixels: Vec<u8> = result.data.iter().flat_map(|d| colorize(d, xray)).collect();
+            let pixels: Vec<u8> = result
+                .data
+                .iter()
+                .flat_map(|d| colorize_with_palette(d, &palette, &colorizer, xray))
+                .collect();
             let _ = draw_pixels_to_canvas(
                 ctx,
                 &pixels,
@@ -128,6 +156,17 @@ impl ParallelRenderer {
     /// Subdivide quadtree cells that contain glitched tiles.
     pub fn subdivide_glitched_cells(&self) {
         self.worker_pool.borrow_mut().subdivide_glitched_cells();
+    }
+
+    /// Set the color scheme (palette and colorizer).
+    pub fn set_color_scheme(&self, preset: &ColorSchemePreset) {
+        *self.palette.borrow_mut() = preset.palette.clone();
+        *self.colorizer.borrow_mut() = preset.colorizer.clone();
+    }
+
+    /// Get available color scheme presets.
+    pub fn color_scheme_presets(&self) -> Vec<ColorSchemePreset> {
+        presets()
     }
 
     pub fn render(&self, viewport: &Viewport, canvas: &HtmlCanvasElement) {
