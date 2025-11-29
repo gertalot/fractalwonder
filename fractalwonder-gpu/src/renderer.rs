@@ -4,21 +4,30 @@ use crate::buffers::{GpuBuffers, Uniforms};
 use crate::device::GpuContext;
 use crate::error::GpuError;
 use crate::pipeline::GpuPipeline;
+use fractalwonder_core::{ComputeData, MandelbrotData};
 
 /// Result of a GPU render operation.
 pub struct GpuRenderResult {
-    pub iterations: Vec<u32>,
-    pub glitch_flags: Vec<bool>,
+    pub data: Vec<ComputeData>,
     pub compute_time_ms: f64,
 }
 
 impl GpuRenderResult {
     pub fn has_glitches(&self) -> bool {
-        self.glitch_flags.iter().any(|&g| g)
+        self.data.iter().any(|d| match d {
+            ComputeData::Mandelbrot(m) => m.glitched,
+            _ => false,
+        })
     }
 
     pub fn glitched_pixel_count(&self) -> usize {
-        self.glitch_flags.iter().filter(|&&g| g).count()
+        self.data
+            .iter()
+            .filter(|d| match d {
+                ComputeData::Mandelbrot(m) => m.glitched,
+                _ => false,
+            })
+            .count()
     }
 }
 
@@ -171,13 +180,25 @@ impl GpuRenderer {
         let glitch_data = self
             .read_buffer(&buffers.staging_glitches, pixel_count)
             .await?;
-        let glitch_flags: Vec<bool> = glitch_data.iter().map(|&v| v != 0).collect();
+
+        // Convert to ComputeData (same format as CPU)
+        let data: Vec<ComputeData> = iterations
+            .iter()
+            .zip(glitch_data.iter())
+            .map(|(&iter, &glitch_flag)| {
+                ComputeData::Mandelbrot(MandelbrotData {
+                    iterations: iter,
+                    max_iterations,
+                    escaped: iter < max_iterations,
+                    glitched: glitch_flag != 0,
+                })
+            })
+            .collect();
 
         let end = Self::now();
 
         Ok(GpuRenderResult {
-            iterations,
-            glitch_flags,
+            data,
             compute_time_ms: end - start,
         })
     }

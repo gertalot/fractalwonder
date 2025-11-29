@@ -13,3 +13,6 @@ pub use device::{GpuAvailability, GpuContext};
 pub use error::GpuError;
 pub use pipeline::GpuPipeline;
 pub use renderer::{GpuRenderResult, GpuRenderer};
+
+// Re-export ComputeData for convenience
+pub use fractalwonder_core::{ComputeData, MandelbrotData};
