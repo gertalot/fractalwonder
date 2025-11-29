@@ -3,7 +3,7 @@ use crate::rendering::canvas_utils::{draw_full_frame, draw_pixels_to_canvas, get
 use crate::rendering::colorizers::colorize;
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
-use crate::workers::{TileResult, WorkerPool};
+use crate::workers::{OrbitCompleteData, TileResult, WorkerPool};
 use fractalwonder_core::{PixelRect, Viewport};
 use fractalwonder_gpu::{GpuAvailability, GpuContext, GpuRenderer};
 use leptos::*;
@@ -152,152 +152,164 @@ impl ParallelRenderer {
                 );
             }
             RendererType::Perturbation => {
-                self.worker_pool.borrow_mut().start_perturbation_render(
-                    viewport.clone(),
-                    (width, height),
-                    tiles,
-                );
+                if self.config.gpu_enabled {
+                    // GPU mode: set up callback and start GPU render flow
+                    self.start_gpu_render(viewport, canvas);
+                } else {
+                    // CPU mode: standard tile-based rendering
+                    self.worker_pool.borrow_mut().start_perturbation_render(
+                        viewport.clone(),
+                        (width, height),
+                        tiles,
+                    );
+                }
             }
         }
     }
 
-    /// Start GPU-accelerated render if available.
-    /// Falls back to CPU tile rendering if GPU fails.
-    pub fn render_with_gpu(
-        &self,
-        viewport: &Viewport,
-        canvas: &HtmlCanvasElement,
-        orbit: Vec<(f64, f64)>,
-        orbit_id: u32,
-        max_iterations: u32,
-    ) {
+    /// Start GPU-accelerated perturbation render.
+    /// Sets up orbit callback and triggers GPU render when orbit is ready.
+    fn start_gpu_render(&self, viewport: &Viewport, canvas: &HtmlCanvasElement) {
         let width = canvas.width();
         let height = canvas.height();
 
-        if width == 0 || height == 0 {
-            return;
-        }
-
-        // Store canvas context
-        if let Ok(ctx) = get_2d_context(canvas) {
-            *self.canvas_ctx.borrow_mut() = Some(ctx);
-        }
-
         self.canvas_size.set((width, height));
 
-        // Set up progress for GPU (1 "tile" = whole frame)
-        self.progress.set(RenderProgress::new(1));
-
-        // Clone what we need for the async block
+        // Clone what we need for the callback
         let gpu_renderer = Rc::clone(&self.gpu_renderer);
         let gpu_init_attempted = Rc::clone(&self.gpu_init_attempted);
         let canvas_ctx = Rc::clone(&self.canvas_ctx);
         let xray_enabled = Rc::clone(&self.xray_enabled);
         let tile_results = Rc::clone(&self.tile_results);
+        let worker_pool = Rc::clone(&self.worker_pool);
         let progress = self.progress;
         let config = self.config;
-        let worker_pool = Rc::clone(&self.worker_pool);
         let viewport_clone = viewport.clone();
         let tiles = generate_tiles(width, height, calculate_tile_size(1.0));
 
-        wasm_bindgen_futures::spawn_local(async move {
-            // Try GPU init if not attempted
-            if !gpu_init_attempted.get() {
-                gpu_init_attempted.set(true);
-                match GpuContext::try_init().await {
-                    GpuAvailability::Available(ctx) => {
-                        log::info!("GPU renderer initialized");
-                        *gpu_renderer.borrow_mut() = Some(GpuRenderer::new(ctx));
-                    }
-                    GpuAvailability::Unavailable(reason) => {
-                        log::warn!("GPU unavailable: {reason}");
-                    }
-                }
-            }
+        // Set up callback for when orbit is ready
+        self.worker_pool.borrow().set_orbit_complete_callback(
+            move |orbit_data: OrbitCompleteData| {
+                log::info!(
+                    "Orbit ready: {} points, starting GPU render",
+                    orbit_data.orbit.len()
+                );
 
-            // Try GPU render - take renderer out of RefCell to avoid holding borrow across await
-            let gpu_opt = gpu_renderer.borrow_mut().take();
+                // Clone again for the async block
+                let gpu_renderer = Rc::clone(&gpu_renderer);
+                let gpu_init_attempted = Rc::clone(&gpu_init_attempted);
+                let canvas_ctx = Rc::clone(&canvas_ctx);
+                let xray_enabled = Rc::clone(&xray_enabled);
+                let tile_results = Rc::clone(&tile_results);
+                let worker_pool = Rc::clone(&worker_pool);
+                let viewport = viewport_clone.clone();
+                let tiles = tiles.clone();
 
-            let gpu_result = if let Some(mut gpu) = gpu_opt {
-                let vp_width = viewport_clone.width.to_f64() as f32;
-                let vp_height = viewport_clone.height.to_f64() as f32;
-                let dc_origin = (-vp_width / 2.0, -vp_height / 2.0);
-                let dc_step = (vp_width / width as f32, vp_height / height as f32);
-                let tau_sq = config.tau_sq as f32;
-
-                let result = gpu
-                    .render(
-                        &orbit,
-                        orbit_id,
-                        dc_origin,
-                        dc_step,
-                        width,
-                        height,
-                        max_iterations,
-                        tau_sq,
-                    )
-                    .await;
-
-                // Put renderer back
-                *gpu_renderer.borrow_mut() = Some(gpu);
-                Some(result)
-            } else {
-                None
-            };
-
-            match gpu_result {
-                Some(Ok(result)) => {
-                    log::info!(
-                        "GPU render: {}x{} in {:.1}ms",
-                        width,
-                        height,
-                        result.compute_time_ms
-                    );
-
-                    let xray = xray_enabled.get();
-                    let pixels: Vec<u8> =
-                        result.data.iter().flat_map(|d| colorize(d, xray)).collect();
-
-                    if let Some(ctx) = canvas_ctx.borrow().as_ref() {
-                        let _ = draw_full_frame(ctx, &pixels, width, height);
+                wasm_bindgen_futures::spawn_local(async move {
+                    // Try GPU init if not attempted
+                    if !gpu_init_attempted.get() {
+                        gpu_init_attempted.set(true);
+                        match GpuContext::try_init().await {
+                            GpuAvailability::Available(ctx) => {
+                                log::info!("GPU renderer initialized");
+                                *gpu_renderer.borrow_mut() = Some(GpuRenderer::new(ctx));
+                            }
+                            GpuAvailability::Unavailable(reason) => {
+                                log::warn!("GPU unavailable: {reason}");
+                            }
+                        }
                     }
 
-                    // Store for recolorize
-                    tile_results.borrow_mut().clear();
-                    tile_results.borrow_mut().push(TileResult {
-                        tile: PixelRect {
-                            x: 0,
-                            y: 0,
-                            width,
-                            height,
-                        },
-                        data: result.data,
-                        compute_time_ms: result.compute_time_ms,
-                    });
+                    // Try GPU render
+                    let gpu_opt = gpu_renderer.borrow_mut().take();
 
-                    progress.update(|p| {
-                        p.completed_tiles = 1;
-                        p.is_complete = true;
-                    });
-                }
-                Some(Err(e)) => {
-                    log::warn!("GPU render failed: {e}, falling back to CPU");
-                    worker_pool.borrow_mut().start_perturbation_render(
-                        viewport_clone,
-                        (width, height),
-                        tiles,
-                    );
-                }
-                None => {
-                    log::info!("No GPU available, using CPU");
-                    worker_pool.borrow_mut().start_perturbation_render(
-                        viewport_clone,
-                        (width, height),
-                        tiles,
-                    );
-                }
-            }
-        });
+                    let gpu_result = if let Some(mut gpu) = gpu_opt {
+                        let vp_width = viewport.width.to_f64() as f32;
+                        let vp_height = viewport.height.to_f64() as f32;
+                        let dc_origin = (-vp_width / 2.0, -vp_height / 2.0);
+                        let dc_step = (vp_width / width as f32, vp_height / height as f32);
+                        let tau_sq = config.tau_sq as f32;
+
+                        let result = gpu
+                            .render(
+                                &orbit_data.orbit,
+                                orbit_data.orbit_id,
+                                dc_origin,
+                                dc_step,
+                                width,
+                                height,
+                                orbit_data.max_iterations,
+                                tau_sq,
+                            )
+                            .await;
+
+                        // Put renderer back
+                        *gpu_renderer.borrow_mut() = Some(gpu);
+                        Some(result)
+                    } else {
+                        None
+                    };
+
+                    match gpu_result {
+                        Some(Ok(result)) => {
+                            log::info!(
+                                "GPU render: {}x{} in {:.1}ms",
+                                width,
+                                height,
+                                result.compute_time_ms
+                            );
+
+                            let xray = xray_enabled.get();
+                            let pixels: Vec<u8> =
+                                result.data.iter().flat_map(|d| colorize(d, xray)).collect();
+
+                            if let Some(ctx) = canvas_ctx.borrow().as_ref() {
+                                let _ = draw_full_frame(ctx, &pixels, width, height);
+                            }
+
+                            // Store for recolorize
+                            tile_results.borrow_mut().clear();
+                            tile_results.borrow_mut().push(TileResult {
+                                tile: PixelRect {
+                                    x: 0,
+                                    y: 0,
+                                    width,
+                                    height,
+                                },
+                                data: result.data,
+                                compute_time_ms: result.compute_time_ms,
+                            });
+
+                            progress.update(|p| {
+                                p.completed_tiles = 1;
+                                p.is_complete = true;
+                            });
+                        }
+                        Some(Err(e)) => {
+                            log::warn!("GPU render failed: {e}, falling back to CPU");
+                            worker_pool.borrow_mut().start_perturbation_render(
+                                viewport,
+                                (width, height),
+                                tiles,
+                            );
+                        }
+                        None => {
+                            log::info!("No GPU available, using CPU");
+                            worker_pool.borrow_mut().start_perturbation_render(
+                                viewport,
+                                (width, height),
+                                tiles,
+                            );
+                        }
+                    }
+                });
+            },
+        );
+
+        // Start GPU mode render (computes orbit, triggers callback when ready)
+        self.worker_pool
+            .borrow_mut()
+            .start_perturbation_render_gpu(viewport.clone(), (width, height));
     }
 
     pub fn switch_config(&mut self, config: &'static FractalConfig) -> Result<(), JsValue> {

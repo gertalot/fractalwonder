@@ -76,6 +76,17 @@ pub struct TileResult {
     pub compute_time_ms: f64,
 }
 
+/// Orbit data passed to the orbit complete callback.
+#[derive(Clone)]
+pub struct OrbitCompleteData {
+    pub orbit: Vec<(f64, f64)>,
+    pub orbit_id: u32,
+    pub max_iterations: u32,
+}
+
+/// Type alias for orbit complete callback.
+type OrbitCompleteCallback = Rc<RefCell<Option<Box<dyn Fn(OrbitCompleteData)>>>>;
+
 pub struct WorkerPool {
     workers: Vec<Worker>,
     renderer_id: String,
@@ -85,6 +96,8 @@ pub struct WorkerPool {
     current_viewport: Option<Viewport>,
     canvas_size: (u32, u32),
     on_tile_complete: Rc<dyn Fn(TileResult)>,
+    /// Callback when reference orbit computation completes (for GPU rendering)
+    on_orbit_complete: OrbitCompleteCallback,
     progress: RwSignal<RenderProgress>,
     render_start_time: Option<f64>,
     self_ref: Weak<RefCell<Self>>,
@@ -92,6 +105,8 @@ pub struct WorkerPool {
     perturbation: PerturbationState,
     /// Whether current render is using perturbation mode
     is_perturbation_render: bool,
+    /// GPU mode: orbit complete callback handles rendering, skip tile dispatch
+    gpu_mode: bool,
     /// Count of tiles with glitched pixels in current render
     glitched_tile_count: u32,
     /// Quadtree for spatial tracking of glitched regions
@@ -197,11 +212,13 @@ impl WorkerPool {
             current_viewport: None,
             canvas_size: (0, 0),
             on_tile_complete: Rc::new(on_tile_complete),
+            on_orbit_complete: Rc::new(RefCell::new(None)),
             progress,
             render_start_time: None,
             self_ref: Weak::new(),
             perturbation: PerturbationState::default(),
             is_perturbation_render: false,
+            gpu_mode: false,
             glitched_tile_count: 0,
             quadtree: None,
             glitched_tiles: Vec::new(),
@@ -395,7 +412,7 @@ impl WorkerPool {
                     .into(),
                 );
 
-                // Store orbit data and broadcast to all workers
+                // Store orbit data
                 self.perturbation.pending_orbit = Some(OrbitData {
                     c_ref,
                     orbit: orbit.clone(),
@@ -404,7 +421,22 @@ impl WorkerPool {
                 self.perturbation.orbit_id = orbit_id;
                 self.perturbation.workers_with_orbit.clear();
 
-                // Broadcast to all workers
+                // GPU mode: call callback and skip worker broadcast
+                if self.gpu_mode {
+                    web_sys::console::log_1(
+                        &"[WorkerPool] GPU mode: triggering orbit callback".into(),
+                    );
+                    if let Some(callback) = self.on_orbit_complete.borrow().as_ref() {
+                        callback(OrbitCompleteData {
+                            orbit: orbit.clone(),
+                            orbit_id,
+                            max_iterations: self.perturbation.max_iterations,
+                        });
+                    }
+                    return;
+                }
+
+                // CPU mode: broadcast to all workers
                 for worker_id in 0..self.workers.len() {
                     self.send_to_worker(
                         worker_id,
@@ -631,6 +663,10 @@ impl WorkerPool {
         tiles: Vec<PixelRect>,
     ) {
         self.is_perturbation_render = true;
+        // Reset gpu_mode unless explicitly set by start_perturbation_render_gpu
+        if !tiles.is_empty() {
+            self.gpu_mode = false;
+        }
         self.current_render_id = self.current_render_id.wrapping_add(1);
         self.glitched_tile_count = 0;
         self.glitched_tiles.clear();
@@ -1104,6 +1140,29 @@ impl WorkerPool {
     pub fn switch_renderer(&mut self, renderer_id: &str) {
         self.renderer_id = renderer_id.to_string();
         self.recreate_workers(); // Must recreate workers with new renderer
+    }
+
+    /// Set callback for when orbit computation completes.
+    /// Used by GPU rendering path to receive orbit data.
+    pub fn set_orbit_complete_callback<F>(&self, callback: F)
+    where
+        F: Fn(OrbitCompleteData) + 'static,
+    {
+        *self.on_orbit_complete.borrow_mut() = Some(Box::new(callback));
+    }
+
+    /// Clear the orbit complete callback.
+    pub fn clear_orbit_complete_callback(&self) {
+        *self.on_orbit_complete.borrow_mut() = None;
+    }
+
+    /// Start a perturbation render in GPU mode.
+    /// Orbit computation happens via worker, but when complete,
+    /// the callback is triggered instead of dispatching tiles.
+    pub fn start_perturbation_render_gpu(&mut self, viewport: Viewport, canvas_size: (u32, u32)) {
+        self.gpu_mode = true;
+        // Use empty tiles vec - GPU mode doesn't dispatch tiles
+        self.start_perturbation_render(viewport, canvas_size, Vec::new());
     }
 
     /// Get the current reference orbit if available.
