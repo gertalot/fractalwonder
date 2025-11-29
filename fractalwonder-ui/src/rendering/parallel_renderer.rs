@@ -153,10 +153,8 @@ impl ParallelRenderer {
             }
             RendererType::Perturbation => {
                 if self.config.gpu_enabled {
-                    // GPU mode: set up callback and start GPU render flow
                     self.start_gpu_render(viewport, canvas);
                 } else {
-                    // CPU mode: standard tile-based rendering
                     self.worker_pool.borrow_mut().start_perturbation_render(
                         viewport.clone(),
                         (width, height),
