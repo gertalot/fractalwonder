@@ -65,8 +65,7 @@ pub fn draw_full_frame(
     width: u32,
     height: u32,
 ) -> Result<(), JsValue> {
-    let image_data =
-        ImageData::new_with_u8_clamped_array_and_sh(Clamped(pixels), width, height)?;
+    let image_data = ImageData::new_with_u8_clamped_array_and_sh(Clamped(pixels), width, height)?;
     ctx.put_image_data(&image_data, 0.0, 0.0)
 }
 

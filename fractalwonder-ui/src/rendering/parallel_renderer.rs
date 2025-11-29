@@ -215,32 +215,34 @@ impl ParallelRenderer {
                 }
             }
 
-            // Try GPU render
-            let gpu_result = {
-                let mut gpu_ref = gpu_renderer.borrow_mut();
-                if let Some(gpu) = gpu_ref.as_mut() {
-                    let vp_width = viewport_clone.width.to_f64() as f32;
-                    let vp_height = viewport_clone.height.to_f64() as f32;
-                    let dc_origin = (-vp_width / 2.0, -vp_height / 2.0);
-                    let dc_step = (vp_width / width as f32, vp_height / height as f32);
-                    let tau_sq = config.tau_sq as f32;
+            // Try GPU render - take renderer out of RefCell to avoid holding borrow across await
+            let gpu_opt = gpu_renderer.borrow_mut().take();
 
-                    Some(
-                        gpu.render(
-                            &orbit,
-                            orbit_id,
-                            dc_origin,
-                            dc_step,
-                            width,
-                            height,
-                            max_iterations,
-                            tau_sq,
-                        )
-                        .await,
+            let gpu_result = if let Some(mut gpu) = gpu_opt {
+                let vp_width = viewport_clone.width.to_f64() as f32;
+                let vp_height = viewport_clone.height.to_f64() as f32;
+                let dc_origin = (-vp_width / 2.0, -vp_height / 2.0);
+                let dc_step = (vp_width / width as f32, vp_height / height as f32);
+                let tau_sq = config.tau_sq as f32;
+
+                let result = gpu
+                    .render(
+                        &orbit,
+                        orbit_id,
+                        dc_origin,
+                        dc_step,
+                        width,
+                        height,
+                        max_iterations,
+                        tau_sq,
                     )
-                } else {
-                    None
-                }
+                    .await;
+
+                // Put renderer back
+                *gpu_renderer.borrow_mut() = Some(gpu);
+                Some(result)
+            } else {
+                None
             };
 
             match gpu_result {
@@ -253,11 +255,8 @@ impl ParallelRenderer {
                     );
 
                     let xray = xray_enabled.get();
-                    let pixels: Vec<u8> = result
-                        .data
-                        .iter()
-                        .flat_map(|d| colorize(d, xray))
-                        .collect();
+                    let pixels: Vec<u8> =
+                        result.data.iter().flat_map(|d| colorize(d, xray)).collect();
 
                     if let Some(ctx) = canvas_ctx.borrow().as_ref() {
                         let _ = draw_full_frame(ctx, &pixels, width, height);
@@ -283,15 +282,19 @@ impl ParallelRenderer {
                 }
                 Some(Err(e)) => {
                     log::warn!("GPU render failed: {e}, falling back to CPU");
-                    worker_pool
-                        .borrow_mut()
-                        .start_perturbation_render(viewport_clone, (width, height), tiles);
+                    worker_pool.borrow_mut().start_perturbation_render(
+                        viewport_clone,
+                        (width, height),
+                        tiles,
+                    );
                 }
                 None => {
                     log::info!("No GPU available, using CPU");
-                    worker_pool
-                        .borrow_mut()
-                        .start_perturbation_render(viewport_clone, (width, height), tiles);
+                    worker_pool.borrow_mut().start_perturbation_render(
+                        viewport_clone,
+                        (width, height),
+                        tiles,
+                    );
                 }
             }
         });

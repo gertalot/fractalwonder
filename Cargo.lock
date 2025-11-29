@@ -686,6 +686,7 @@ dependencies = [
  "flate2",
  "fractalwonder-compute",
  "fractalwonder-core",
+ "fractalwonder-gpu",
  "futures",
  "gloo-timers",
  "leptos",
@@ -695,6 +696,7 @@ dependencies = [
  "serde",
  "serde_json",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
 ]
