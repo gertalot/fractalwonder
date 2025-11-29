@@ -7,7 +7,7 @@ pub mod test_image;
 
 use fractalwonder_core::ComputeData;
 
-pub use colorizer::Colorizer;
+pub use colorizer::{Colorizer, ColorizerKind};
 pub use mandelbrot::colorize as colorize_mandelbrot;
 pub use palette::Palette;
 pub use smooth_iteration::SmoothIterationColorizer;
