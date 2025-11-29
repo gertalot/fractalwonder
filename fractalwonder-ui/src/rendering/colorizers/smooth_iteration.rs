@@ -9,6 +9,23 @@ use fractalwonder_core::{ComputeData, MandelbrotData};
 #[derive(Clone, Debug, Default)]
 pub struct SmoothIterationColorizer;
 
+/// Compute smooth iteration count from MandelbrotData.
+/// Returns the smooth iteration value, or max_iterations for interior points.
+pub fn compute_smooth_iteration(data: &MandelbrotData) -> f64 {
+    if !data.escaped || data.max_iterations == 0 {
+        return data.max_iterations as f64;
+    }
+
+    if data.final_z_norm_sq > 1.0 {
+        let z_norm_sq = data.final_z_norm_sq as f64;
+        let log_z = z_norm_sq.ln() / 2.0;
+        let nu = log_z.ln() / std::f64::consts::LN_2;
+        data.iterations as f64 + 1.0 - nu
+    } else {
+        data.iterations as f64
+    }
+}
+
 impl Colorizer for SmoothIterationColorizer {
     type Context = ();
 
@@ -58,6 +75,36 @@ mod tests {
     use super::*;
     use crate::rendering::colorizers::Palette;
     use fractalwonder_core::{ComputeData, MandelbrotData};
+
+    #[test]
+    fn compute_smooth_iteration_interior_returns_max() {
+        let data = MandelbrotData {
+            iterations: 1000,
+            max_iterations: 1000,
+            escaped: false,
+            glitched: false,
+            final_z_norm_sq: 4.0,
+        };
+        let smooth = compute_smooth_iteration(&data);
+        assert_eq!(smooth, 1000.0);
+    }
+
+    #[test]
+    fn compute_smooth_iteration_escaped_returns_fractional() {
+        let data = MandelbrotData {
+            iterations: 10,
+            max_iterations: 100,
+            escaped: true,
+            glitched: false,
+            final_z_norm_sq: 100000.0,
+        };
+        let smooth = compute_smooth_iteration(&data);
+        // Should be close to 10 but with fractional adjustment
+        // The smooth formula n + 1 - ν can reduce the value, so it may be < 10
+        assert!(smooth > 8.0 && smooth < 12.0, "smooth = {}", smooth);
+        // Verify it has a fractional component (not exactly iterations)
+        assert_ne!(smooth, data.iterations as f64);
+    }
 
     fn make_escaped(iterations: u32, max_iterations: u32) -> ComputeData {
         // For smooth coloring, we need a realistic |z|² at escape
