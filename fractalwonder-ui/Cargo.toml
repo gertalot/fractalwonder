@@ -9,6 +9,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 fractalwonder-core = { workspace = true }
 fractalwonder-compute = { workspace = true }
+fractalwonder-gpu = { workspace = true }
 leptos = { workspace = true }
 leptos_meta = { workspace = true }
 leptos-use = { workspace = true }
@@ -47,6 +48,7 @@ log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 futures = "0.3"
+wasm-bindgen-futures = "0.4"
 
 [dev-dependencies]
 wasm-bindgen-test = { workspace = true }

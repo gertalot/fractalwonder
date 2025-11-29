@@ -11,6 +11,7 @@ resolver = "2"
 # Core crates
 fractalwonder-core = { path = "./fractalwonder-core" }
 fractalwonder-compute = { path = "./fractalwonder-compute" }
+fractalwonder-gpu = { path = "./fractalwonder-gpu" }
 
 # Arbitrary precision
 dashu = "0.4"
