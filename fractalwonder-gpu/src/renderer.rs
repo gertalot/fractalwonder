@@ -257,6 +257,10 @@ impl GpuRenderer {
             let _ = tx.send(result);
         });
 
+        // On native, poll drives the callback. On web, poll is a no-op but
+        // the browser handles GPU completion - the await below yields to the
+        // event loop which allows the browser to process GPU work.
+        #[cfg(not(target_arch = "wasm32"))]
         self.context.device.poll(wgpu::Maintain::Wait);
 
         rx.await
