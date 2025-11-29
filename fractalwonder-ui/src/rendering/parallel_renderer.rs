@@ -169,15 +169,19 @@ impl ParallelRenderer {
         }
     }
 
-    /// Start GPU-accelerated perturbation render.
-    /// Sets up orbit callback and triggers GPU render when orbit is ready.
+    /// Start GPU-accelerated perturbation render with progressive passes.
     fn start_gpu_render(&self, viewport: &Viewport, canvas: &HtmlCanvasElement) {
         let width = canvas.width();
         let height = canvas.height();
 
+        // Increment generation to invalidate any in-progress renders
+        let gen = self.render_generation.get() + 1;
+        self.render_generation.set(gen);
+
         self.canvas_size.set((width, height));
 
         // Clone what we need for the callback
+        let generation = Rc::clone(&self.render_generation);
         let gpu_renderer = Rc::clone(&self.gpu_renderer);
         let gpu_init_attempted = Rc::clone(&self.gpu_init_attempted);
         let canvas_ctx = Rc::clone(&self.canvas_ctx);
@@ -193,11 +197,12 @@ impl ParallelRenderer {
         self.worker_pool.borrow().set_orbit_complete_callback(
             move |orbit_data: OrbitCompleteData| {
                 log::info!(
-                    "Orbit ready: {} points, starting GPU render",
+                    "Orbit ready: {} points, starting progressive GPU render",
                     orbit_data.orbit.len()
                 );
 
                 // Clone again for the async block
+                let generation = Rc::clone(&generation);
                 let gpu_renderer = Rc::clone(&gpu_renderer);
                 let gpu_init_attempted = Rc::clone(&gpu_init_attempted);
                 let canvas_ctx = Rc::clone(&canvas_ctx);
@@ -222,86 +227,105 @@ impl ParallelRenderer {
                         }
                     }
 
-                    // Try GPU render
-                    let gpu_opt = gpu_renderer.borrow_mut().take();
+                    // Check if we have GPU
+                    let has_gpu = gpu_renderer.borrow().is_some();
+                    if !has_gpu {
+                        log::info!("No GPU available, using CPU");
+                        worker_pool.borrow_mut().start_perturbation_render(
+                            viewport,
+                            (width, height),
+                            tiles,
+                        );
+                        return;
+                    }
 
-                    let gpu_result = if let Some(mut gpu) = gpu_opt {
-                        let vp_width = viewport.width.to_f64() as f32;
-                        let vp_height = viewport.height.to_f64() as f32;
-                        let dc_origin = (-vp_width / 2.0, -vp_height / 2.0);
-                        let dc_step = (vp_width / width as f32, vp_height / height as f32);
-                        let tau_sq = config.tau_sq as f32;
+                    let vp_width = viewport.width.to_f64() as f32;
+                    let vp_height = viewport.height.to_f64() as f32;
+                    let dc_origin = (-vp_width / 2.0, -vp_height / 2.0);
+                    let tau_sq = config.tau_sq as f32;
 
-                        let result = gpu
-                            .render(
+                    // Progressive rendering: 4 passes
+                    for pass in Pass::all() {
+                        // Check generation - abort if stale
+                        if generation.get() != gen {
+                            log::debug!("Render interrupted at {:?}", pass);
+                            return;
+                        }
+
+                        let pass_result = {
+                            let mut gpu_opt = gpu_renderer.borrow_mut();
+                            let gpu = gpu_opt.as_mut().unwrap();
+
+                            gpu.render_pass(
                                 &orbit_data.orbit,
                                 orbit_data.orbit_id,
                                 dc_origin,
-                                dc_step,
+                                vp_width,
+                                vp_height,
                                 width,
                                 height,
                                 orbit_data.max_iterations,
                                 tau_sq,
+                                pass,
                             )
-                            .await;
+                            .await
+                        };
 
-                        // Put renderer back
-                        *gpu_renderer.borrow_mut() = Some(gpu);
-                        Some(result)
-                    } else {
-                        None
-                    };
+                        match pass_result {
+                            Ok(result) => {
+                                let (pass_w, pass_h) = pass.dimensions(width, height);
+                                let scale = pass.scale();
 
-                    match gpu_result {
-                        Some(Ok(result)) => {
-                            log::info!(
-                                "GPU render: {}x{} in {:.1}ms",
-                                width,
-                                height,
-                                result.compute_time_ms
-                            );
+                                log::info!(
+                                    "Pass {:?}: {}x{} in {:.1}ms",
+                                    pass,
+                                    pass_w,
+                                    pass_h,
+                                    result.compute_time_ms
+                                );
 
-                            let xray = xray_enabled.get();
-                            let pixels: Vec<u8> =
-                                result.data.iter().flat_map(|d| colorize(d, xray)).collect();
+                                // Stretch to full canvas size
+                                let full_data = stretch_compute_data(&result.data, pass_w, pass_h, scale);
 
-                            if let Some(ctx) = canvas_ctx.borrow().as_ref() {
-                                let _ = draw_full_frame(ctx, &pixels, width, height);
+                                // Store for recolorize
+                                tile_results.borrow_mut().clear();
+                                tile_results.borrow_mut().push(TileResult {
+                                    tile: PixelRect {
+                                        x: 0,
+                                        y: 0,
+                                        width,
+                                        height,
+                                    },
+                                    data: full_data.clone(),
+                                    compute_time_ms: result.compute_time_ms,
+                                });
+
+                                // Colorize and draw
+                                let xray = xray_enabled.get();
+                                let pixels: Vec<u8> =
+                                    full_data.iter().flat_map(|d| colorize(d, xray)).collect();
+
+                                if let Some(ctx) = canvas_ctx.borrow().as_ref() {
+                                    let _ = draw_full_frame(ctx, &pixels, width, height);
+                                }
+
+                                // Update progress
+                                if pass.is_final() {
+                                    progress.update(|p| {
+                                        p.completed_tiles = 1;
+                                        p.is_complete = true;
+                                    });
+                                }
                             }
-
-                            // Store for recolorize
-                            tile_results.borrow_mut().clear();
-                            tile_results.borrow_mut().push(TileResult {
-                                tile: PixelRect {
-                                    x: 0,
-                                    y: 0,
-                                    width,
-                                    height,
-                                },
-                                data: result.data,
-                                compute_time_ms: result.compute_time_ms,
-                            });
-
-                            progress.update(|p| {
-                                p.completed_tiles = 1;
-                                p.is_complete = true;
-                            });
-                        }
-                        Some(Err(e)) => {
-                            log::warn!("GPU render failed: {e}, falling back to CPU");
-                            worker_pool.borrow_mut().start_perturbation_render(
-                                viewport,
-                                (width, height),
-                                tiles,
-                            );
-                        }
-                        None => {
-                            log::info!("No GPU available, using CPU");
-                            worker_pool.borrow_mut().start_perturbation_render(
-                                viewport,
-                                (width, height),
-                                tiles,
-                            );
+                            Err(e) => {
+                                log::warn!("GPU pass {:?} failed: {e}, falling back to CPU", pass);
+                                worker_pool.borrow_mut().start_perturbation_render(
+                                    viewport.clone(),
+                                    (width, height),
+                                    tiles.clone(),
+                                );
+                                return;
+                            }
                         }
                     }
                 });
