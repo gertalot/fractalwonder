@@ -5,7 +5,7 @@ use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
 use crate::workers::{OrbitCompleteData, TileResult, WorkerPool};
 use fractalwonder_core::{PixelRect, Viewport};
-use fractalwonder_gpu::{GpuAvailability, GpuContext, GpuRenderer};
+use fractalwonder_gpu::{stretch_compute_data, GpuAvailability, GpuContext, GpuRenderer, Pass};
 use leptos::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
