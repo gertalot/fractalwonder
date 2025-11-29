@@ -223,7 +223,7 @@ impl GpuRenderer {
         pass: Pass,
     ) -> Result<GpuRenderResult, GpuError> {
         let (pass_w, pass_h) = pass.dimensions(canvas_width, canvas_height);
-        let pass_max_iter = pass.scale_iterations(max_iterations);
+        let pass_max_iter = pass.max_iterations(max_iterations);
         let pass_tau_sq = if pass.is_final() { tau_sq } else { 0.0 };
 
         // Compute dc_step for this pass resolution

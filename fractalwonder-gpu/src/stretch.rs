@@ -2,14 +2,17 @@
 
 use fractalwonder_core::ComputeData;
 
-/// Stretches a small ComputeData buffer to full canvas size by duplicating pixels.
+/// Stretches a small ComputeData buffer to target canvas size by duplicating pixels.
 ///
-/// Each source pixel becomes a `scale × scale` block in the output.
+/// Each source pixel becomes approximately a `scale × scale` block in the output,
+/// but output is clamped to exactly `target_w × target_h` pixels.
 /// Output is in row-major order, suitable for colorization.
 pub fn stretch_compute_data(
     small: &[ComputeData],
     small_w: u32,
     small_h: u32,
+    target_w: u32,
+    target_h: u32,
     scale: u32,
 ) -> Vec<ComputeData> {
     debug_assert_eq!(
@@ -22,20 +25,14 @@ pub fn stretch_compute_data(
         return small.to_vec();
     }
 
-    let full_w = small_w * scale;
-    let full_h = small_h * scale;
-    let mut full = Vec::with_capacity((full_w * full_h) as usize);
+    let mut full = Vec::with_capacity((target_w * target_h) as usize);
 
-    for sy in 0..small_h {
-        // For each row in the small image, we output `scale` rows
-        for _dy in 0..scale {
-            for sx in 0..small_w {
-                let src = &small[(sy * small_w + sx) as usize];
-                // Duplicate this pixel `scale` times horizontally
-                for _dx in 0..scale {
-                    full.push(src.clone());
-                }
-            }
+    for ty in 0..target_h {
+        let sy = ty / scale;
+        for tx in 0..target_w {
+            let sx = tx / scale;
+            let src = &small[(sy * small_w + sx) as usize];
+            full.push(src.clone());
         }
     }
 
@@ -59,7 +56,7 @@ mod tests {
     #[test]
     fn test_stretch_scale_1() {
         let small = vec![make_data(10), make_data(20), make_data(30), make_data(40)];
-        let result = stretch_compute_data(&small, 2, 2, 1);
+        let result = stretch_compute_data(&small, 2, 2, 2, 2, 1);
         assert_eq!(result.len(), 4);
 
         // Verify each element matches
@@ -78,7 +75,7 @@ mod tests {
     fn test_stretch_scale_2() {
         // 2x2 input, scale 2 -> 4x4 output
         let small = vec![make_data(1), make_data(2), make_data(3), make_data(4)];
-        let result = stretch_compute_data(&small, 2, 2, 2);
+        let result = stretch_compute_data(&small, 2, 2, 4, 4, 2);
         assert_eq!(result.len(), 16);
 
         // Expected layout:
@@ -108,7 +105,7 @@ mod tests {
     fn test_stretch_scale_16() {
         // 1x1 input, scale 16 -> 16x16 output
         let small = vec![make_data(42)];
-        let result = stretch_compute_data(&small, 1, 1, 16);
+        let result = stretch_compute_data(&small, 1, 1, 16, 16, 16);
         assert_eq!(result.len(), 256);
 
         // All pixels should have iterations = 42
@@ -128,7 +125,7 @@ mod tests {
             escaped: true,
             glitched: true,
         })];
-        let result = stretch_compute_data(&small, 1, 1, 4);
+        let result = stretch_compute_data(&small, 1, 1, 4, 4, 4);
         assert_eq!(result.len(), 16);
 
         for d in &result {
@@ -140,5 +137,29 @@ mod tests {
                 _ => panic!("Expected Mandelbrot"),
             }
         }
+    }
+
+    #[test]
+    fn test_stretch_to_non_multiple_target() {
+        // 2x2 input with scale 16, but target is 25x25 (not a multiple of 16)
+        // This simulates the real-world case where canvas isn't a perfect multiple
+        let small = vec![make_data(1), make_data(2), make_data(3), make_data(4)];
+        let result = stretch_compute_data(&small, 2, 2, 25, 25, 16);
+        assert_eq!(result.len(), 625); // 25 * 25
+
+        // Check corners
+        let get_iter = |idx: usize| match &result[idx] {
+            ComputeData::Mandelbrot(m) => m.iterations,
+            _ => panic!("Expected Mandelbrot"),
+        };
+
+        // Top-left (0,0) -> small[0] = 1
+        assert_eq!(get_iter(0), 1);
+        // Top-right (24,0) -> 24/16 = 1 -> small[1] = 2
+        assert_eq!(get_iter(24), 2);
+        // Bottom-left (0,24) -> 24/16 = 1 -> small[2] = 3
+        assert_eq!(get_iter(24 * 25), 3);
+        // Bottom-right (24,24) -> (1,1) -> small[3] = 4
+        assert_eq!(get_iter(24 * 25 + 24), 4);
     }
 }

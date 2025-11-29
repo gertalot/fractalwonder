@@ -1,15 +1,19 @@
 // fractalwonder-gpu/src/pass.rs
 
 /// Defines the 4 progressive rendering passes.
+///
+/// Each pass renders at reduced RESOLUTION (fewer pixels) but uses FULL iterations.
+/// The speedup comes from fewer pixels, not fewer iterations - reducing iterations
+/// would cause incorrect results at deep zooms where escape happens late.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pass {
-    /// 1/16 resolution, 1/16 iterations
+    /// 1/16 resolution
     Preview16,
-    /// 1/8 resolution, 1/8 iterations
+    /// 1/8 resolution
     Preview8,
-    /// 1/4 resolution, 1/4 iterations
+    /// 1/4 resolution
     Preview4,
-    /// Full resolution, full iterations
+    /// Full resolution
     Full,
 }
 
@@ -32,12 +36,16 @@ impl Pass {
     /// Computes pass dimensions from canvas dimensions.
     pub fn dimensions(&self, canvas_w: u32, canvas_h: u32) -> (u32, u32) {
         let s = self.scale();
-        ((canvas_w + s - 1) / s, (canvas_h + s - 1) / s)
+        (canvas_w.div_ceil(s), canvas_h.div_ceil(s))
     }
 
-    /// Scales max iterations for this pass (floor of 100).
-    pub fn scale_iterations(&self, max_iter: u32) -> u32 {
-        (max_iter / self.scale()).max(100)
+    /// Returns max iterations for this pass.
+    ///
+    /// All passes use full iterations - the speedup comes from fewer pixels,
+    /// not fewer iterations. Reducing iterations causes incorrect results at
+    /// deep zooms where escape happens at high iteration counts.
+    pub fn max_iterations(&self, max_iter: u32) -> u32 {
+        max_iter
     }
 
     /// Returns true if this is the final (full resolution) pass.
@@ -65,11 +73,12 @@ mod tests {
     }
 
     #[test]
-    fn test_scale_iterations() {
-        assert_eq!(Pass::Preview16.scale_iterations(16000), 1000);
-        assert_eq!(Pass::Preview16.scale_iterations(1600), 100);
-        assert_eq!(Pass::Preview16.scale_iterations(160), 100); // Floor of 100
-        assert_eq!(Pass::Full.scale_iterations(16000), 16000);
+    fn test_max_iterations() {
+        // All passes use full iterations
+        assert_eq!(Pass::Preview16.max_iterations(16000), 16000);
+        assert_eq!(Pass::Preview8.max_iterations(16000), 16000);
+        assert_eq!(Pass::Preview4.max_iterations(16000), 16000);
+        assert_eq!(Pass::Full.max_iterations(16000), 16000);
     }
 
     #[test]

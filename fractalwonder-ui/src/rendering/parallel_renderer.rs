@@ -1,5 +1,7 @@
 use crate::config::{FractalConfig, RendererType};
-use crate::rendering::canvas_utils::{draw_full_frame, draw_pixels_to_canvas, get_2d_context};
+use crate::rendering::canvas_utils::{
+    draw_full_frame, draw_pixels_to_canvas, get_2d_context, performance_now,
+};
 use crate::rendering::colorizers::colorize;
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
@@ -9,7 +11,8 @@ use fractalwonder_gpu::{stretch_compute_data, GpuAvailability, GpuContext, GpuRe
 use leptos::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 /// Parallel renderer that distributes tiles across Web Workers.
@@ -25,6 +28,8 @@ pub struct ParallelRenderer {
     gpu_renderer: Rc<RefCell<Option<GpuRenderer>>>,
     /// Whether GPU initialization has been attempted
     gpu_init_attempted: Rc<Cell<bool>>,
+    /// Whether GPU is currently executing a render pass (temporarily taken from RefCell)
+    gpu_in_use: Rc<Cell<bool>>,
     /// Canvas dimensions for GPU rendering
     canvas_size: Rc<Cell<(u32, u32)>>,
     /// Render generation counter for interruption handling
@@ -39,6 +44,7 @@ impl ParallelRenderer {
         let tile_results: Rc<RefCell<Vec<TileResult>>> = Rc::new(RefCell::new(Vec::new()));
         let gpu_renderer: Rc<RefCell<Option<GpuRenderer>>> = Rc::new(RefCell::new(None));
         let gpu_init_attempted: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+        let gpu_in_use: Rc<Cell<bool>> = Rc::new(Cell::new(false));
         let canvas_size: Rc<Cell<(u32, u32)>> = Rc::new(Cell::new((0, 0)));
         let render_generation: Rc<Cell<u32>> = Rc::new(Cell::new(0));
 
@@ -76,6 +82,7 @@ impl ParallelRenderer {
             tile_results,
             gpu_renderer,
             gpu_init_attempted,
+            gpu_in_use,
             canvas_size,
             render_generation,
         })
@@ -170,6 +177,9 @@ impl ParallelRenderer {
     }
 
     /// Start GPU-accelerated perturbation render with progressive passes.
+    ///
+    /// Uses callback-based setTimeout to create macrotask boundaries between passes,
+    /// allowing the browser to repaint between each progressive resolution level.
     fn start_gpu_render(&self, viewport: &Viewport, canvas: &HtmlCanvasElement) {
         let width = canvas.width();
         let height = canvas.height();
@@ -178,13 +188,18 @@ impl ParallelRenderer {
         let gen = self.render_generation.get() + 1;
         self.render_generation.set(gen);
 
+        // Initialize progress for GPU passes (4 passes total)
+        let total_passes = Pass::all().len() as u32;
+        self.progress.set(RenderProgress::new(total_passes));
+
         self.canvas_size.set((width, height));
 
-        // Clone what we need for the callback
+        // Clone what we need for the callback chain
         let generation = Rc::clone(&self.render_generation);
         let gpu_renderer = Rc::clone(&self.gpu_renderer);
         let gpu_init_attempted = Rc::clone(&self.gpu_init_attempted);
-        let canvas_ctx = Rc::clone(&self.canvas_ctx);
+        let gpu_in_use = Rc::clone(&self.gpu_in_use);
+        let canvas_element = canvas.clone();
         let xray_enabled = Rc::clone(&self.xray_enabled);
         let tile_results = Rc::clone(&self.tile_results);
         let worker_pool = Rc::clone(&self.worker_pool);
@@ -201,17 +216,23 @@ impl ParallelRenderer {
                     orbit_data.orbit.len()
                 );
 
-                // Clone again for the async block
+                // Wrap orbit data in Rc for sharing across pass callbacks
+                let orbit_data = Rc::new(orbit_data);
+
+                // Clone for GPU init
                 let generation = Rc::clone(&generation);
                 let gpu_renderer = Rc::clone(&gpu_renderer);
                 let gpu_init_attempted = Rc::clone(&gpu_init_attempted);
-                let canvas_ctx = Rc::clone(&canvas_ctx);
+                let gpu_in_use = Rc::clone(&gpu_in_use);
+                let canvas_element = canvas_element.clone();
                 let xray_enabled = Rc::clone(&xray_enabled);
                 let tile_results = Rc::clone(&tile_results);
                 let worker_pool = Rc::clone(&worker_pool);
                 let viewport = viewport_clone.clone();
                 let tiles = tiles.clone();
+                let orbit_data_init = Rc::clone(&orbit_data);
 
+                // First spawn_local: GPU init, then schedule first pass via macrotask
                 wasm_bindgen_futures::spawn_local(async move {
                     // Try GPU init if not attempted
                     if !gpu_init_attempted.get() {
@@ -227,9 +248,13 @@ impl ParallelRenderer {
                         }
                     }
 
-                    // Check if we have GPU
-                    let has_gpu = gpu_renderer.borrow().is_some();
-                    if !has_gpu {
+                    // Check if we have GPU available
+                    // If GPU is temporarily in use by a stale render, wait for it
+                    let gpu_available = gpu_renderer.borrow().is_some();
+                    let gpu_busy = gpu_in_use.get();
+
+                    if !gpu_available && !gpu_busy {
+                        // GPU truly unavailable (init failed or not supported)
                         log::info!("No GPU available, using CPU");
                         worker_pool.borrow_mut().start_perturbation_render(
                             viewport,
@@ -239,103 +264,94 @@ impl ParallelRenderer {
                         return;
                     }
 
-                    let vp_width = viewport.width.to_f64() as f32;
-                    let vp_height = viewport.height.to_f64() as f32;
-                    let dc_origin = (-vp_width / 2.0, -vp_height / 2.0);
-                    let tau_sq = config.tau_sq as f32;
+                    if !gpu_available && gpu_busy {
+                        // GPU is temporarily taken out by a stale render pass
+                        // The stale pass will abort via generation check and return it shortly
+                        // Schedule a retry after a short delay
+                        log::info!("GPU temporarily busy, waiting...");
+                        let gpu_renderer = Rc::clone(&gpu_renderer);
+                        let gpu_in_use = Rc::clone(&gpu_in_use);
+                        let generation = Rc::clone(&generation);
+                        let canvas_element = canvas_element.clone();
+                        let xray_enabled = Rc::clone(&xray_enabled);
+                        let tile_results = Rc::clone(&tile_results);
+                        let worker_pool = Rc::clone(&worker_pool);
+                        let orbit_data = Rc::clone(&orbit_data_init);
 
-                    // Progressive rendering: 4 passes
-                    for pass in Pass::all() {
-                        // Check generation - abort if stale
-                        if generation.get() != gen {
-                            log::debug!("Render interrupted at {:?}", pass);
-                            return;
-                        }
-
-                        let pass_result = {
-                            let mut gpu_opt = gpu_renderer.borrow_mut();
-                            let gpu = gpu_opt.as_mut().unwrap();
-
-                            gpu.render_pass(
-                                &orbit_data.orbit,
-                                orbit_data.orbit_id,
-                                dc_origin,
-                                vp_width,
-                                vp_height,
-                                width,
-                                height,
-                                orbit_data.max_iterations,
-                                tau_sq,
-                                pass,
-                            )
-                            .await
-                        };
-
-                        match pass_result {
-                            Ok(result) => {
-                                let (pass_w, pass_h) = pass.dimensions(width, height);
-                                let scale = pass.scale();
-
-                                log::info!(
-                                    "Pass {:?}: {}x{} in {:.1}ms",
-                                    pass,
-                                    pass_w,
-                                    pass_h,
-                                    result.compute_time_ms
-                                );
-
-                                // Stretch to full canvas size
-                                let full_data = stretch_compute_data(&result.data, pass_w, pass_h, scale);
-
-                                // Store for recolorize
-                                tile_results.borrow_mut().clear();
-                                tile_results.borrow_mut().push(TileResult {
-                                    tile: PixelRect {
-                                        x: 0,
-                                        y: 0,
-                                        width,
-                                        height,
-                                    },
-                                    data: full_data.clone(),
-                                    compute_time_ms: result.compute_time_ms,
-                                });
-
-                                // Colorize and draw
-                                let xray = xray_enabled.get();
-                                let pixels: Vec<u8> =
-                                    full_data.iter().flat_map(|d| colorize(d, xray)).collect();
-
-                                if let Some(ctx) = canvas_ctx.borrow().as_ref() {
-                                    let _ = draw_full_frame(ctx, &pixels, width, height);
-                                }
-
-                                // Update progress
-                                if pass.is_final() {
-                                    progress.update(|p| {
-                                        p.completed_tiles = 1;
-                                        p.is_complete = true;
-                                    });
-                                }
-                            }
-                            Err(e) => {
-                                log::warn!("GPU pass {:?} failed: {e}, falling back to CPU", pass);
-                                worker_pool.borrow_mut().start_perturbation_render(
-                                    viewport.clone(),
-                                    (width, height),
-                                    tiles.clone(),
-                                );
+                        // Use requestAnimationFrame to retry
+                        request_animation_frame_then(move || {
+                            // Check generation - might have been superseded
+                            if generation.get() != gen {
                                 return;
                             }
-                        }
+                            // Check if GPU is now available
+                            if gpu_renderer.borrow().is_some() {
+                                let render_start_time = performance_now();
+                                schedule_gpu_pass(
+                                    Pass::all()[0],
+                                    0,
+                                    gen,
+                                    width,
+                                    height,
+                                    config,
+                                    generation,
+                                    gpu_renderer,
+                                    canvas_element,
+                                    xray_enabled,
+                                    tile_results,
+                                    worker_pool,
+                                    progress,
+                                    viewport,
+                                    tiles,
+                                    orbit_data,
+                                    render_start_time,
+                                    gpu_in_use,
+                                );
+                            } else {
+                                // Still not available, fall back to CPU
+                                log::warn!("GPU still unavailable after wait, using CPU");
+                                worker_pool.borrow_mut().start_perturbation_render(
+                                    viewport,
+                                    (width, height),
+                                    tiles,
+                                );
+                            }
+                        });
+                        return;
                     }
+
+                    // Schedule first pass via setTimeout (macrotask boundary)
+                    // This ends the current spawn_local, allowing browser to repaint
+                    let passes = Pass::all();
+                    let render_start_time = performance_now();
+                    schedule_gpu_pass(
+                        passes[0],
+                        0,
+                        gen,
+                        width,
+                        height,
+                        config,
+                        Rc::clone(&generation),
+                        Rc::clone(&gpu_renderer),
+                        canvas_element.clone(),
+                        Rc::clone(&xray_enabled),
+                        Rc::clone(&tile_results),
+                        Rc::clone(&worker_pool),
+                        progress,
+                        viewport.clone(),
+                        tiles.clone(),
+                        Rc::clone(&orbit_data_init),
+                        render_start_time,
+                        Rc::clone(&gpu_in_use),
+                    );
                 });
             },
         );
 
-        // Start GPU mode render (computes orbit, triggers callback when ready)
+        // Compute orbit for GPU rendering (triggers callback when ready)
         self.worker_pool
             .borrow_mut()
-            .start_perturbation_render_gpu(viewport.clone(), (width, height));
+            .compute_orbit_for_gpu(viewport.clone(), (width, height));
     }
 
     pub fn switch_config(&mut self, config: &'static FractalConfig) -> Result<(), JsValue> {
@@ -343,4 +359,199 @@ impl ParallelRenderer {
         self.worker_pool.borrow_mut().switch_renderer(config.id);
         Ok(())
     }
+}
+
+/// Schedule a GPU pass with proper browser repaint between passes.
+///
+/// Uses a two-stage yield: after drawing, requestAnimationFrame ensures we're at a paint
+/// boundary, then setTimeout schedules the next pass AFTER the paint completes.
+#[allow(clippy::too_many_arguments)]
+fn schedule_gpu_pass(
+    pass: Pass,
+    pass_index: usize,
+    expected_gen: u32,
+    width: u32,
+    height: u32,
+    config: &'static FractalConfig,
+    generation: Rc<Cell<u32>>,
+    gpu_renderer: Rc<RefCell<Option<GpuRenderer>>>,
+    canvas_element: HtmlCanvasElement,
+    xray_enabled: Rc<Cell<bool>>,
+    tile_results: Rc<RefCell<Vec<TileResult>>>,
+    worker_pool: Rc<RefCell<WorkerPool>>,
+    progress: RwSignal<RenderProgress>,
+    viewport: Viewport,
+    tiles: Vec<PixelRect>,
+    orbit_data: Rc<OrbitCompleteData>,
+    render_start_time: f64,
+    gpu_in_use: Rc<Cell<bool>>,
+) {
+    log::info!("Scheduling pass {:?}", pass);
+
+    // Check generation - abort if stale
+    if generation.get() != expected_gen {
+        log::debug!("Render interrupted at {:?}", pass);
+        return;
+    }
+
+    // Clone for spawn_local
+    let generation_spawn = Rc::clone(&generation);
+    let gpu_renderer_spawn = Rc::clone(&gpu_renderer);
+    let gpu_in_use_spawn = Rc::clone(&gpu_in_use);
+    let canvas_element_spawn = canvas_element.clone();
+    let xray_enabled_spawn = Rc::clone(&xray_enabled);
+    let tile_results_spawn = Rc::clone(&tile_results);
+    let worker_pool_spawn = Rc::clone(&worker_pool);
+    let viewport_spawn = viewport.clone();
+    let tiles_spawn = tiles.clone();
+    let orbit_data_spawn = Rc::clone(&orbit_data);
+
+    // spawn_local for async GPU render
+    wasm_bindgen_futures::spawn_local(async move {
+        let vp_width = viewport_spawn.width.to_f64() as f32;
+        let vp_height = viewport_spawn.height.to_f64() as f32;
+        let dc_origin = (-vp_width / 2.0, -vp_height / 2.0);
+        let tau_sq = config.tau_sq as f32;
+
+        // Mark GPU as in use before taking it
+        gpu_in_use_spawn.set(true);
+
+        // Take renderer out temporarily to avoid holding RefCell borrow across await
+        let mut renderer = gpu_renderer_spawn.borrow_mut().take().unwrap();
+        let pass_result = renderer
+            .render_pass(
+                &orbit_data_spawn.orbit,
+                orbit_data_spawn.orbit_id,
+                dc_origin,
+                vp_width,
+                vp_height,
+                width,
+                height,
+                orbit_data_spawn.max_iterations,
+                tau_sq,
+                pass,
+            )
+            .await;
+        // Put renderer back and mark as no longer in use
+        *gpu_renderer_spawn.borrow_mut() = Some(renderer);
+        gpu_in_use_spawn.set(false);
+
+        match pass_result {
+            Ok(result) => {
+                let (pass_w, pass_h) = pass.dimensions(width, height);
+                let scale = pass.scale();
+
+                log::info!(
+                    "Pass {:?}: {}x{} in {:.1}ms",
+                    pass,
+                    pass_w,
+                    pass_h,
+                    result.compute_time_ms
+                );
+
+                // Stretch to full canvas size
+                let full_data =
+                    stretch_compute_data(&result.data, pass_w, pass_h, width, height, scale);
+
+                // Store for recolorize
+                tile_results_spawn.borrow_mut().clear();
+                tile_results_spawn.borrow_mut().push(TileResult {
+                    tile: PixelRect {
+                        x: 0,
+                        y: 0,
+                        width,
+                        height,
+                    },
+                    data: full_data.clone(),
+                    compute_time_ms: result.compute_time_ms,
+                });
+
+                // Colorize and draw
+                let xray = xray_enabled_spawn.get();
+                let pixels: Vec<u8> = full_data.iter().flat_map(|d| colorize(d, xray)).collect();
+
+                // Get fresh context and draw
+                if let Ok(ctx) = get_2d_context(&canvas_element_spawn) {
+                    match draw_full_frame(&ctx, &pixels, width, height) {
+                        Ok(()) => log::info!(
+                            "Drew pass {:?} to canvas ({}x{}, {} bytes)",
+                            pass,
+                            width,
+                            height,
+                            pixels.len()
+                        ),
+                        Err(e) => log::error!("Draw failed for {:?}: {:?}", pass, e),
+                    }
+                }
+
+                // Update progress after each pass
+                let elapsed_ms = performance_now() - render_start_time;
+                progress.update(|p| {
+                    p.completed_steps += 1;
+                    p.elapsed_ms = elapsed_ms;
+                    p.is_complete = pass.is_final();
+                });
+
+                if !pass.is_final() {
+                    // Schedule next pass using double rAF to guarantee paint between passes
+                    // First rAF: browser commits our draw, schedules paint
+                    // Second rAF: fires AFTER paint completes
+                    let passes = Pass::all();
+                    let next_index = pass_index + 1;
+                    if next_index < passes.len() {
+                        log::info!("Pass {:?} done, requesting first rAF", pass);
+                        request_animation_frame_then(move || {
+                            log::info!("First rAF fired for {:?}, requesting second rAF", pass);
+                            // First rAF has fired - browser is about to paint
+                            // Request another rAF to run AFTER the paint
+                            request_animation_frame_then(move || {
+                                log::info!(
+                                    "Second rAF fired after {:?}, scheduling next pass",
+                                    pass
+                                );
+                                schedule_gpu_pass(
+                                    passes[next_index],
+                                    next_index,
+                                    expected_gen,
+                                    width,
+                                    height,
+                                    config,
+                                    generation_spawn,
+                                    gpu_renderer_spawn,
+                                    canvas_element_spawn,
+                                    xray_enabled_spawn,
+                                    tile_results_spawn,
+                                    worker_pool_spawn,
+                                    progress,
+                                    viewport_spawn,
+                                    tiles_spawn,
+                                    orbit_data_spawn,
+                                    render_start_time,
+                                    gpu_in_use_spawn,
+                                );
+                            });
+                        });
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("GPU pass {:?} failed: {e}, falling back to CPU", pass);
+                worker_pool_spawn.borrow_mut().start_perturbation_render(
+                    viewport_spawn,
+                    (width, height),
+                    tiles_spawn,
+                );
+            }
+        }
+    });
+}
+
+/// Call requestAnimationFrame and invoke callback when it fires.
+fn request_animation_frame_then<F: FnOnce() + 'static>(callback: F) {
+    let closure = Closure::once(callback);
+    web_sys::window()
+        .unwrap()
+        .request_animation_frame(closure.as_ref().unchecked_ref())
+        .unwrap();
+    closure.forget();
 }

@@ -332,9 +332,9 @@ impl WorkerPool {
                     let is_complete = {
                         let mut complete = false;
                         self.progress.update(|p| {
-                            p.completed_tiles += 1;
+                            p.completed_steps += 1;
                             p.elapsed_ms = elapsed;
-                            p.is_complete = p.completed_tiles >= p.total_tiles;
+                            p.is_complete = p.completed_steps >= p.total_steps;
                             complete = p.is_complete;
                         });
                         complete
@@ -342,7 +342,7 @@ impl WorkerPool {
 
                     // Log render completion summary (perturbation mode only for glitch stats)
                     if is_complete && self.is_perturbation_render {
-                        let total = self.progress.get_untracked().total_tiles;
+                        let total = self.progress.get_untracked().total_steps;
                         web_sys::console::log_1(
                             &format!(
                                 "[WorkerPool] Render complete: {} tiles had glitches (of {} total)",
@@ -651,7 +651,7 @@ impl WorkerPool {
         }
     }
 
-    /// Start a perturbation render.
+    /// Start a CPU tiled perturbation render.
     ///
     /// 1. Computes reference orbit at viewport center
     /// 2. Broadcasts orbit to all workers
@@ -663,10 +663,7 @@ impl WorkerPool {
         tiles: Vec<PixelRect>,
     ) {
         self.is_perturbation_render = true;
-        // Reset gpu_mode unless explicitly set by start_perturbation_render_gpu
-        if !tiles.is_empty() {
-            self.gpu_mode = false;
-        }
+        self.gpu_mode = false;
         self.current_render_id = self.current_render_id.wrapping_add(1);
         self.glitched_tile_count = 0;
         self.glitched_tiles.clear();
@@ -745,6 +742,7 @@ impl WorkerPool {
         self.pending_tiles = tiles.into();
         self.render_start_time = Some(performance_now());
 
+        // Set progress for tile-based rendering
         let total = self.pending_tiles.len() as u32;
         self.progress.set(RenderProgress::new(total));
 
@@ -1156,13 +1154,89 @@ impl WorkerPool {
         *self.on_orbit_complete.borrow_mut() = None;
     }
 
-    /// Start a perturbation render in GPU mode.
-    /// Orbit computation happens via worker, but when complete,
-    /// the callback is triggered instead of dispatching tiles.
-    pub fn start_perturbation_render_gpu(&mut self, viewport: Viewport, canvas_size: (u32, u32)) {
+    /// Compute reference orbit for GPU rendering.
+    ///
+    /// This is a clean, separate path from CPU tile rendering.
+    /// It only computes the orbit and triggers the callback when ready.
+    /// Progress tracking is handled by the GPU renderer, not here.
+    pub fn compute_orbit_for_gpu(&mut self, viewport: Viewport, canvas_size: (u32, u32)) {
         self.gpu_mode = true;
-        // Use empty tiles vec - GPU mode doesn't dispatch tiles
-        self.start_perturbation_render(viewport, canvas_size, Vec::new());
+        self.is_perturbation_render = false;
+        self.current_render_id = self.current_render_id.wrapping_add(1);
+        self.perturbation.orbit_id = self.perturbation.orbit_id.wrapping_add(1);
+        self.perturbation.workers_with_orbit.clear();
+        self.perturbation.pending_orbit = None;
+
+        // Validate viewport dimensions
+        let vp_width = viewport.width.to_f64();
+        let vp_height = viewport.height.to_f64();
+
+        if !vp_width.is_finite() || !vp_height.is_finite() || vp_width <= 0.0 || vp_height <= 0.0 {
+            web_sys::console::error_1(
+                &format!(
+                    "[WorkerPool] Invalid viewport dimensions: width={}, height={}",
+                    vp_width, vp_height
+                )
+                .into(),
+            );
+            return;
+        }
+
+        // Calculate zoom exponent and max iterations
+        let zoom = 4.0 / vp_width;
+        let zoom_exponent = if zoom.is_finite() && zoom > 0.0 {
+            zoom.log10()
+        } else {
+            0.0
+        };
+        let config = get_config("mandelbrot");
+        let max_iterations = calculate_max_iterations(
+            zoom_exponent,
+            config.map(|c| c.iteration_multiplier).unwrap_or(200.0),
+            config.map(|c| c.iteration_power).unwrap_or(2.5),
+        );
+
+        self.perturbation.max_iterations = max_iterations;
+        self.perturbation.tau_sq = config.map(|c| c.tau_sq).unwrap_or(1e-6);
+
+        web_sys::console::log_1(
+            &format!(
+                "[WorkerPool] Computing orbit for GPU render #{}, zoom=10^{:.1}, max_iter={}",
+                self.current_render_id, zoom_exponent, max_iterations
+            )
+            .into(),
+        );
+
+        self.current_viewport = Some(viewport.clone());
+        self.canvas_size = canvas_size;
+        self.render_start_time = Some(performance_now());
+
+        // Serialize viewport center for reference orbit computation
+        let c_ref_json = serde_json::to_string(&viewport.center).unwrap_or_default();
+
+        // Send ComputeReferenceOrbit to first available worker
+        if let Some(&worker_id) = self.initialized_workers.iter().next() {
+            self.perturbation.pending_orbit_request = None;
+            self.send_to_worker(
+                worker_id,
+                &MainToWorker::ComputeReferenceOrbit {
+                    render_id: self.current_render_id,
+                    orbit_id: self.perturbation.orbit_id,
+                    c_ref_json,
+                    max_iterations,
+                },
+            );
+        } else {
+            web_sys::console::log_1(
+                &"[WorkerPool] No workers initialized yet, queueing orbit request".into(),
+            );
+            self.perturbation.pending_orbit_request = Some(PendingOrbitRequest {
+                render_id: self.current_render_id,
+                orbit_id: self.perturbation.orbit_id,
+                c_ref_json,
+                max_iterations,
+            });
+        }
     }
 
     /// Get the current reference orbit if available.
