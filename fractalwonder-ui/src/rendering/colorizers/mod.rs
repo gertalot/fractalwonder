@@ -1,10 +1,12 @@
 pub mod color_space;
 pub mod mandelbrot;
+pub mod palette;
 pub mod test_image;
 
 use fractalwonder_core::ComputeData;
 
 pub use mandelbrot::colorize as colorize_mandelbrot;
+pub use palette::Palette;
 pub use test_image::colorize as colorize_test_image;
 
 /// Colorizer function type - converts compute data to RGBA pixels.
