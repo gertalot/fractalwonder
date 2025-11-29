@@ -141,6 +141,10 @@ impl GpuRenderer {
                         binding: 3,
                         resource: buffers.glitch_flags.as_entire_binding(),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: buffers.z_norm_sq.as_entire_binding(),
+                    },
                 ],
             });
 
@@ -174,6 +178,13 @@ impl GpuRenderer {
             0,
             byte_size,
         );
+        encoder.copy_buffer_to_buffer(
+            &buffers.z_norm_sq,
+            0,
+            &buffers.staging_z_norm_sq,
+            0,
+            (pixel_count * std::mem::size_of::<f32>()) as u64,
+        );
 
         self.context.queue.submit(std::iter::once(encoder.finish()));
 
@@ -184,18 +195,22 @@ impl GpuRenderer {
         let glitch_data = self
             .read_buffer(&buffers.staging_glitches, pixel_count)
             .await?;
+        let z_norm_sq_data = self
+            .read_buffer_f32(&buffers.staging_z_norm_sq, pixel_count)
+            .await?;
 
         // Convert to ComputeData
         let data: Vec<ComputeData> = iterations
             .iter()
             .zip(glitch_data.iter())
-            .map(|(&iter, &glitch_flag)| {
+            .zip(z_norm_sq_data.iter())
+            .map(|((&iter, &glitch_flag), &z_sq)| {
                 ComputeData::Mandelbrot(MandelbrotData {
                     iterations: iter,
                     max_iterations,
                     escaped: iter < max_iterations && iter != SENTINEL_NOT_COMPUTED,
                     glitched: glitch_flag != 0,
-                    final_z_norm_sq: 0.0,
+                    final_z_norm_sq: z_sq,
                 })
             })
             .collect();
@@ -213,6 +228,34 @@ impl GpuRenderer {
         buffer: &wgpu::Buffer,
         _count: usize,
     ) -> Result<Vec<u32>, GpuError> {
+        let slice = buffer.slice(..);
+
+        let (tx, rx) = futures_channel::oneshot::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+
+        #[cfg(not(target_arch = "wasm32"))]
+        self.context.device.poll(wgpu::Maintain::Wait);
+
+        rx.await
+            .map_err(|_| GpuError::Unavailable("Channel closed".into()))?
+            .map_err(GpuError::BufferMap)?;
+
+        let data = {
+            let view = slice.get_mapped_range();
+            bytemuck::cast_slice(&view).to_vec()
+        };
+        buffer.unmap();
+
+        Ok(data)
+    }
+
+    async fn read_buffer_f32(
+        &self,
+        buffer: &wgpu::Buffer,
+        _count: usize,
+    ) -> Result<Vec<f32>, GpuError> {
         let slice = buffer.slice(..);
 
         let (tx, rx) = futures_channel::oneshot::channel();
