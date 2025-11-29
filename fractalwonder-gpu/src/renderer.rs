@@ -4,6 +4,7 @@ use crate::buffers::{GpuBuffers, Uniforms};
 use crate::device::GpuContext;
 use crate::error::GpuError;
 use crate::pipeline::GpuPipeline;
+use crate::Pass;
 use fractalwonder_core::{ComputeData, MandelbrotData};
 
 /// Result of a GPU render operation.
@@ -201,6 +202,47 @@ impl GpuRenderer {
             data,
             compute_time_ms: end - start,
         })
+    }
+
+    /// Render a single pass at reduced resolution/iterations.
+    ///
+    /// Returns ComputeData for `pass.dimensions()` pixels, NOT full canvas size.
+    /// Caller is responsible for stretching to full size.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn render_pass(
+        &mut self,
+        orbit: &[(f64, f64)],
+        orbit_id: u32,
+        dc_origin: (f32, f32),
+        viewport_width: f32,
+        viewport_height: f32,
+        canvas_width: u32,
+        canvas_height: u32,
+        max_iterations: u32,
+        tau_sq: f32,
+        pass: Pass,
+    ) -> Result<GpuRenderResult, GpuError> {
+        let (pass_w, pass_h) = pass.dimensions(canvas_width, canvas_height);
+        let pass_max_iter = pass.scale_iterations(max_iterations);
+        let pass_tau_sq = if pass.is_final() { tau_sq } else { 0.0 };
+
+        // Compute dc_step for this pass resolution
+        let dc_step = (
+            viewport_width / pass_w as f32,
+            viewport_height / pass_h as f32,
+        );
+
+        self.render(
+            orbit,
+            orbit_id,
+            dc_origin,
+            dc_step,
+            pass_w,
+            pass_h,
+            pass_max_iter,
+            pass_tau_sq,
+        )
+        .await
     }
 
     async fn read_buffer(
