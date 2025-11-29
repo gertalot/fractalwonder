@@ -53,6 +53,8 @@ pub struct GpuBuffers {
     pub glitch_flags: wgpu::Buffer,
     pub staging_results: wgpu::Buffer,
     pub staging_glitches: wgpu::Buffer,
+    pub z_norm_sq: wgpu::Buffer,
+    pub staging_z_norm_sq: wgpu::Buffer,
     pub orbit_capacity: u32,
     pub pixel_count: u32,
 }
@@ -103,6 +105,20 @@ impl GpuBuffers {
             mapped_at_creation: false,
         });
 
+        let z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("z_norm_sq"),
+            size: (pixel_count as usize * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let staging_z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("staging_z_norm_sq"),
+            size: (pixel_count as usize * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Self {
             uniforms,
             reference_orbit,
@@ -110,6 +126,8 @@ impl GpuBuffers {
             glitch_flags,
             staging_results,
             staging_glitches,
+            z_norm_sq,
+            staging_z_norm_sq,
             orbit_capacity: orbit_len,
             pixel_count,
         }
