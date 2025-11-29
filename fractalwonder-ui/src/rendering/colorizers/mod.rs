@@ -1,3 +1,4 @@
+pub mod color_space;
 pub mod mandelbrot;
 pub mod test_image;
 
