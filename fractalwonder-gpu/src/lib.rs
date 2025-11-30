@@ -2,6 +2,7 @@
 
 mod buffers;
 mod device;
+mod direct_pipeline;
 mod error;
 mod pass;
 mod pipeline;
@@ -12,6 +13,7 @@ mod tests;
 
 pub use buffers::{GpuBuffers, Uniforms};
 pub use device::{GpuAvailability, GpuContext};
+pub use direct_pipeline::DirectFloatExpPipeline;
 pub use error::GpuError;
 pub use pass::Adam7Pass;
 pub use pipeline::GpuPipeline;
