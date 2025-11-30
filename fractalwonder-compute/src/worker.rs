@@ -1,10 +1,12 @@
 // fractalwonder-compute/src/worker.rs
 use crate::{
-    compute_pixel_perturbation, compute_pixel_perturbation_bigfloat, compute_pixel_perturbation_hdr,
-    compute_pixel_perturbation_hdr_bla, BlaTable, MandelbrotRenderer, ReferenceOrbit, Renderer,
-    TestImageRenderer,
+    compute_pixel_perturbation, compute_pixel_perturbation_bigfloat,
+    compute_pixel_perturbation_hdr, compute_pixel_perturbation_hdr_bla, BlaTable,
+    MandelbrotRenderer, ReferenceOrbit, Renderer, TestImageRenderer,
 };
-use fractalwonder_core::{BigFloat, ComputeData, HDRComplex, HDRFloat, MainToWorker, Viewport, WorkerToMain};
+use fractalwonder_core::{
+    BigFloat, ComputeData, HDRComplex, HDRFloat, MainToWorker, Viewport, WorkerToMain,
+};
 use js_sys::Date;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -434,12 +436,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                                 )
                             }
                         } else {
-                            compute_pixel_perturbation_hdr(
-                                &orbit,
-                                delta_c,
-                                max_iterations,
-                                tau_sq,
-                            )
+                            compute_pixel_perturbation_hdr(&orbit, delta_c, max_iterations, tau_sq)
                         };
                         data.push(ComputeData::Mandelbrot(result));
 

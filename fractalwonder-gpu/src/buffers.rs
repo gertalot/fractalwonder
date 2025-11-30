@@ -45,57 +45,6 @@ impl Uniforms {
     }
 }
 
-/// Uniform data for direct FloatExp compute shader.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-pub struct DirectFloatExpUniforms {
-    pub width: u32,
-    pub height: u32,
-    pub max_iterations: u32,
-    pub escape_radius_sq: f32,
-
-    pub c_origin_re_m: f32,
-    pub c_origin_re_e: i32,
-    pub c_origin_im_m: f32,
-    pub c_origin_im_e: i32,
-
-    pub c_step_re_m: f32,
-    pub c_step_re_e: i32,
-    pub c_step_im_m: f32,
-    pub c_step_im_e: i32,
-
-    pub adam7_step: u32,
-    pub _padding: u32,
-}
-
-impl DirectFloatExpUniforms {
-    pub fn new(
-        width: u32,
-        height: u32,
-        max_iterations: u32,
-        c_origin: (f32, i32, f32, i32), // (re_m, re_e, im_m, im_e)
-        c_step: (f32, i32, f32, i32),   // (re_m, re_e, im_m, im_e)
-        adam7_step: u32,
-    ) -> Self {
-        Self {
-            width,
-            height,
-            max_iterations,
-            escape_radius_sq: 65536.0, // 256² for smooth coloring
-            c_origin_re_m: c_origin.0,
-            c_origin_re_e: c_origin.1,
-            c_origin_im_m: c_origin.2,
-            c_origin_im_e: c_origin.3,
-            c_step_re_m: c_step.0,
-            c_step_re_e: c_step.1,
-            c_step_im_m: c_step.2,
-            c_step_im_e: c_step.3,
-            adam7_step,
-            _padding: 0,
-        }
-    }
-}
-
 /// Uniform data for direct HDRFloat compute shader.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -158,67 +107,6 @@ impl DirectHDRUniforms {
             c_step_im_tail: c_step.1 .1,
             c_step_im_exp: c_step.1 .2,
             adam7_step,
-        }
-    }
-}
-
-/// GPU buffers for direct FloatExp rendering.
-/// Simpler than perturbation buffers - no reference orbit, no glitch flags.
-pub struct DirectFloatExpBuffers {
-    pub uniforms: wgpu::Buffer,
-    pub results: wgpu::Buffer,
-    pub z_norm_sq: wgpu::Buffer,
-    pub staging_results: wgpu::Buffer,
-    pub staging_z_norm_sq: wgpu::Buffer,
-    pub pixel_count: u32,
-}
-
-impl DirectFloatExpBuffers {
-    pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
-        let pixel_count = width * height;
-
-        let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("direct_floatexp_uniforms"),
-            size: std::mem::size_of::<DirectFloatExpUniforms>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let results = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("direct_floatexp_results"),
-            size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
-        let z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("direct_floatexp_z_norm_sq"),
-            size: (pixel_count as usize * std::mem::size_of::<f32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
-        let staging_results = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("direct_floatexp_staging_results"),
-            size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let staging_z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("direct_floatexp_staging_z_norm_sq"),
-            size: (pixel_count as usize * std::mem::size_of::<f32>()) as u64,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        Self {
-            uniforms,
-            results,
-            z_norm_sq,
-            staging_results,
-            staging_z_norm_sq,
-            pixel_count,
         }
     }
 }
