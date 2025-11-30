@@ -96,6 +96,9 @@ pub struct WorkerPool {
     current_viewport: Option<Viewport>,
     canvas_size: (u32, u32),
     on_tile_complete: Rc<dyn Fn(TileResult)>,
+    /// Callback when all tiles are complete
+    #[allow(clippy::type_complexity)]
+    on_render_complete: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
     /// Callback when reference orbit computation completes (for GPU rendering)
     on_orbit_complete: OrbitCompleteCallback,
     progress: RwSignal<RenderProgress>,
@@ -212,6 +215,7 @@ impl WorkerPool {
             current_viewport: None,
             canvas_size: (0, 0),
             on_tile_complete: Rc::new(on_tile_complete),
+            on_render_complete: Rc::new(RefCell::new(None)),
             on_orbit_complete: Rc::new(RefCell::new(None)),
             progress,
             render_start_time: None,
@@ -368,12 +372,19 @@ impl WorkerPool {
                         }
                     }
 
-                    // Callback
+                    // Callback for tile completion
                     (self.on_tile_complete)(TileResult {
                         tile,
                         data,
                         compute_time_ms,
                     });
+
+                    // Callback for render completion (all tiles done)
+                    if is_complete {
+                        if let Some(ref callback) = *self.on_render_complete.borrow() {
+                            callback();
+                        }
+                    }
                 } else {
                     web_sys::console::warn_1(
                         &format!(
@@ -1152,6 +1163,14 @@ impl WorkerPool {
     /// Clear the orbit complete callback.
     pub fn clear_orbit_complete_callback(&self) {
         *self.on_orbit_complete.borrow_mut() = None;
+    }
+
+    /// Set callback for when all tiles are complete.
+    pub fn set_render_complete_callback<F>(&self, callback: F)
+    where
+        F: Fn() + 'static,
+    {
+        *self.on_render_complete.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Compute reference orbit for GPU rendering.

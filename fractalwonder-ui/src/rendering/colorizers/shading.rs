@@ -130,8 +130,8 @@ fn blend_shade(base: [u8; 4], shade: f64, blend: f64) -> [u8; 4] {
         return base;
     }
 
-    // shade 0.5 = factor 1.0, shade 0 = factor 0.3, shade 1 = factor 1.7
-    let factor = 0.3 + shade * 1.4;
+    // shade 0 = factor 0.85 (subtle shadow), shade 0.5 = factor 1.0, shade 1 = factor 1.15 (subtle highlight)
+    let factor = 0.85 + shade * 0.3;
 
     let apply = |c: u8| -> u8 {
         let shaded = (c as f64 * factor).clamp(0.0, 255.0);
@@ -211,7 +211,7 @@ mod tests {
     fn blend_neutral_unchanged() {
         let base = [128, 128, 128, 255];
         let result = blend_shade(base, 0.5, 1.0);
-        // Factor = 0.3 + 0.5 * 1.4 = 1.0, so unchanged
+        // Factor = 0.85 + 0.5 * 0.3 = 1.0, so unchanged
         assert_eq!(result, base);
     }
 

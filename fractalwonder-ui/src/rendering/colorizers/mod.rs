@@ -1,7 +1,6 @@
 pub mod color_space;
 pub mod colorizer;
 pub mod palette;
-pub mod presets;
 pub mod settings;
 pub mod shading;
 pub mod smooth_iteration;
@@ -10,7 +9,6 @@ use fractalwonder_core::ComputeData;
 
 pub use colorizer::{Colorizer, ColorizerKind};
 pub use palette::Palette;
-pub use presets::{presets, ColorSchemePreset};
 pub use settings::{ColorOptions, ColorSettings, ShadingSettings};
 pub use shading::apply_slope_shading;
 pub use smooth_iteration::SmoothIterationColorizer;

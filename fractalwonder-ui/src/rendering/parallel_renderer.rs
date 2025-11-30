@@ -3,7 +3,7 @@ use crate::rendering::canvas_utils::{
     draw_full_frame, draw_pixels_to_canvas, get_2d_context, performance_now,
 };
 use crate::rendering::colorizers::{
-    colorize_with_palette, presets, ColorOptions, ColorSchemePreset, ColorSettings, ColorizerKind,
+    colorize_with_palette, ColorOptions, ColorSettings, ColorizerKind,
 };
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
@@ -62,12 +62,9 @@ impl ParallelRenderer {
         let adam7_accumulator: Rc<RefCell<Option<Adam7Accumulator>>> = Rc::new(RefCell::new(None));
         let smooth_enabled: Rc<Cell<bool>> = Rc::new(Cell::new(true));
 
-        // Initialize with default color scheme (Classic preset)
-        let default_preset = &presets()[0];
-        let settings: Rc<RefCell<ColorSettings>> =
-            Rc::new(RefCell::new(default_preset.settings.clone()));
-        let colorizer: Rc<RefCell<ColorizerKind>> =
-            Rc::new(RefCell::new(default_preset.colorizer.clone()));
+        // Initialize with default color settings
+        let settings: Rc<RefCell<ColorSettings>> = Rc::new(RefCell::new(ColorSettings::default()));
+        let colorizer: Rc<RefCell<ColorizerKind>> = Rc::new(RefCell::new(ColorizerKind::default()));
 
         let ctx_clone = Rc::clone(&canvas_ctx);
         let xray_clone = Rc::clone(&xray_enabled);
@@ -252,22 +249,11 @@ impl ParallelRenderer {
         self.worker_pool.borrow_mut().subdivide_glitched_cells();
     }
 
-    /// Set the color scheme (settings and colorizer).
-    pub fn set_color_scheme(&self, preset: &ColorSchemePreset) {
-        *self.settings.borrow_mut() = preset.settings.clone();
-        *self.colorizer.borrow_mut() = preset.colorizer.clone();
-    }
-
     /// Set color options from UI.
     pub fn set_color_options(&self, options: &ColorOptions) {
         let settings = options.to_color_settings();
         *self.settings.borrow_mut() = settings;
         self.smooth_enabled.set(options.smooth_enabled);
-    }
-
-    /// Get available color scheme presets.
-    pub fn color_scheme_presets(&self) -> Vec<ColorSchemePreset> {
-        presets()
     }
 
     pub fn render(&self, viewport: &Viewport, canvas: &HtmlCanvasElement) {

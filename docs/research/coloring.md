@@ -902,6 +902,12 @@ to look at** as quickly as possible.
 
 This section documents how the current colorizer system works and where new code should live.
 
+**NOTE: Computing the fractal is SEPARATE from coloring. Changing the color scheme does NOT trigger a re-compute.**
+
+The render pipeline computes ComputeData for each point, which contains all values needed for the SEPARATE coloring
+pass. The coloring pass can do pre-process, coloring, and post-process. In essence the coloring pipeline takes
+ComputeData and maps it to RGBA data, which then gets put onto the canvas.
+
 #### 8.1.1 Directory Structure
 
 ```
@@ -1422,7 +1428,7 @@ This requires escape radius > 2 (recommend 256 for best smoothing).
 
 ---
 
-### 8.6 Increment 3: Slope Shading (Finite Difference)
+### ✅ 8.6 Increment 3: Slope Shading (Finite Difference)
 
 **Deliverable**: 3D lighting effect using iteration count as height field.
 
