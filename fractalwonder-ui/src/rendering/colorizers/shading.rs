@@ -56,6 +56,27 @@ fn mirror_coord(coord: i32, max: usize) -> usize {
     }
 }
 
+/// Blend shade value with a pixel color.
+/// shade: 0.5 = neutral, <0.5 = darken, >0.5 = lighten
+/// blend: 0.0 = no effect, 1.0 = full shading effect
+#[allow(dead_code)]
+fn blend_shade(base: [u8; 4], shade: f64, blend: f64) -> [u8; 4] {
+    if blend <= 0.0 {
+        return base;
+    }
+
+    // shade 0.5 = factor 1.0, shade 0 = factor 0.3, shade 1 = factor 1.7
+    let factor = 0.3 + shade * 1.4;
+
+    let apply = |c: u8| -> u8 {
+        let shaded = (c as f64 * factor).clamp(0.0, 255.0);
+        let blended = c as f64 + blend * (shaded - c as f64);
+        blended.clamp(0.0, 255.0) as u8
+    };
+
+    [apply(base[0]), apply(base[1]), apply(base[2]), base[3]]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,5 +140,36 @@ mod tests {
             "shade away from light should be < 0.5, got {}",
             shade
         );
+    }
+
+    #[test]
+    fn blend_neutral_unchanged() {
+        let base = [128, 128, 128, 255];
+        let result = blend_shade(base, 0.5, 1.0);
+        // Factor = 0.3 + 0.5 * 1.4 = 1.0, so unchanged
+        assert_eq!(result, base);
+    }
+
+    #[test]
+    fn blend_dark_darkens() {
+        let base = [128, 128, 128, 255];
+        let result = blend_shade(base, 0.0, 1.0);
+        // Factor = 0.3, so darkened
+        assert!(result[0] < base[0], "expected darker, got {:?}", result);
+    }
+
+    #[test]
+    fn blend_bright_brightens() {
+        let base = [128, 128, 128, 255];
+        let result = blend_shade(base, 1.0, 1.0);
+        // Factor = 1.7, so brightened
+        assert!(result[0] > base[0], "expected brighter, got {:?}", result);
+    }
+
+    #[test]
+    fn blend_zero_unchanged() {
+        let base = [128, 128, 128, 255];
+        let result = blend_shade(base, 0.0, 0.0);
+        assert_eq!(result, base);
     }
 }
