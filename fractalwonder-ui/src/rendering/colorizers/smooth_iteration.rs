@@ -9,6 +9,17 @@ use fractalwonder_core::{ComputeData, MandelbrotData};
 #[derive(Clone, Debug, Default)]
 pub struct SmoothIterationColorizer;
 
+/// Context data computed during preprocessing.
+/// Holds smooth iteration values and optional histogram CDF.
+#[derive(Clone, Debug, Default)]
+pub struct SmoothIterationContext {
+    /// Smooth iteration values per pixel.
+    pub smooth_values: Vec<f64>,
+    /// CDF for histogram equalization. None if disabled.
+    /// Index = iteration count, value = cumulative probability [0,1].
+    pub cdf: Option<Vec<f64>>,
+}
+
 /// Compute smooth iteration count from MandelbrotData.
 /// Returns the smooth iteration value, or max_iterations for interior points.
 pub fn compute_smooth_iteration(data: &MandelbrotData) -> f64 {
@@ -240,5 +251,12 @@ mod tests {
             color1,
             color2
         );
+    }
+
+    #[test]
+    fn smooth_iteration_context_default_has_no_cdf() {
+        let ctx = SmoothIterationContext::default();
+        assert!(ctx.smooth_values.is_empty());
+        assert!(ctx.cdf.is_none());
     }
 }
