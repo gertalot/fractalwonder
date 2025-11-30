@@ -17,6 +17,10 @@ pub fn OptionsMenu(
     smooth_enabled: Signal<bool>,
     /// Callback when smooth is toggled
     on_smooth_toggle: Callback<()>,
+    /// Histogram equalization enabled state
+    histogram_enabled: Signal<bool>,
+    /// Callback when histogram is toggled
+    on_histogram_toggle: Callback<()>,
     /// Current cycle count
     cycle_count: Signal<u32>,
     /// Callback to increase cycles
@@ -69,6 +73,20 @@ pub fn OptionsMenu(
                             "Smooth"
                         </span>
                         <span class="text-xs text-gray-500">"[S]"</span>
+                    </button>
+                    <button
+                        class="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center justify-between"
+                        on:click=move |_| {
+                            on_histogram_toggle.call(());
+                        }
+                    >
+                        <span class="flex items-center gap-2">
+                            <span class=move || if histogram_enabled.get() { "opacity-100" } else { "opacity-30" }>
+                                {move || if histogram_enabled.get() { "☑" } else { "☐" }}
+                            </span>
+                            "Histogram"
+                        </span>
+                        <span class="text-xs text-gray-500">"[H]"</span>
                     </button>
 
                     // Cycles section

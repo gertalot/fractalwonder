@@ -29,6 +29,10 @@ pub fn UIPanel(
     smooth_enabled: Signal<bool>,
     /// Callback to toggle smooth
     on_smooth_toggle: Callback<()>,
+    /// Histogram equalization enabled
+    histogram_enabled: Signal<bool>,
+    /// Callback to toggle histogram
+    on_histogram_toggle: Callback<()>,
     /// Cycle count
     cycle_count: Signal<u32>,
     /// Callback to increase cycles
@@ -101,6 +105,8 @@ pub fn UIPanel(
                         on_shading_toggle=on_shading_toggle
                         smooth_enabled=smooth_enabled
                         on_smooth_toggle=on_smooth_toggle
+                        histogram_enabled=histogram_enabled
+                        on_histogram_toggle=on_histogram_toggle
                         cycle_count=cycle_count
                         on_cycle_up=on_cycle_up
                         on_cycle_down=on_cycle_down

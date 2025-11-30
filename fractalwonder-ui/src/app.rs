@@ -283,6 +283,18 @@ pub fn App() -> impl IntoView {
                         set_toast_message.set(Some(msg.to_string()));
                     });
                 }
+                "h" | "H" => {
+                    // Toggle histogram equalization
+                    set_color_options.update(|opts| {
+                        opts.histogram_enabled = !opts.histogram_enabled;
+                        let msg = if opts.histogram_enabled {
+                            "Histogram: On"
+                        } else {
+                            "Histogram: Off"
+                        };
+                        set_toast_message.set(Some(msg.to_string()));
+                    });
+                }
                 "ArrowLeft" => {
                     // Previous palette
                     let opts = palettes();
@@ -391,6 +403,18 @@ pub fn App() -> impl IntoView {
                         "Smooth: On"
                     } else {
                         "Smooth: Off"
+                    };
+                    set_toast_message.set(Some(msg.to_string()));
+                });
+            })
+            histogram_enabled=Signal::derive(move || color_options.get().histogram_enabled)
+            on_histogram_toggle=Callback::new(move |_| {
+                set_color_options.update(|opts| {
+                    opts.histogram_enabled = !opts.histogram_enabled;
+                    let msg = if opts.histogram_enabled {
+                        "Histogram: On"
+                    } else {
+                        "Histogram: Off"
                     };
                     set_toast_message.set(Some(msg.to_string()));
                 });
