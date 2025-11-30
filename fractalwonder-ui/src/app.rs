@@ -320,16 +320,18 @@ pub fn App() -> impl IntoView {
                     set_toast_message.set(Some(format!("Palette: {}", new_palette.name)));
                 }
                 "ArrowUp" => {
-                    // Increase cycle count
+                    // Increase cycle count (Shift = +50, otherwise +1)
+                    let amount = if e.shift_key() { 50 } else { 1 };
                     set_color_options.update(|opts| {
-                        opts.cycle_up();
+                        opts.cycle_up_by(amount);
                         set_toast_message.set(Some(format!("Cycles: {}", opts.cycle_count)));
                     });
                 }
                 "ArrowDown" => {
-                    // Decrease cycle count
+                    // Decrease cycle count (Shift = -50, otherwise -1)
+                    let amount = if e.shift_key() { 50 } else { 1 };
                     set_color_options.update(|opts| {
-                        opts.cycle_down();
+                        opts.cycle_down_by(amount);
                         set_toast_message.set(Some(format!("Cycles: {}", opts.cycle_count)));
                     });
                 }

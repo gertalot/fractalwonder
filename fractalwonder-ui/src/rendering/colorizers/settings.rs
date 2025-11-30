@@ -54,7 +54,7 @@ pub struct ColorOptions {
     pub smooth_enabled: bool,
     /// Whether histogram equalization is enabled.
     pub histogram_enabled: bool,
-    /// Number of palette cycles (power of 2: 1, 2, 4, ..., 128).
+    /// Number of palette cycles (1 to 1024).
     pub cycle_count: u32,
 }
 
@@ -71,23 +71,29 @@ impl Default for ColorOptions {
 }
 
 impl ColorOptions {
-    /// Valid cycle counts: powers of 2 from 1 to 1024.
+    /// Valid cycle counts: 1 to 1024.
     pub fn is_valid_cycle_count(n: u32) -> bool {
-        n > 0 && n <= 1024 && n.is_power_of_two()
+        (1..=1024).contains(&n)
     }
 
-    /// Double cycle count (max 1024).
+    /// Increase cycle count by given amount (max 1024).
+    pub fn cycle_up_by(&mut self, amount: u32) {
+        self.cycle_count = (self.cycle_count + amount).min(1024);
+    }
+
+    /// Decrease cycle count by given amount (min 1).
+    pub fn cycle_down_by(&mut self, amount: u32) {
+        self.cycle_count = self.cycle_count.saturating_sub(amount).max(1);
+    }
+
+    /// Increase cycle count by 1 (max 1024).
     pub fn cycle_up(&mut self) {
-        if self.cycle_count < 1024 {
-            self.cycle_count *= 2;
-        }
+        self.cycle_up_by(1);
     }
 
-    /// Halve cycle count (min 1).
+    /// Decrease cycle count by 1 (min 1).
     pub fn cycle_down(&mut self) {
-        if self.cycle_count > 1 {
-            self.cycle_count /= 2;
-        }
+        self.cycle_down_by(1);
     }
 
     /// Get the palette for this options.
@@ -159,14 +165,63 @@ mod tests {
     }
 
     #[test]
-    fn color_options_cycle_power_of_two() {
+    fn color_options_cycle_count_valid_range() {
         assert!(ColorOptions::is_valid_cycle_count(1));
         assert!(ColorOptions::is_valid_cycle_count(2));
+        assert!(ColorOptions::is_valid_cycle_count(3));
         assert!(ColorOptions::is_valid_cycle_count(32));
         assert!(ColorOptions::is_valid_cycle_count(128));
+        assert!(ColorOptions::is_valid_cycle_count(500));
         assert!(ColorOptions::is_valid_cycle_count(1024));
-        assert!(!ColorOptions::is_valid_cycle_count(3));
         assert!(!ColorOptions::is_valid_cycle_count(0));
+        assert!(!ColorOptions::is_valid_cycle_count(1025));
         assert!(!ColorOptions::is_valid_cycle_count(2048));
+    }
+
+    #[test]
+    fn color_options_cycle_up_down_linear() {
+        let mut options = ColorOptions {
+            cycle_count: 10,
+            ..Default::default()
+        };
+
+        options.cycle_up();
+        assert_eq!(options.cycle_count, 11);
+
+        options.cycle_down();
+        assert_eq!(options.cycle_count, 10);
+
+        // Test fast increment/decrement
+        options.cycle_up_by(50);
+        assert_eq!(options.cycle_count, 60);
+
+        options.cycle_down_by(50);
+        assert_eq!(options.cycle_count, 10);
+    }
+
+    #[test]
+    fn color_options_cycle_upper_bound() {
+        let mut options = ColorOptions {
+            cycle_count: 1020,
+            ..Default::default()
+        };
+        options.cycle_up_by(50);
+        assert_eq!(options.cycle_count, 1024);
+
+        options.cycle_up();
+        assert_eq!(options.cycle_count, 1024); // Still capped
+    }
+
+    #[test]
+    fn color_options_cycle_lower_bound() {
+        let mut options = ColorOptions {
+            cycle_count: 30,
+            ..Default::default()
+        };
+        options.cycle_down_by(50);
+        assert_eq!(options.cycle_count, 1);
+
+        options.cycle_down();
+        assert_eq!(options.cycle_count, 1); // Still at min
     }
 }

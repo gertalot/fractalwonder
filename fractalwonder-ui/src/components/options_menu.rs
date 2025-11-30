@@ -111,7 +111,7 @@ pub fn OptionsMenu(
                                 "▶"
                             </button>
                         </div>
-                        <span class="text-xs text-gray-500">"[↑↓]"</span>
+                        <span class="text-xs text-gray-500">"[↑↓ / ⇧±50]"</span>
                     </div>
                 </div>
             })}
