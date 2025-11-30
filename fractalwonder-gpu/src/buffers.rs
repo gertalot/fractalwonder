@@ -96,6 +96,72 @@ impl DirectFloatExpUniforms {
     }
 }
 
+/// Uniform data for direct HDRFloat compute shader.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct DirectHDRUniforms {
+    pub width: u32,
+    pub height: u32,
+    pub max_iterations: u32,
+    pub escape_radius_sq: f32,
+
+    // c_origin as HDRFloat: (head, tail, exp) for re and im
+    pub c_origin_re_head: f32,
+    pub c_origin_re_tail: f32,
+    pub c_origin_re_exp: i32,
+    pub _pad1: u32,
+    pub c_origin_im_head: f32,
+    pub c_origin_im_tail: f32,
+    pub c_origin_im_exp: i32,
+    pub _pad2: u32,
+
+    // c_step as HDRFloat
+    pub c_step_re_head: f32,
+    pub c_step_re_tail: f32,
+    pub c_step_re_exp: i32,
+    pub _pad3: u32,
+    pub c_step_im_head: f32,
+    pub c_step_im_tail: f32,
+    pub c_step_im_exp: i32,
+
+    pub adam7_step: u32,
+}
+
+impl DirectHDRUniforms {
+    #[allow(dead_code)]
+    pub fn new(
+        width: u32,
+        height: u32,
+        max_iterations: u32,
+        c_origin: ((f32, f32, i32), (f32, f32, i32)), // ((re_head, re_tail, re_exp), (im_head, im_tail, im_exp))
+        c_step: ((f32, f32, i32), (f32, f32, i32)),
+        adam7_step: u32,
+    ) -> Self {
+        Self {
+            width,
+            height,
+            max_iterations,
+            escape_radius_sq: 65536.0,
+            c_origin_re_head: c_origin.0 .0,
+            c_origin_re_tail: c_origin.0 .1,
+            c_origin_re_exp: c_origin.0 .2,
+            _pad1: 0,
+            c_origin_im_head: c_origin.1 .0,
+            c_origin_im_tail: c_origin.1 .1,
+            c_origin_im_exp: c_origin.1 .2,
+            _pad2: 0,
+            c_step_re_head: c_step.0 .0,
+            c_step_re_tail: c_step.0 .1,
+            c_step_re_exp: c_step.0 .2,
+            _pad3: 0,
+            c_step_im_head: c_step.1 .0,
+            c_step_im_tail: c_step.1 .1,
+            c_step_im_exp: c_step.1 .2,
+            adam7_step,
+        }
+    }
+}
+
 /// GPU buffers for direct FloatExp rendering.
 /// Simpler than perturbation buffers - no reference orbit, no glitch flags.
 pub struct DirectFloatExpBuffers {
@@ -213,6 +279,85 @@ impl PerturbationFloatExpUniforms {
             adam7_step,
             reference_escaped: if reference_escaped { 1 } else { 0 },
             _padding: [0; 3],
+        }
+    }
+}
+
+/// Uniform data for perturbation HDRFloat compute shader.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct PerturbationHDRUniforms {
+    pub width: u32,
+    pub height: u32,
+    pub max_iterations: u32,
+    pub escape_radius_sq: f32,
+    pub tau_sq: f32,
+    pub _pad0: u32,
+
+    // dc_origin as HDRFloat
+    pub dc_origin_re_head: f32,
+    pub dc_origin_re_tail: f32,
+    pub dc_origin_re_exp: i32,
+    pub _pad1: u32,
+    pub dc_origin_im_head: f32,
+    pub dc_origin_im_tail: f32,
+    pub dc_origin_im_exp: i32,
+    pub _pad2: u32,
+
+    // dc_step as HDRFloat
+    pub dc_step_re_head: f32,
+    pub dc_step_re_tail: f32,
+    pub dc_step_re_exp: i32,
+    pub _pad3: u32,
+    pub dc_step_im_head: f32,
+    pub dc_step_im_tail: f32,
+    pub dc_step_im_exp: i32,
+
+    pub adam7_step: u32,
+    pub reference_escaped: u32,
+    pub orbit_len: u32,
+    pub _pad4: u32,
+}
+
+impl PerturbationHDRUniforms {
+    #[allow(dead_code, clippy::too_many_arguments)]
+    pub fn new(
+        width: u32,
+        height: u32,
+        max_iterations: u32,
+        tau_sq: f32,
+        dc_origin: ((f32, f32, i32), (f32, f32, i32)),
+        dc_step: ((f32, f32, i32), (f32, f32, i32)),
+        adam7_step: u32,
+        reference_escaped: bool,
+        orbit_len: u32,
+    ) -> Self {
+        Self {
+            width,
+            height,
+            max_iterations,
+            escape_radius_sq: 65536.0,
+            tau_sq,
+            _pad0: 0,
+            dc_origin_re_head: dc_origin.0 .0,
+            dc_origin_re_tail: dc_origin.0 .1,
+            dc_origin_re_exp: dc_origin.0 .2,
+            _pad1: 0,
+            dc_origin_im_head: dc_origin.1 .0,
+            dc_origin_im_tail: dc_origin.1 .1,
+            dc_origin_im_exp: dc_origin.1 .2,
+            _pad2: 0,
+            dc_step_re_head: dc_step.0 .0,
+            dc_step_re_tail: dc_step.0 .1,
+            dc_step_re_exp: dc_step.0 .2,
+            _pad3: 0,
+            dc_step_im_head: dc_step.1 .0,
+            dc_step_im_tail: dc_step.1 .1,
+            dc_step_im_exp: dc_step.1 .2,
+            adam7_step,
+            reference_escaped: if reference_escaped { 1 } else { 0 },
+            orbit_len,
+            _pad4: 0,
         }
     }
 }
