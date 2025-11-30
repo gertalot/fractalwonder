@@ -556,9 +556,15 @@ fn schedule_adam7_pass(
         let step_re = HDRFloat::from_f64(vp_width.to_f64() / width as f64);
         let step_im = HDRFloat::from_f64(vp_height.to_f64() / height as f64);
 
-        // Pack as (mantissa, exponent) tuples for GPU (use head as mantissa)
-        let dc_origin = (origin_re.head, origin_re.exp, origin_im.head, origin_im.exp);
-        let dc_step = (step_re.head, step_re.exp, step_im.head, step_im.exp);
+        // Pack as ((head, tail, exp), (head, tail, exp)) tuples for GPU HDRFloat format
+        let dc_origin = (
+            (origin_re.head, origin_re.tail, origin_re.exp),
+            (origin_im.head, origin_im.tail, origin_im.exp),
+        );
+        let dc_step = (
+            (step_re.head, step_re.tail, step_re.exp),
+            (step_im.head, step_im.tail, step_im.exp),
+        );
         let tau_sq = config.tau_sq as f32;
         let reference_escaped =
             orbit_data_spawn.orbit.len() < orbit_data_spawn.max_iterations as usize;

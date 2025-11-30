@@ -12,9 +12,7 @@ mod stretch;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 
-pub use buffers::{
-    GpuBuffers, PerturbationFloatExpBuffers, PerturbationFloatExpUniforms, Uniforms,
-};
+pub use buffers::{GpuBuffers, PerturbationHDRBuffers, PerturbationHDRUniforms, Uniforms};
 pub use device::{GpuAvailability, GpuContext};
 pub use error::GpuError;
 pub use pass::Adam7Pass;

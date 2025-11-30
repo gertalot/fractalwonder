@@ -1,7 +1,7 @@
 //! GPU renderer for perturbation with HDRFloat deltas.
 //! Uses extended-range arithmetic to avoid precision loss at moderate zoom.
 
-use crate::buffers::{PerturbationFloatExpBuffers, PerturbationFloatExpUniforms};
+use crate::buffers::{PerturbationHDRBuffers, PerturbationHDRUniforms};
 use crate::device::GpuContext;
 use crate::error::GpuError;
 use crate::perturbation_hdr_pipeline::PerturbationHDRPipeline;
@@ -39,7 +39,7 @@ impl GpuPerturbationHDRResult {
 pub struct GpuPerturbationHDRRenderer {
     context: GpuContext,
     pipeline: PerturbationHDRPipeline,
-    buffers: Option<PerturbationFloatExpBuffers>,
+    buffers: Option<PerturbationHDRBuffers>,
     cached_orbit_id: Option<u32>,
     current_dimensions: Option<(u32, u32)>,
 }
@@ -61,15 +61,15 @@ impl GpuPerturbationHDRRenderer {
     /// # Arguments
     /// * `orbit` - Reference orbit as (re, im) pairs
     /// * `orbit_id` - ID for orbit caching
-    /// * `dc_origin` - Top-left δc as (re_mantissa, re_exp, im_mantissa, im_exp)
-    /// * `dc_step` - Per-pixel δc step as (re_mantissa, re_exp, im_mantissa, im_exp)
+    /// * `dc_origin` - Top-left δc as ((re_head, re_tail, re_exp), (im_head, im_tail, im_exp))
+    /// * `dc_step` - Per-pixel δc step as ((re_head, re_tail, re_exp), (im_head, im_tail, im_exp))
     #[allow(clippy::too_many_arguments)]
     pub async fn render(
         &mut self,
         orbit: &[(f64, f64)],
         orbit_id: u32,
-        dc_origin: (f32, i32, f32, i32),
-        dc_step: (f32, i32, f32, i32),
+        dc_origin: ((f32, f32, i32), (f32, f32, i32)),
+        dc_step: ((f32, f32, i32), (f32, f32, i32)),
         width: u32,
         height: u32,
         max_iterations: u32,
@@ -83,7 +83,7 @@ impl GpuPerturbationHDRRenderer {
         if self.current_dimensions != Some((width, height))
             || self.buffers.as_ref().map(|b| b.orbit_capacity).unwrap_or(0) < orbit.len() as u32
         {
-            self.buffers = Some(PerturbationFloatExpBuffers::new(
+            self.buffers = Some(PerturbationHDRBuffers::new(
                 &self.context.device,
                 orbit.len() as u32,
                 width,
@@ -110,7 +110,7 @@ impl GpuPerturbationHDRRenderer {
         }
 
         // Write uniforms with HDRFloat dc values
-        let uniforms = PerturbationFloatExpUniforms::new(
+        let uniforms = PerturbationHDRUniforms::new(
             width,
             height,
             max_iterations,
@@ -119,6 +119,7 @@ impl GpuPerturbationHDRRenderer {
             dc_step,
             pass.step() as u32,
             reference_escaped,
+            orbit.len() as u32,
         );
         self.context
             .queue

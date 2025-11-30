@@ -111,66 +111,6 @@ impl DirectHDRUniforms {
     }
 }
 
-/// Uniform data for perturbation FloatExp compute shader.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-pub struct PerturbationFloatExpUniforms {
-    pub width: u32,
-    pub height: u32,
-    pub max_iterations: u32,
-    pub escape_radius_sq: f32,
-    pub tau_sq: f32,
-
-    pub dc_origin_re_m: f32,
-    pub dc_origin_re_e: i32,
-    pub dc_origin_im_m: f32,
-    pub dc_origin_im_e: i32,
-
-    pub dc_step_re_m: f32,
-    pub dc_step_re_e: i32,
-    pub dc_step_im_m: f32,
-    pub dc_step_im_e: i32,
-
-    pub adam7_step: u32,
-    pub reference_escaped: u32,
-    // WGSL vec2<u32> has 8-byte alignment, creating implicit padding before it.
-    // Total WGSL struct size is 72 bytes, so we need 3 u32s of padding (not 2).
-    pub _padding: [u32; 3],
-}
-
-impl PerturbationFloatExpUniforms {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        width: u32,
-        height: u32,
-        max_iterations: u32,
-        tau_sq: f32,
-        dc_origin: (f32, i32, f32, i32),
-        dc_step: (f32, i32, f32, i32),
-        adam7_step: u32,
-        reference_escaped: bool,
-    ) -> Self {
-        Self {
-            width,
-            height,
-            max_iterations,
-            escape_radius_sq: 65536.0,
-            tau_sq,
-            dc_origin_re_m: dc_origin.0,
-            dc_origin_re_e: dc_origin.1,
-            dc_origin_im_m: dc_origin.2,
-            dc_origin_im_e: dc_origin.3,
-            dc_step_re_m: dc_step.0,
-            dc_step_re_e: dc_step.1,
-            dc_step_im_m: dc_step.2,
-            dc_step_im_e: dc_step.3,
-            adam7_step,
-            reference_escaped: if reference_escaped { 1 } else { 0 },
-            _padding: [0; 3],
-        }
-    }
-}
-
 /// Uniform data for perturbation HDRFloat compute shader.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -250,8 +190,8 @@ impl PerturbationHDRUniforms {
     }
 }
 
-/// GPU buffers for perturbation FloatExp rendering.
-pub struct PerturbationFloatExpBuffers {
+/// GPU buffers for perturbation HDRFloat rendering.
+pub struct PerturbationHDRBuffers {
     pub uniforms: wgpu::Buffer,
     pub reference_orbit: wgpu::Buffer,
     pub results: wgpu::Buffer,
@@ -264,61 +204,61 @@ pub struct PerturbationFloatExpBuffers {
     pub pixel_count: u32,
 }
 
-impl PerturbationFloatExpBuffers {
+impl PerturbationHDRBuffers {
     pub fn new(device: &wgpu::Device, orbit_len: u32, width: u32, height: u32) -> Self {
         let pixel_count = width * height;
 
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perturbation_floatexp_uniforms"),
-            size: std::mem::size_of::<PerturbationFloatExpUniforms>() as u64,
+            label: Some("perturbation_hdr_uniforms"),
+            size: std::mem::size_of::<PerturbationHDRUniforms>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let reference_orbit = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perturbation_floatexp_reference_orbit"),
+            label: Some("perturbation_hdr_reference_orbit"),
             size: (orbit_len as usize * std::mem::size_of::<[f32; 2]>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let results = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perturbation_floatexp_results"),
+            label: Some("perturbation_hdr_results"),
             size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
         let glitch_flags = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perturbation_floatexp_glitch_flags"),
+            label: Some("perturbation_hdr_glitch_flags"),
             size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
         let staging_results = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perturbation_floatexp_staging_results"),
+            label: Some("perturbation_hdr_staging_results"),
             size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let staging_glitches = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perturbation_floatexp_staging_glitches"),
+            label: Some("perturbation_hdr_staging_glitches"),
             size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perturbation_floatexp_z_norm_sq"),
+            label: Some("perturbation_hdr_z_norm_sq"),
             size: (pixel_count as usize * std::mem::size_of::<f32>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
         let staging_z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perturbation_floatexp_staging_z_norm_sq"),
+            label: Some("perturbation_hdr_staging_z_norm_sq"),
             size: (pixel_count as usize * std::mem::size_of::<f32>()) as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
