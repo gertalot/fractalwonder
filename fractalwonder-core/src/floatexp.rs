@@ -61,6 +61,16 @@ impl FloatExp {
         self.mantissa == 0.0
     }
 
+    /// Get the mantissa value.
+    pub fn mantissa(&self) -> f64 {
+        self.mantissa
+    }
+
+    /// Get the exponent value.
+    pub fn exp(&self) -> i64 {
+        self.exp
+    }
+
     /// Multiply two FloatExp values.
     #[inline]
     pub fn mul(&self, other: &Self) -> Self {
