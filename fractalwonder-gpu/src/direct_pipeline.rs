@@ -10,9 +10,7 @@ impl DirectFloatExpPipeline {
     pub fn new(device: &wgpu::Device) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("direct_floatexp"),
-            source: wgpu::ShaderSource::Wgsl(
-                include_str!("shaders/direct_floatexp.wgsl").into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/direct_floatexp.wgsl").into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

@@ -326,17 +326,21 @@ fn direct_floatexp_known_points() {
         let max_iter = 100;
 
         // Test 3 points: origin (in set), c=3 (escapes fast), c=-2 (boundary)
-        let c_origin = floatexp_to_tuple(
-            FloatExp::from_f64(0.0),
-            FloatExp::from_f64(0.0),
-        );
+        let c_origin = floatexp_to_tuple(FloatExp::from_f64(0.0), FloatExp::from_f64(0.0));
         let c_step = floatexp_to_tuple(
-            FloatExp::from_f64(1.5),  // 0, 1.5, 3.0
+            FloatExp::from_f64(1.5), // 0, 1.5, 3.0
             FloatExp::from_f64(0.0),
         );
 
         let result = renderer
-            .render(c_origin, c_step, width, height, max_iter, Adam7Pass::all_pixels())
+            .render(
+                c_origin,
+                c_step,
+                width,
+                height,
+                max_iter,
+                Adam7Pass::all_pixels(),
+            )
             .await
             .expect("Render should succeed");
 
@@ -386,13 +390,28 @@ fn direct_floatexp_moderate_zoom() {
         );
 
         let result = renderer
-            .render(c_origin, c_step, width, height, max_iter, Adam7Pass::all_pixels())
+            .render(
+                c_origin,
+                c_step,
+                width,
+                height,
+                max_iter,
+                Adam7Pass::all_pixels(),
+            )
             .await
             .expect("Render should succeed");
 
         // Count escaped vs in-set pixels
-        let escaped = result.data.iter().filter(|d| as_mandelbrot(d).escaped).count();
-        let in_set = result.data.iter().filter(|d| !as_mandelbrot(d).escaped).count();
+        let escaped = result
+            .data
+            .iter()
+            .filter(|d| as_mandelbrot(d).escaped)
+            .count();
+        let in_set = result
+            .data
+            .iter()
+            .filter(|d| !as_mandelbrot(d).escaped)
+            .count();
 
         println!("Moderate zoom (10^4) at ({}, {}):", center_re, center_im);
         println!("  Escaped: {}", escaped);

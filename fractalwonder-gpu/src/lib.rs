@@ -13,7 +13,10 @@ mod stretch;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 
-pub use buffers::{DirectFloatExpBuffers, DirectFloatExpUniforms, GpuBuffers, PerturbationFloatExpUniforms, Uniforms};
+pub use buffers::{
+    DirectFloatExpBuffers, DirectFloatExpUniforms, GpuBuffers, PerturbationFloatExpUniforms,
+    Uniforms,
+};
 pub use device::{GpuAvailability, GpuContext};
 pub use direct_pipeline::DirectFloatExpPipeline;
 pub use direct_renderer::{DirectFloatExpRenderer, DirectFloatExpResult};

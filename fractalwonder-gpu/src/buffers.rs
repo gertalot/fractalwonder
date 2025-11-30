@@ -73,8 +73,8 @@ impl DirectFloatExpUniforms {
         width: u32,
         height: u32,
         max_iterations: u32,
-        c_origin: (f32, i32, f32, i32),  // (re_m, re_e, im_m, im_e)
-        c_step: (f32, i32, f32, i32),    // (re_m, re_e, im_m, im_e)
+        c_origin: (f32, i32, f32, i32), // (re_m, re_e, im_m, im_e)
+        c_step: (f32, i32, f32, i32),   // (re_m, re_e, im_m, im_e)
         adam7_step: u32,
     ) -> Self {
         Self {
