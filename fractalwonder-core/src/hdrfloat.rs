@@ -316,6 +316,30 @@ impl HDRFloat {
             exp: self.exp,
         }
     }
+
+    /// Multiply by f64 scalar (for 2·Z·δz where Z is f64 reference orbit value).
+    #[inline]
+    pub fn mul_f64(&self, scalar: f64) -> Self {
+        if self.head == 0.0 || scalar == 0.0 {
+            return Self::ZERO;
+        }
+
+        // Split scalar into head + tail
+        let s_head = scalar as f32;
+        let s_tail = (scalar - s_head as f64) as f32;
+
+        // Full product with error tracking
+        let p = self.head * s_head;
+        let err = self.head.mul_add(s_head, -p);
+        let tail = err + self.head * s_tail + self.tail * s_head;
+
+        Self {
+            head: p,
+            tail,
+            exp: self.exp,
+        }
+        .normalize()
+    }
 }
 
 impl HDRComplex {
@@ -747,5 +771,27 @@ mod tests {
             im: HDRFloat::ZERO,
         };
         assert!(!non_zero.is_zero());
+    }
+
+    #[test]
+    fn mul_f64_basic() {
+        let h = HDRFloat::from_f64(2.0);
+        let result = h.mul_f64(3.0);
+        assert!((result.to_f64() - 6.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn mul_f64_preserves_precision() {
+        // Multiply HDRFloat by f64 reference orbit value
+        let h = HDRFloat::from_f64(1e-50);
+        let z_m: f64 = 0.123456789012345; // Reference orbit value
+        let result = h.mul_f64(z_m);
+        let expected: f64 = 1e-50 * z_m;
+        assert!(
+            (result.to_f64() - expected).abs() < expected.abs() * 1e-14,
+            "mul_f64: got {}, expected {}",
+            result.to_f64(),
+            expected
+        );
     }
 }
