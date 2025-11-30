@@ -6,10 +6,9 @@ use crate::rendering::colorizers::{colorize_with_palette, ColorOptions, Colorize
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
 use crate::workers::{OrbitCompleteData, TileResult, WorkerPool};
-use fractalwonder_core::{calculate_max_iterations, FloatExp, PixelRect, Viewport};
+use fractalwonder_core::{HDRFloat, PixelRect, Viewport};
 use fractalwonder_gpu::{
-    Adam7Accumulator, Adam7Pass, GpuAvailability, GpuContext, GpuDirectFloatExpRenderer,
-    GpuPerturbationFloatExpRenderer,
+    Adam7Accumulator, Adam7Pass, GpuAvailability, GpuContext, GpuPerturbationHDRRenderer,
 };
 use leptos::*;
 use std::cell::{Cell, RefCell};
@@ -18,11 +17,6 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
-/// Maximum zoom level for direct GPU (FloatExp) rendering.
-/// Above this threshold, switch to perturbation to avoid precision loss.
-/// f32 mantissa (24 bits) limits precision: at zoom ~50,000, per-pixel step
-/// becomes smaller than f32 ulp relative to center coordinates.
-const DIRECT_GPU_MAX_ZOOM: f64 = 5e4;
 
 /// Parallel renderer that distributes tiles across Web Workers.
 pub struct ParallelRenderer {
@@ -33,14 +27,10 @@ pub struct ParallelRenderer {
     xray_enabled: Rc<Cell<bool>>,
     /// Stored tile results for re-colorizing without recompute
     tile_results: Rc<RefCell<Vec<TileResult>>>,
-    /// GPU renderer for perturbation with FloatExp deltas, lazily initialized when gpu_enabled
-    gpu_renderer: Rc<RefCell<Option<GpuPerturbationFloatExpRenderer>>>,
-    /// Direct GPU renderer (FloatExp), lazily initialized when gpu_enabled
-    direct_gpu_renderer: Rc<RefCell<Option<GpuDirectFloatExpRenderer>>>,
+    /// GPU renderer for perturbation with HDRFloat deltas, lazily initialized when gpu_enabled
+    gpu_renderer: Rc<RefCell<Option<GpuPerturbationHDRRenderer>>>,
     /// Whether perturbation GPU initialization has been attempted
     gpu_init_attempted: Rc<Cell<bool>>,
-    /// Whether direct GPU initialization has been attempted
-    direct_gpu_init_attempted: Rc<Cell<bool>>,
     /// Whether GPU is currently executing a render pass (temporarily taken from RefCell)
     gpu_in_use: Rc<Cell<bool>>,
     /// Canvas dimensions for GPU rendering
@@ -65,12 +55,9 @@ impl ParallelRenderer {
         let canvas_ctx: Rc<RefCell<Option<CanvasRenderingContext2d>>> = Rc::new(RefCell::new(None));
         let xray_enabled: Rc<Cell<bool>> = Rc::new(Cell::new(false));
         let tile_results: Rc<RefCell<Vec<TileResult>>> = Rc::new(RefCell::new(Vec::new()));
-        let gpu_renderer: Rc<RefCell<Option<GpuPerturbationFloatExpRenderer>>> =
-            Rc::new(RefCell::new(None));
-        let direct_gpu_renderer: Rc<RefCell<Option<GpuDirectFloatExpRenderer>>> =
+        let gpu_renderer: Rc<RefCell<Option<GpuPerturbationHDRRenderer>>> =
             Rc::new(RefCell::new(None));
         let gpu_init_attempted: Rc<Cell<bool>> = Rc::new(Cell::new(false));
-        let direct_gpu_init_attempted: Rc<Cell<bool>> = Rc::new(Cell::new(false));
         let gpu_in_use: Rc<Cell<bool>> = Rc::new(Cell::new(false));
         let canvas_size: Rc<Cell<(u32, u32)>> = Rc::new(Cell::new((0, 0)));
         let render_generation: Rc<Cell<u32>> = Rc::new(Cell::new(0));
@@ -171,9 +158,7 @@ impl ParallelRenderer {
             xray_enabled,
             tile_results,
             gpu_renderer,
-            direct_gpu_renderer,
             gpu_init_attempted,
-            direct_gpu_init_attempted,
             gpu_in_use,
             canvas_size,
             render_generation,
@@ -283,16 +268,8 @@ impl ParallelRenderer {
         // Generate tiles
         let tiles = generate_tiles(width, height, tile_size);
 
-        // Start render with appropriate method based on zoom level.
-        // GPU rendering strategy:
-        // - zoom < 50,000: Direct GPU FloatExp (no orbit needed)
-        // - zoom >= 50,000: Perturbation GPU (orbit-based)
-        if self.config.gpu_enabled && zoom < DIRECT_GPU_MAX_ZOOM {
-            log::info!(
-                "Using direct GPU FloatExp renderer (zoom={zoom:.2e} < {DIRECT_GPU_MAX_ZOOM:.0e})"
-            );
-            self.start_direct_gpu_render(viewport, canvas);
-        } else if self.config.gpu_enabled {
+        // Start render with GPU perturbation or CPU fallback
+        if self.config.gpu_enabled {
             log::info!("Using perturbation GPU renderer (zoom={zoom:.2e})");
             self.start_gpu_render(viewport, canvas);
         } else {
@@ -303,147 +280,6 @@ impl ParallelRenderer {
                 tiles,
             );
         }
-    }
-
-    /// Start GPU-accelerated direct render using FloatExp arithmetic.
-    ///
-    /// No orbit computation needed - each pixel is computed directly with z = z² + c.
-    /// Uses FloatExp (f32 mantissa + i32 exponent) for extended precision.
-    fn start_direct_gpu_render(&self, viewport: &Viewport, canvas: &HtmlCanvasElement) {
-        let width = canvas.width();
-        let height = canvas.height();
-
-        // Increment generation to invalidate any in-progress renders
-        let gen = self.render_generation.get() + 1;
-        self.render_generation.set(gen);
-
-        // Initialize progress for GPU passes (7 Adam7 passes)
-        let total_passes = Adam7Pass::all().len() as u32;
-        self.progress.set(RenderProgress::new(total_passes));
-
-        // Initialize accumulator for this render
-        *self.adam7_accumulator.borrow_mut() = Some(Adam7Accumulator::new(width, height));
-
-        self.canvas_size.set((width, height));
-
-        // Convert viewport to FloatExp format for GPU
-        // c_origin = top-left corner of viewport
-        // c_step = per-pixel step
-        let center_re = FloatExp::from_bigfloat(&viewport.center.0);
-        let center_im = FloatExp::from_bigfloat(&viewport.center.1);
-        let vp_width = FloatExp::from_bigfloat(&viewport.width);
-        let vp_height = FloatExp::from_bigfloat(&viewport.height);
-
-        // Half dimensions for calculating origin
-        let half = FloatExp::from_f64(0.5);
-        let half_width = vp_width.mul(&half);
-        let half_height = vp_height.mul(&half);
-
-        // Origin = center - half_size
-        let origin_re = center_re.sub(&half_width);
-        let origin_im = center_im.sub(&half_height);
-
-        // Step = size / pixel_count
-        let step_re_f64 = vp_width.to_f64() / width as f64;
-        let step_im_f64 = vp_height.to_f64() / height as f64;
-        let step_re = FloatExp::from_f64(step_re_f64);
-        let step_im = FloatExp::from_f64(step_im_f64);
-
-        // Pack for GPU: (mantissa as f32, exponent as i32)
-        let c_origin = (
-            origin_re.mantissa() as f32,
-            origin_re.exp() as i32,
-            origin_im.mantissa() as f32,
-            origin_im.exp() as i32,
-        );
-        let c_step = (
-            step_re.mantissa() as f32,
-            step_re.exp() as i32,
-            step_im.mantissa() as f32,
-            step_im.exp() as i32,
-        );
-
-        // Calculate zoom and max iterations
-        let reference_width = self
-            .config
-            .default_viewport(viewport.precision_bits())
-            .width;
-        let zoom = reference_width.to_f64() / viewport.width.to_f64();
-        let zoom_exponent = zoom.log10();
-        let max_iterations = calculate_max_iterations(
-            zoom_exponent,
-            self.config.iteration_multiplier,
-            self.config.iteration_power,
-        );
-
-        // Clone state for async callback
-        let generation = Rc::clone(&self.render_generation);
-        let direct_gpu_renderer = Rc::clone(&self.direct_gpu_renderer);
-        let direct_gpu_init_attempted = Rc::clone(&self.direct_gpu_init_attempted);
-        let gpu_in_use = Rc::clone(&self.gpu_in_use);
-        let canvas_element = canvas.clone();
-        let xray_enabled = Rc::clone(&self.xray_enabled);
-        let tile_results = Rc::clone(&self.tile_results);
-        let adam7_accumulator = Rc::clone(&self.adam7_accumulator);
-        let options = Rc::clone(&self.options);
-        let palette = Rc::clone(&self.palette);
-        let colorizer = Rc::clone(&self.colorizer);
-        let progress = self.progress;
-        let config = self.config;
-        let viewport_clone = viewport.clone();
-
-        // Spawn async GPU initialization and rendering
-        wasm_bindgen_futures::spawn_local(async move {
-            // Initialize direct GPU if not attempted
-            if !direct_gpu_init_attempted.get() {
-                direct_gpu_init_attempted.set(true);
-                match GpuContext::try_init().await {
-                    GpuAvailability::Available(ctx) => {
-                        log::info!("Direct GPU FloatExp renderer initialized");
-                        *direct_gpu_renderer.borrow_mut() =
-                            Some(GpuDirectFloatExpRenderer::new(ctx));
-                    }
-                    GpuAvailability::Unavailable(reason) => {
-                        log::warn!("GPU unavailable for direct FloatExp: {reason}");
-                    }
-                }
-            }
-
-            // Check if GPU is available
-            if direct_gpu_renderer.borrow().is_none() {
-                log::warn!("Direct GPU renderer not available, falling back to CPU");
-                // Could fall back to CPU here, but for now just return
-                return;
-            }
-
-            let render_start_time = performance_now();
-
-            // Schedule first Adam7 pass
-            schedule_direct_adam7_pass(
-                Adam7Pass::all()[0],
-                0,
-                gen,
-                width,
-                height,
-                max_iterations,
-                c_origin,
-                c_step,
-                config,
-                generation,
-                direct_gpu_renderer,
-                canvas_element,
-                xray_enabled,
-                tile_results,
-                progress,
-                viewport_clone,
-                render_start_time,
-                gpu_in_use,
-                adam7_accumulator,
-                options,
-                palette,
-                colorizer,
-            );
-        });
     }
 
     /// Start GPU-accelerated perturbation render with progressive passes.
@@ -522,7 +358,7 @@ impl ParallelRenderer {
                             GpuAvailability::Available(ctx) => {
                                 log::info!("GPU renderer initialized");
                                 *gpu_renderer.borrow_mut() =
-                                    Some(GpuPerturbationFloatExpRenderer::new(ctx));
+                                    Some(GpuPerturbationHDRRenderer::new(ctx));
                             }
                             GpuAvailability::Unavailable(reason) => {
                                 log::warn!("GPU unavailable: {reason}");
@@ -655,210 +491,6 @@ impl ParallelRenderer {
     }
 }
 
-/// Schedule a direct FloatExp Adam7 pass with proper browser repaint between passes.
-#[allow(clippy::too_many_arguments)]
-fn schedule_direct_adam7_pass(
-    pass: Adam7Pass,
-    pass_index: usize,
-    expected_gen: u32,
-    width: u32,
-    height: u32,
-    max_iterations: u32,
-    c_origin: (f32, i32, f32, i32),
-    c_step: (f32, i32, f32, i32),
-    config: &'static FractalConfig,
-    generation: Rc<Cell<u32>>,
-    direct_gpu_renderer: Rc<RefCell<Option<GpuDirectFloatExpRenderer>>>,
-    canvas_element: HtmlCanvasElement,
-    xray_enabled: Rc<Cell<bool>>,
-    tile_results: Rc<RefCell<Vec<TileResult>>>,
-    progress: RwSignal<RenderProgress>,
-    viewport: Viewport,
-    render_start_time: f64,
-    gpu_in_use: Rc<Cell<bool>>,
-    adam7_accumulator: Rc<RefCell<Option<Adam7Accumulator>>>,
-    options: Rc<RefCell<ColorOptions>>,
-    palette: Rc<RefCell<Palette>>,
-    colorizer: Rc<RefCell<ColorizerKind>>,
-) {
-    log::info!("Scheduling direct FloatExp Adam7 pass {}", pass.step());
-
-    // Check generation - abort if stale
-    if generation.get() != expected_gen {
-        log::debug!("Render interrupted at Adam7 pass {}", pass.step());
-        return;
-    }
-
-    // Clone for spawn_local
-    let generation_spawn = Rc::clone(&generation);
-    let direct_gpu_renderer_spawn = Rc::clone(&direct_gpu_renderer);
-    let gpu_in_use_spawn = Rc::clone(&gpu_in_use);
-    let canvas_element_spawn = canvas_element.clone();
-    let xray_enabled_spawn = Rc::clone(&xray_enabled);
-    let tile_results_spawn = Rc::clone(&tile_results);
-    let viewport_spawn = viewport.clone();
-    let adam7_accumulator_spawn = Rc::clone(&adam7_accumulator);
-    let options_spawn = Rc::clone(&options);
-    let palette_spawn = Rc::clone(&palette);
-    let colorizer_spawn = Rc::clone(&colorizer);
-
-    wasm_bindgen_futures::spawn_local(async move {
-        // Mark GPU as in use
-        gpu_in_use_spawn.set(true);
-
-        // Take renderer temporarily
-        let mut renderer = direct_gpu_renderer_spawn.borrow_mut().take().unwrap();
-        let pass_result = renderer
-            .render(c_origin, c_step, width, height, max_iterations, pass)
-            .await;
-
-        // Put renderer back
-        *direct_gpu_renderer_spawn.borrow_mut() = Some(renderer);
-        gpu_in_use_spawn.set(false);
-
-        // Check generation after await - abort if render was superseded during GPU computation
-        if generation_spawn.get() != expected_gen {
-            log::debug!(
-                "Render {} superseded after pass {} completed",
-                expected_gen,
-                pass.step()
-            );
-            return;
-        }
-
-        match pass_result {
-            Ok(result) => {
-                log::info!(
-                    "Direct FloatExp Adam7 pass {}: {:.1}ms",
-                    pass.step(),
-                    result.compute_time_ms
-                );
-
-                // Merge into accumulator
-                if let Some(ref mut acc) = *adam7_accumulator_spawn.borrow_mut() {
-                    acc.merge(&result.data);
-
-                    // Get display buffer (with gaps filled)
-                    let display_data = if pass.is_final() {
-                        acc.to_final_buffer()
-                    } else {
-                        acc.to_display_buffer()
-                    };
-
-                    // Store for recolorize (update with latest)
-                    tile_results_spawn.borrow_mut().clear();
-                    tile_results_spawn.borrow_mut().push(TileResult {
-                        tile: PixelRect {
-                            x: 0,
-                            y: 0,
-                            width,
-                            height,
-                        },
-                        data: display_data.clone(),
-                        compute_time_ms: result.compute_time_ms,
-                    });
-
-                    // Colorize and draw
-                    let xray = xray_enabled_spawn.get();
-                    let opts = options_spawn.borrow();
-                    let pal = palette_spawn.borrow();
-                    let col = colorizer_spawn.borrow();
-
-                    // On final pass, always use full pipeline for correct colorization
-                    // On non-final passes, use quick path (effects need full image anyway)
-                    let pixels: Vec<u8> = if pass.is_final() {
-                        let reference_width = config
-                            .default_viewport(viewport_spawn.precision_bits())
-                            .width;
-                        let zoom_level = reference_width.to_f64() / viewport_spawn.width.to_f64();
-                        col.run_pipeline(
-                            &display_data,
-                            &opts,
-                            &pal,
-                            width as usize,
-                            height as usize,
-                            zoom_level,
-                        )
-                        .into_iter()
-                        .flatten()
-                        .collect()
-                    } else {
-                        display_data
-                            .iter()
-                            .flat_map(|d| colorize_with_palette(d, &opts, &pal, &col, xray))
-                            .collect()
-                    };
-
-                    if let Ok(ctx) = get_2d_context(&canvas_element_spawn) {
-                        match draw_full_frame(&ctx, &pixels, width, height) {
-                            Ok(()) => {
-                                log::info!(
-                                    "Drew direct FloatExp Adam7 pass {} to canvas",
-                                    pass.step()
-                                )
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Draw failed for direct FloatExp Adam7 pass {}: {:?}",
-                                    pass.step(),
-                                    e
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Update progress
-                let elapsed_ms = performance_now() - render_start_time;
-                progress.update(|p| {
-                    p.completed_steps += 1;
-                    p.elapsed_ms = elapsed_ms;
-                    p.is_complete = pass.is_final();
-                });
-
-                if !pass.is_final() {
-                    // Schedule next pass via double rAF
-                    let passes = Adam7Pass::all();
-                    let next_index = pass_index + 1;
-                    if next_index < passes.len() {
-                        request_animation_frame_then(move || {
-                            request_animation_frame_then(move || {
-                                schedule_direct_adam7_pass(
-                                    passes[next_index],
-                                    next_index,
-                                    expected_gen,
-                                    width,
-                                    height,
-                                    max_iterations,
-                                    c_origin,
-                                    c_step,
-                                    config,
-                                    generation_spawn,
-                                    direct_gpu_renderer_spawn,
-                                    canvas_element_spawn,
-                                    xray_enabled_spawn,
-                                    tile_results_spawn,
-                                    progress,
-                                    viewport_spawn,
-                                    render_start_time,
-                                    gpu_in_use_spawn,
-                                    adam7_accumulator_spawn,
-                                    options_spawn,
-                                    palette_spawn,
-                                    colorizer_spawn,
-                                );
-                            });
-                        });
-                    }
-                }
-            }
-            Err(e) => {
-                log::error!("Direct FloatExp GPU render failed: {e}");
-            }
-        }
-    });
-}
-
 /// Schedule an Adam7 pass with proper browser repaint between passes.
 #[allow(clippy::too_many_arguments)]
 fn schedule_adam7_pass(
@@ -869,7 +501,7 @@ fn schedule_adam7_pass(
     height: u32,
     config: &'static FractalConfig,
     generation: Rc<Cell<u32>>,
-    gpu_renderer: Rc<RefCell<Option<GpuPerturbationFloatExpRenderer>>>,
+    gpu_renderer: Rc<RefCell<Option<GpuPerturbationHDRRenderer>>>,
     canvas_element: HtmlCanvasElement,
     xray_enabled: Rc<Cell<bool>>,
     tile_results: Rc<RefCell<Vec<TileResult>>>,
@@ -910,33 +542,33 @@ fn schedule_adam7_pass(
     let colorizer_spawn = Rc::clone(&colorizer);
 
     wasm_bindgen_futures::spawn_local(async move {
-        // Convert viewport to FloatExp format for GPU
-        let vp_width = FloatExp::from_bigfloat(&viewport_spawn.width);
-        let vp_height = FloatExp::from_bigfloat(&viewport_spawn.height);
+        // Convert viewport to HDRFloat format for GPU
+        let vp_width = HDRFloat::from_bigfloat(&viewport_spawn.width);
+        let vp_height = HDRFloat::from_bigfloat(&viewport_spawn.height);
 
         // dc_origin = -half_size (top-left corner relative to reference)
-        let half = FloatExp::from_f64(0.5);
+        let half = HDRFloat::from_f64(0.5);
         let half_width = vp_width.mul(&half);
         let half_height = vp_height.mul(&half);
         let origin_re = half_width.neg();
         let origin_im = half_height.neg();
 
         // dc_step = size / pixel_count
-        let step_re = FloatExp::from_f64(vp_width.to_f64() / width as f64);
-        let step_im = FloatExp::from_f64(vp_height.to_f64() / height as f64);
+        let step_re = HDRFloat::from_f64(vp_width.to_f64() / width as f64);
+        let step_im = HDRFloat::from_f64(vp_height.to_f64() / height as f64);
 
-        // Pack as (mantissa, exponent) tuples for GPU
+        // Pack as (mantissa, exponent) tuples for GPU (use head as mantissa)
         let dc_origin = (
-            origin_re.mantissa() as f32,
-            origin_re.exp() as i32,
-            origin_im.mantissa() as f32,
-            origin_im.exp() as i32,
+            origin_re.head,
+            origin_re.exp,
+            origin_im.head,
+            origin_im.exp,
         );
         let dc_step = (
-            step_re.mantissa() as f32,
-            step_re.exp() as i32,
-            step_im.mantissa() as f32,
-            step_im.exp() as i32,
+            step_re.head,
+            step_re.exp,
+            step_im.head,
+            step_im.exp,
         );
         let tau_sq = config.tau_sq as f32;
         let reference_escaped =
