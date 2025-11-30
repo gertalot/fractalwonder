@@ -37,6 +37,37 @@ pub fn compute_smooth_iteration(data: &MandelbrotData) -> f64 {
     }
 }
 
+/// Build histogram CDF from iteration counts.
+/// Returns a Vec where cdf[i] = cumulative probability for iteration i.
+/// Interior points (escaped=false) are excluded from the histogram.
+pub fn build_histogram_cdf(data: &[ComputeData], max_iterations: u32) -> Vec<f64> {
+    let len = max_iterations as usize + 1;
+    let mut histogram = vec![0u64; len];
+    let mut total_exterior = 0u64;
+
+    // Count iterations for exterior points only
+    for d in data {
+        if let ComputeData::Mandelbrot(m) = d {
+            if m.escaped && m.iterations < max_iterations {
+                histogram[m.iterations as usize] += 1;
+                total_exterior += 1;
+            }
+        }
+    }
+
+    // Build CDF
+    let mut cdf = vec![0.0; len];
+    if total_exterior > 0 {
+        let mut cumulative = 0u64;
+        for i in 0..len {
+            cumulative += histogram[i];
+            cdf[i] = cumulative as f64 / total_exterior as f64;
+        }
+    }
+
+    cdf
+}
+
 impl Colorizer for SmoothIterationColorizer {
     type Context = Vec<f64>;
 
@@ -258,5 +289,88 @@ mod tests {
         let ctx = SmoothIterationContext::default();
         assert!(ctx.smooth_values.is_empty());
         assert!(ctx.cdf.is_none());
+    }
+
+    #[test]
+    fn build_histogram_cdf_uniform_distribution() {
+        // 10 pixels with iterations 0-9, max_iter=10
+        let data: Vec<ComputeData> = (0..10)
+            .map(|i| {
+                ComputeData::Mandelbrot(MandelbrotData {
+                    iterations: i,
+                    max_iterations: 10,
+                    escaped: true,
+                    glitched: false,
+                    final_z_norm_sq: 100000.0,
+                })
+            })
+            .collect();
+
+        let cdf = build_histogram_cdf(&data, 10);
+
+        // Uniform distribution: CDF should be [0.1, 0.2, 0.3, ..., 1.0]
+        assert_eq!(cdf.len(), 11); // max_iter + 1
+        assert!((cdf[0] - 0.1).abs() < 0.001);
+        assert!((cdf[4] - 0.5).abs() < 0.001);
+        assert!((cdf[9] - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn build_histogram_cdf_skewed_distribution() {
+        // Most pixels at iteration 5
+        let mut data = Vec::new();
+        for _ in 0..90 {
+            data.push(ComputeData::Mandelbrot(MandelbrotData {
+                iterations: 5,
+                max_iterations: 10,
+                escaped: true,
+                glitched: false,
+                final_z_norm_sq: 100000.0,
+            }));
+        }
+        for _ in 0..10 {
+            data.push(ComputeData::Mandelbrot(MandelbrotData {
+                iterations: 9,
+                max_iterations: 10,
+                escaped: true,
+                glitched: false,
+                final_z_norm_sq: 100000.0,
+            }));
+        }
+
+        let cdf = build_histogram_cdf(&data, 10);
+
+        // Iterations 0-4 have 0 pixels, so CDF stays at 0
+        assert_eq!(cdf[0], 0.0);
+        assert_eq!(cdf[4], 0.0);
+        // Iteration 5 has 90% of pixels
+        assert!((cdf[5] - 0.9).abs() < 0.001);
+        // Iteration 9 brings it to 100%
+        assert!((cdf[9] - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn build_histogram_cdf_excludes_interior() {
+        let data = vec![
+            ComputeData::Mandelbrot(MandelbrotData {
+                iterations: 5,
+                max_iterations: 10,
+                escaped: true,
+                glitched: false,
+                final_z_norm_sq: 100000.0,
+            }),
+            ComputeData::Mandelbrot(MandelbrotData {
+                iterations: 10,
+                max_iterations: 10,
+                escaped: false, // Interior point
+                glitched: false,
+                final_z_norm_sq: 0.0,
+            }),
+        ];
+
+        let cdf = build_histogram_cdf(&data, 10);
+
+        // Only 1 exterior pixel at iteration 5
+        assert_eq!(cdf[5], 1.0);
     }
 }
