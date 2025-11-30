@@ -110,14 +110,14 @@ impl Default for ColorOptions {
 }
 
 impl ColorOptions {
-    /// Valid cycle counts: powers of 2 from 1 to 128.
+    /// Valid cycle counts: powers of 2 from 1 to 1024.
     pub fn is_valid_cycle_count(n: u32) -> bool {
-        n > 0 && n <= 128 && n.is_power_of_two()
+        n > 0 && n <= 1024 && n.is_power_of_two()
     }
 
-    /// Double cycle count (max 128).
+    /// Double cycle count (max 1024).
     pub fn cycle_up(&mut self) {
-        if self.cycle_count < 128 {
+        if self.cycle_count < 1024 {
             self.cycle_count *= 2;
         }
     }
@@ -218,8 +218,9 @@ mod tests {
         assert!(ColorOptions::is_valid_cycle_count(2));
         assert!(ColorOptions::is_valid_cycle_count(32));
         assert!(ColorOptions::is_valid_cycle_count(128));
+        assert!(ColorOptions::is_valid_cycle_count(1024));
         assert!(!ColorOptions::is_valid_cycle_count(3));
         assert!(!ColorOptions::is_valid_cycle_count(0));
-        assert!(!ColorOptions::is_valid_cycle_count(256));
+        assert!(!ColorOptions::is_valid_cycle_count(2048));
     }
 }

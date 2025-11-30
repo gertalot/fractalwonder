@@ -17,6 +17,12 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
+/// Minimum zoom level for perturbation rendering.
+/// Below this threshold, use simple (direct) iteration for accuracy.
+/// Perturbation theory requires small deltas; at low zoom, deltas are large
+/// and rebasing artifacts cause visible color banding irregularities.
+const PERTURBATION_MIN_ZOOM: f64 = 4.0;
+
 /// Parallel renderer that distributes tiles across Web Workers.
 pub struct ParallelRenderer {
     config: &'static FractalConfig,
@@ -286,26 +292,29 @@ impl ParallelRenderer {
         // Generate tiles
         let tiles = generate_tiles(width, height, tile_size);
 
-        // Start render with appropriate method based on renderer type
-        match self.config.renderer_type {
-            RendererType::Simple => {
-                self.worker_pool.borrow_mut().start_render(
-                    viewport.clone(),
-                    (width, height),
-                    tiles,
-                );
-            }
-            RendererType::Perturbation => {
-                if self.config.gpu_enabled {
-                    self.start_gpu_render(viewport, canvas);
-                } else {
-                    self.worker_pool.borrow_mut().start_perturbation_render(
-                        viewport.clone(),
-                        (width, height),
-                        tiles,
-                    );
-                }
-            }
+        // Start render with appropriate method based on renderer type and zoom level.
+        // At low zoom, perturbation theory produces artifacts due to large deltas,
+        // so we fall back to simple (direct) iteration for accuracy.
+        let use_simple = match self.config.renderer_type {
+            RendererType::Simple => true,
+            RendererType::Perturbation => zoom < PERTURBATION_MIN_ZOOM,
+        };
+
+        if use_simple {
+            log::info!(
+                "Using simple renderer (zoom={zoom:.1}x < {PERTURBATION_MIN_ZOOM}x threshold)"
+            );
+            self.worker_pool
+                .borrow_mut()
+                .start_render(viewport.clone(), (width, height), tiles);
+        } else if self.config.gpu_enabled {
+            self.start_gpu_render(viewport, canvas);
+        } else {
+            self.worker_pool.borrow_mut().start_perturbation_render(
+                viewport.clone(),
+                (width, height),
+                tiles,
+            );
         }
     }
 

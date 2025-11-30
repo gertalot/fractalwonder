@@ -1,4 +1,9 @@
 //! Options dropdown menu with grouped sections for Effects and Cycles.
+//!
+//! Note: The `unused_parens` allow is required because the Leptos `view!` macro
+//! misparses `>=` operators (interpreting `>` as HTML syntax).
+
+#![allow(unused_parens)]
 
 use leptos::*;
 
@@ -75,7 +80,7 @@ pub fn OptionsMenu(
                             <button
                                 class="text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
                                 on:click=move |_| on_cycle_down.call(())
-                                disabled=move || cycle_count.get() <= 1
+                                prop:disabled=move || (cycle_count.get() <= 1)
                             >
                                 "◀"
                             </button>
@@ -83,7 +88,7 @@ pub fn OptionsMenu(
                             <button
                                 class="text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
                                 on:click=move |_| on_cycle_up.call(())
-                                disabled=move || cycle_count.get() >= 128
+                                prop:disabled=move || (cycle_count.get() >= 1024)
                             >
                                 "▶"
                             </button>
