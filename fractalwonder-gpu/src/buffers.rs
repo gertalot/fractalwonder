@@ -157,6 +157,64 @@ impl DirectFloatExpBuffers {
     }
 }
 
+/// Uniform data for perturbation FloatExp compute shader.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct PerturbationFloatExpUniforms {
+    pub width: u32,
+    pub height: u32,
+    pub max_iterations: u32,
+    pub escape_radius_sq: f32,
+    pub tau_sq: f32,
+
+    pub dc_origin_re_m: f32,
+    pub dc_origin_re_e: i32,
+    pub dc_origin_im_m: f32,
+    pub dc_origin_im_e: i32,
+
+    pub dc_step_re_m: f32,
+    pub dc_step_re_e: i32,
+    pub dc_step_im_m: f32,
+    pub dc_step_im_e: i32,
+
+    pub adam7_step: u32,
+    pub reference_escaped: u32,
+    pub _padding: [u32; 2],
+}
+
+impl PerturbationFloatExpUniforms {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        width: u32,
+        height: u32,
+        max_iterations: u32,
+        tau_sq: f32,
+        dc_origin: (f32, i32, f32, i32),
+        dc_step: (f32, i32, f32, i32),
+        adam7_step: u32,
+        reference_escaped: bool,
+    ) -> Self {
+        Self {
+            width,
+            height,
+            max_iterations,
+            escape_radius_sq: 65536.0,
+            tau_sq,
+            dc_origin_re_m: dc_origin.0,
+            dc_origin_re_e: dc_origin.1,
+            dc_origin_im_m: dc_origin.2,
+            dc_origin_im_e: dc_origin.3,
+            dc_step_re_m: dc_step.0,
+            dc_step_re_e: dc_step.1,
+            dc_step_im_m: dc_step.2,
+            dc_step_im_e: dc_step.3,
+            adam7_step,
+            reference_escaped: if reference_escaped { 1 } else { 0 },
+            _padding: [0; 2],
+        }
+    }
+}
+
 /// Manages GPU buffers for rendering.
 pub struct GpuBuffers {
     pub uniforms: wgpu::Buffer,
