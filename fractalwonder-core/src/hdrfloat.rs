@@ -4,6 +4,8 @@
 //! This provides ~48 bits of mantissa precision using two f32 values,
 //! enabling deep GPU zoom without f64 dependency.
 
+use crate::BigFloat;
+
 /// High Dynamic Range Float with ~48-bit mantissa precision.
 /// Value = (head + tail) × 2^exp
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -112,6 +114,40 @@ impl HDRFloat {
         }
         let mantissa = self.head as f64 + self.tail as f64;
         libm::ldexp(mantissa, self.exp)
+    }
+
+    /// Convert from BigFloat, preserving ~48 bits of mantissa precision.
+    pub fn from_bigfloat(bf: &BigFloat) -> Self {
+        if bf.to_f64() == 0.0 && bf.log2_approx() == f64::NEG_INFINITY {
+            return Self::ZERO;
+        }
+
+        // Get approximate log2 to determine exponent
+        let log2_approx = bf.log2_approx();
+        if !log2_approx.is_finite() {
+            return Self::ZERO;
+        }
+
+        // Binary exponent (rounded)
+        let exp = log2_approx.round() as i32;
+
+        // Scale to [0.5, 2.0) range
+        let mantissa_f64 = if exp.abs() < 1000 {
+            // Fast path: exponent within f64 range
+            let scale = libm::exp2(-exp as f64);
+            bf.to_f64() * scale
+        } else {
+            // Slow path: compute via log2
+            // mantissa = 2^(log2(bf) - exp)
+            let mantissa_log2 = log2_approx - exp as f64;
+            libm::exp2(mantissa_log2)
+        };
+
+        // Split f64 mantissa into head + tail
+        let head = mantissa_f64 as f32;
+        let tail = (mantissa_f64 - head as f64) as f32;
+
+        Self { head, tail, exp }.normalize()
     }
 
     /// Normalize head to [0.5, 1.0) range.
@@ -525,5 +561,34 @@ mod tests {
         let a = HDRFloat::from_f64(5.0);
         let b = HDRFloat::from_f64(3.0);
         assert!((a.sub(&b).to_f64() - 2.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn from_bigfloat_f64_range() {
+        use crate::BigFloat;
+        let bf = BigFloat::with_precision(1.234567, 128);
+        let h = HDRFloat::from_bigfloat(&bf);
+        assert!((h.to_f64() - 1.234567).abs() < 1e-10);
+    }
+
+    #[test]
+    fn from_bigfloat_zero() {
+        use crate::BigFloat;
+        let bf = BigFloat::zero(128);
+        let h = HDRFloat::from_bigfloat(&bf);
+        assert!(h.is_zero());
+    }
+
+    #[test]
+    fn from_bigfloat_extreme_small() {
+        use crate::BigFloat;
+        // 10^-100 is beyond f64 range but within HDRFloat
+        let bf = BigFloat::from_string("1e-100", 512).unwrap();
+        let h = HDRFloat::from_bigfloat(&bf);
+
+        assert!(!h.is_zero(), "Should not underflow to zero");
+        // Exponent should be approximately -100 * log2(10) ≈ -332
+        assert!(h.exp < -300, "Exponent {} should be < -300", h.exp);
+        assert!(h.exp > -400, "Exponent {} should be > -400", h.exp);
     }
 }
