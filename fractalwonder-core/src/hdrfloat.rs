@@ -8,7 +8,7 @@
 /// Value = (head + tail) × 2^exp
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct HDRFloat {
-    /// Primary mantissa, normalized to [0.5, 2.0)
+    /// Primary mantissa, normalized to [0.5, 1.0)
     pub head: f32,
     /// Error term, |tail| ≤ 0.5 × ulp(head)
     pub tail: f32,
@@ -89,7 +89,7 @@ impl HDRFloat {
         mantissa * exp2_i32(self.exp)
     }
 
-    /// Normalize head to [0.5, 2.0) range.
+    /// Normalize head to [0.5, 1.0) range.
     #[inline]
     pub fn normalize(self) -> Self {
         if self.head == 0.0 {
@@ -97,8 +97,8 @@ impl HDRFloat {
         }
 
         let abs_head = self.head.abs();
-        // Fast path: already in [0.5, 2.0)
-        if abs_head >= 0.5 && abs_head < 2.0 {
+        // Fast path: already in [0.5, 1.0)
+        if (0.5..1.0).contains(&abs_head) {
             return self;
         }
 
@@ -206,15 +206,30 @@ mod tests {
 
     #[test]
     fn from_f32_preserves_value() {
-        let values = [1.0f32, -1.0, 0.5, 2.0, 1e10, 1e-10, -3.14159];
+        let values = [1.0f32, -1.0, 0.5, 2.0, 1e10, 1e-10, -std::f32::consts::PI];
         for v in values {
             let h = HDRFloat::from_f32(v);
             let back = h.to_f32();
             assert!(
                 (back - v).abs() < v.abs() * 1e-6 + 1e-38,
                 "from_f32({}) -> to_f32() = {}, expected {}",
-                v, back, v
+                v,
+                back,
+                v
             );
         }
+    }
+
+    #[test]
+    fn normalize_handles_range_one_to_two() {
+        // Values in [1.0, 2.0) should be normalized to [0.5, 1.0)
+        let h = HDRFloat {
+            head: 1.5,
+            tail: 0.0,
+            exp: 0,
+        };
+        let normalized = h.normalize();
+        assert!((normalized.head - 0.75).abs() < 1e-7);
+        assert_eq!(normalized.exp, 1);
     }
 }
