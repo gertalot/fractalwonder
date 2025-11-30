@@ -156,6 +156,49 @@ impl HDRFloat {
             exp: self.exp + exp_adjust,
         }
     }
+
+    /// Multiply two HDRFloat values with error tracking.
+    #[inline]
+    pub fn mul(&self, other: &Self) -> Self {
+        if self.head == 0.0 || other.head == 0.0 {
+            return Self::ZERO;
+        }
+
+        // Primary product
+        let p = self.head * other.head;
+
+        // Error from primary product using FMA: err = fma(a, b, -p) = a*b - p
+        let err = self.head.mul_add(other.head, -p);
+
+        // Cross terms: h1·t2 + t1·h2 (t1·t2 is negligible)
+        let tail = err + self.head * other.tail + self.tail * other.head;
+
+        Self {
+            head: p,
+            tail,
+            exp: self.exp + other.exp,
+        }
+        .normalize()
+    }
+
+    /// Square value (optimized: fewer operations than mul).
+    #[inline]
+    pub fn square(&self) -> Self {
+        if self.head == 0.0 {
+            return Self::ZERO;
+        }
+
+        let p = self.head * self.head;
+        let err = self.head.mul_add(self.head, -p);
+        let tail = err + 2.0 * self.head * self.tail;
+
+        Self {
+            head: p,
+            tail,
+            exp: self.exp * 2,
+        }
+        .normalize()
+    }
 }
 
 impl HDRComplex {
@@ -304,5 +347,45 @@ mod tests {
                 (back - v).abs()
             );
         }
+    }
+
+    #[test]
+    fn mul_basic() {
+        let a = HDRFloat::from_f64(2.0);
+        let b = HDRFloat::from_f64(3.0);
+        let c = a.mul(&b);
+        assert!((c.to_f64() - 6.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn mul_by_zero() {
+        let a = HDRFloat::from_f64(5.0);
+        let z = HDRFloat::ZERO;
+        assert!(a.mul(&z).is_zero());
+        assert!(z.mul(&a).is_zero());
+    }
+
+    #[test]
+    fn mul_small_values() {
+        let a = HDRFloat::from_f64(1e-20);
+        let b = HDRFloat::from_f64(1e-20);
+        let c = a.mul(&b);
+        // Result is 1e-40, within HDRFloat range
+        assert!((c.to_f64() - 1e-40).abs() < 1e-54);
+    }
+
+    #[test]
+    fn mul_preserves_precision() {
+        // Two values that require full precision
+        let a = HDRFloat::from_f64(1.0 + 1e-10);
+        let b = HDRFloat::from_f64(1.0 + 2e-10);
+        let c = a.mul(&b);
+        let expected = (1.0 + 1e-10) * (1.0 + 2e-10);
+        assert!(
+            (c.to_f64() - expected).abs() < expected * 1e-14,
+            "mul precision: got {}, expected {}",
+            c.to_f64(),
+            expected
+        );
     }
 }
