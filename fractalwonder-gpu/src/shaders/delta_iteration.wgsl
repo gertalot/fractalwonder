@@ -11,7 +11,9 @@ struct Uniforms {
     dc_origin_im: f32,
     dc_step_re: f32,
     dc_step_im: f32,
-    adam7_step: u32,  // 0 = compute all, 1-7 = Adam7 pass
+    adam7_step: u32,          // 0 = compute all, 1-7 = Adam7 pass
+    reference_escaped: u32,   // 1 if reference orbit escaped (short orbit), 0 otherwise
+    _padding: u32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -72,7 +74,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var glitched = false;
 
     for (var n: u32 = 0u; n < uniforms.max_iterations; n++) {
-        let Z = reference_orbit[m];
+        // Reference exhaustion detection: m exceeded orbit length
+        // Only applies when reference escaped (short orbit), not when reference is in-set
+        if uniforms.reference_escaped != 0u && m >= orbit_len {
+            glitched = true;
+        }
+
+        let Z = reference_orbit[m % orbit_len];
         let z = Z + dz;
 
         let z_sq = dot(z, z);
@@ -111,9 +119,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         );
 
         m = m + 1u;
-        if m >= orbit_len {
-            m = 0u;
-        }
     }
 
     results[idx] = uniforms.max_iterations;

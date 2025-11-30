@@ -103,7 +103,17 @@ pub fn compute_pixel_perturbation_bigfloat(
     // Pre-create constants
     let two = BigFloat::with_precision(2.0, precision);
 
+    // Check if reference escaped (short orbit that will wrap)
+    let reference_escaped = orbit.escaped_at.is_some();
+
     for n in 0..max_iterations {
+        // Reference exhaustion detection: m exceeded orbit length
+        // Only applies when reference escaped (short orbit), not when reference is in-set
+        // Using Z_{m % orbit_len} instead of Z_m produces incorrect results
+        if reference_escaped && m >= orbit_len {
+            glitched = true;
+        }
+
         // Get Z_m with wrap-around for non-escaping references
         let z_m = orbit.orbit[m % orbit_len];
         let z_m_re = BigFloat::with_precision(z_m.0, precision);
@@ -195,7 +205,15 @@ pub fn compute_pixel_perturbation_floatexp(
         };
     }
 
+    // Check if reference escaped (short orbit that will wrap)
+    let reference_escaped = orbit.escaped_at.is_some();
+
     for n in 0..max_iterations {
+        // Reference exhaustion detection: m exceeded orbit length
+        if reference_escaped && m >= orbit_len {
+            glitched = true;
+        }
+
         let (z_m_re, z_m_im) = orbit.orbit[m % orbit_len];
 
         // z = Z_m + δz
@@ -287,9 +305,17 @@ pub fn compute_pixel_perturbation_floatexp_bla(
         };
     }
 
+    // Check if reference escaped (short orbit that will wrap)
+    let reference_escaped = orbit.escaped_at.is_some();
+
     let mut n = 0u32;
 
     while n < max_iterations {
+        // Reference exhaustion detection: m exceeded orbit length
+        if reference_escaped && m >= orbit_len {
+            glitched = true;
+        }
+
         let (z_m_re, z_m_im) = orbit.orbit[m % orbit_len];
 
         // z = Z_m + δz
@@ -414,7 +440,17 @@ pub fn compute_pixel_perturbation(
         };
     }
 
+    // Check if reference escaped (short orbit that will wrap)
+    let reference_escaped = orbit.escaped_at.is_some();
+
     for n in 0..max_iterations {
+        // Reference exhaustion detection: m exceeded orbit length
+        // Only applies when reference escaped (short orbit), not when reference is in-set
+        // Using Z_{m % orbit_len} instead of Z_m produces incorrect results
+        if reference_escaped && m >= orbit_len {
+            glitched = true;
+        }
+
         // Get Z_m with wrap-around for non-escaping references
         let z_m = orbit.orbit[m % orbit_len];
 
@@ -504,9 +540,17 @@ pub fn compute_pixel_perturbation_bla(
         };
     }
 
+    // Check if reference escaped (short orbit that will wrap)
+    let reference_escaped = orbit.escaped_at.is_some();
+
     let mut n = 0u32;
 
     while n < max_iterations {
+        // Reference exhaustion detection: m exceeded orbit length
+        if reference_escaped && m >= orbit_len {
+            glitched = true;
+        }
+
         let z_m = orbit.orbit[m % orbit_len];
 
         // z = Z_m + δz
@@ -1422,5 +1466,58 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         );
+    }
+
+    // =========================================================================
+    // Reference Exhaustion Detection Tests
+    // =========================================================================
+
+    #[test]
+    fn glitch_detected_when_reference_exhausted() {
+        // Reference at c = -2.1 escapes after ~5-6 iterations:
+        // Z_0 = 0, Z_1 = -2.1, Z_2 ≈ 2.31, Z_3 ≈ 3.24, Z_4 ≈ 8.37...
+        // Eventually |Z|² > 65536 and it escapes.
+        let c_ref = (BigFloat::with_precision(-2.1, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 100);
+
+        // Verify reference escapes quickly
+        assert!(orbit.escaped_at.is_some(), "Reference should escape");
+        let orbit_len = orbit.orbit.len();
+        assert!(
+            orbit_len <= 10,
+            "Reference should escape in <=10 iterations, got {}",
+            orbit_len
+        );
+
+        // Pixel at c = -2.0 (tip of the main cardioid, in the set)
+        // Delta = -2.0 - (-2.1) = 0.1 (SMALL delta, so rebasing rarely happens)
+        // With such a small delta, m will naturally advance and exceed orbit_len.
+        let delta_c = (0.1, 0.0);
+        let max_iter = 100;
+
+        let result = compute_pixel_perturbation(&orbit, delta_c, max_iter, TEST_TAU_SQ);
+
+        // With orbit_len ~= 5-10 and max_iter = 100, m WILL exceed orbit_len
+        // because the pixel needs ~100 iterations (it's in/near the set).
+        // When m >= orbit_len and reference escaped, should be glitched.
+        assert!(
+            result.glitched || result.escaped,
+            "With short orbit (len={}) and long iteration ({}), \
+             either m exceeded orbit_len (glitched=true) or pixel escaped. \
+             Got: escaped={}, glitched={}, iterations={}",
+            orbit_len,
+            max_iter,
+            result.escaped,
+            result.glitched,
+            result.iterations
+        );
+
+        // If pixel didn't escape, it must be marked glitched
+        if !result.escaped {
+            assert!(
+                result.glitched,
+                "Non-escaping pixel with short reference orbit must be glitched"
+            );
+        }
     }
 }

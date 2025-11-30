@@ -82,6 +82,7 @@ pub struct OrbitCompleteData {
     pub orbit: Vec<(f64, f64)>,
     pub orbit_id: u32,
     pub max_iterations: u32,
+    pub escaped_at: Option<u32>,
 }
 
 /// Type alias for orbit complete callback.
@@ -442,6 +443,7 @@ impl WorkerPool {
                             orbit: orbit.clone(),
                             orbit_id,
                             max_iterations: self.perturbation.max_iterations,
+                            escaped_at,
                         });
                     }
                     return;
