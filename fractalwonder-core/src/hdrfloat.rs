@@ -118,6 +118,15 @@ impl HDRFloat {
     #[inline]
     pub fn normalize(self) -> Self {
         if self.head == 0.0 {
+            // If head is zero but tail is not, promote tail to head
+            if self.tail != 0.0 {
+                return Self {
+                    head: self.tail,
+                    tail: 0.0,
+                    exp: self.exp,
+                }
+                .normalize();
+            }
             return Self::ZERO;
         }
 
@@ -199,6 +208,78 @@ impl HDRFloat {
         }
         .normalize()
     }
+
+    /// Add two HDRFloat values with error tracking.
+    #[inline]
+    pub fn add(&self, other: &Self) -> Self {
+        if self.head == 0.0 {
+            return *other;
+        }
+        if other.head == 0.0 {
+            return *self;
+        }
+
+        let exp_diff = self.exp - other.exp;
+
+        // If difference > ~48 bits, smaller value is negligible
+        if exp_diff > 48 {
+            return *self;
+        }
+        if exp_diff < -48 {
+            return *other;
+        }
+
+        // Align to larger exponent
+        let (a_head, a_tail, b_head, b_tail, result_exp) = if exp_diff >= 0 {
+            let scale = exp2_i32(-exp_diff);
+            (
+                self.head,
+                self.tail,
+                other.head * scale,
+                other.tail * scale,
+                self.exp,
+            )
+        } else {
+            let scale = exp2_i32(exp_diff);
+            (
+                self.head * scale,
+                self.tail * scale,
+                other.head,
+                other.tail,
+                other.exp,
+            )
+        };
+
+        // Two-sum: error-free addition of heads
+        let sum = a_head + b_head;
+        let err = two_sum_err(a_head, b_head, sum);
+
+        // Combine tails with error term
+        let tail = err + a_tail + b_tail;
+
+        Self {
+            head: sum,
+            tail,
+            exp: result_exp,
+        }
+        .normalize()
+    }
+
+    /// Subtract other from self.
+    #[inline]
+    pub fn sub(&self, other: &Self) -> Self {
+        self.add(&other.neg())
+    }
+
+    /// Negate value.
+    #[inline]
+    pub fn neg(&self) -> Self {
+        Self {
+            head: -self.head,
+            tail: -self.tail,
+            exp: self.exp,
+        }
+    }
 }
 
 impl HDRComplex {
@@ -257,6 +338,16 @@ fn frexp_f64(val: f64) -> (f64, i32) {
     }
     let (m, e) = libm::frexp(val);
     (m, e)
+}
+
+/// Compute error term from addition: a + b = sum + err (Knuth's two-sum)
+#[inline]
+fn two_sum_err(a: f32, b: f32, sum: f32) -> f32 {
+    let b_virtual = sum - a;
+    let a_virtual = sum - b_virtual;
+    let b_roundoff = b - b_virtual;
+    let a_roundoff = a - a_virtual;
+    a_roundoff + b_roundoff
 }
 
 #[cfg(test)]
@@ -387,5 +478,52 @@ mod tests {
             c.to_f64(),
             expected
         );
+    }
+
+    #[test]
+    fn add_basic() {
+        let a = HDRFloat::from_f64(2.0);
+        let b = HDRFloat::from_f64(3.0);
+        assert!((a.add(&b).to_f64() - 5.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn add_zero() {
+        let a = HDRFloat::from_f64(5.0);
+        let z = HDRFloat::ZERO;
+        assert!((a.add(&z).to_f64() - 5.0).abs() < 1e-14);
+        assert!((z.add(&a).to_f64() - 5.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn add_different_exponents() {
+        // 1e10 + 1e-10 should be approximately 1e10
+        let big = HDRFloat::from_f64(1e10);
+        let small = HDRFloat::from_f64(1e-10);
+        let sum = big.add(&small);
+        assert!((sum.to_f64() - 1e10).abs() < 1.0);
+    }
+
+    #[test]
+    fn add_cancellation() {
+        // Test catastrophic cancellation: 1.0 - (1.0 - 1e-10)
+        // Note: 1e-15 is beyond f64 precision difference from 1.0, so we use 1e-10
+        let a = HDRFloat::from_f64(1.0);
+        let b = HDRFloat::from_f64(1.0 - 1e-10);
+        let diff = a.sub(&b);
+        let expected = 1e-10;
+        assert!(
+            (diff.to_f64() - expected).abs() < expected * 1e-6,
+            "Cancellation: got {}, expected {}",
+            diff.to_f64(),
+            expected
+        );
+    }
+
+    #[test]
+    fn sub_basic() {
+        let a = HDRFloat::from_f64(5.0);
+        let b = HDRFloat::from_f64(3.0);
+        assert!((a.sub(&b).to_f64() - 2.0).abs() < 1e-14);
     }
 }
