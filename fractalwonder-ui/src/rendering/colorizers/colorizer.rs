@@ -20,7 +20,13 @@ pub trait Colorizer {
     }
 
     /// Map a single pixel to a color.
-    fn colorize(&self, data: &ComputeData, context: &Self::Context, palette: &Palette) -> [u8; 4];
+    fn colorize(
+        &self,
+        data: &ComputeData,
+        context: &Self::Context,
+        palette: &Palette,
+        index: usize,
+    ) -> [u8; 4];
 
     /// Modify pixel buffer in place.
     /// Default: no-op.
@@ -60,10 +66,12 @@ impl ColorizerKind {
     ) -> Vec<[u8; 4]> {
         match self {
             Self::SmoothIteration(c) => {
-                #[allow(clippy::let_unit_value)]
                 let ctx = c.preprocess(data);
-                let mut pixels: Vec<[u8; 4]> =
-                    data.iter().map(|d| c.colorize(d, &ctx, palette)).collect();
+                let mut pixels: Vec<[u8; 4]> = data
+                    .iter()
+                    .enumerate()
+                    .map(|(i, d)| c.colorize(d, &ctx, palette, i))
+                    .collect();
                 c.postprocess(&mut pixels, data, &ctx, palette, width, height);
                 pixels
             }
@@ -73,7 +81,7 @@ impl ColorizerKind {
     /// Quick colorization for progressive rendering (no pre/post processing).
     pub fn colorize_quick(&self, data: &ComputeData, palette: &Palette) -> [u8; 4] {
         match self {
-            Self::SmoothIteration(c) => c.colorize(data, &(), palette),
+            Self::SmoothIteration(c) => c.colorize(data, &Vec::new(), palette, 0),
         }
     }
 }

@@ -27,11 +27,33 @@ pub fn compute_smooth_iteration(data: &MandelbrotData) -> f64 {
 }
 
 impl Colorizer for SmoothIterationColorizer {
-    type Context = ();
+    type Context = Vec<f64>;
 
-    fn colorize(&self, data: &ComputeData, _context: &Self::Context, palette: &Palette) -> [u8; 4] {
+    fn preprocess(&self, data: &[ComputeData]) -> Self::Context {
+        data.iter()
+            .map(|d| match d {
+                ComputeData::Mandelbrot(m) => compute_smooth_iteration(m),
+                ComputeData::TestImage(_) => 0.0,
+            })
+            .collect()
+    }
+
+    fn colorize(
+        &self,
+        data: &ComputeData,
+        context: &Self::Context,
+        palette: &Palette,
+        index: usize,
+    ) -> [u8; 4] {
         match data {
-            ComputeData::Mandelbrot(m) => self.colorize_mandelbrot(m, palette),
+            ComputeData::Mandelbrot(m) => {
+                let smooth = if index < context.len() {
+                    context[index]
+                } else {
+                    compute_smooth_iteration(m)
+                };
+                self.colorize_mandelbrot_smooth(m, smooth, palette)
+            }
             ComputeData::TestImage(_) => {
                 // Test image uses its own colorizer
                 [128, 128, 128, 255]
@@ -41,7 +63,12 @@ impl Colorizer for SmoothIterationColorizer {
 }
 
 impl SmoothIterationColorizer {
-    fn colorize_mandelbrot(&self, data: &MandelbrotData, palette: &Palette) -> [u8; 4] {
+    fn colorize_mandelbrot_smooth(
+        &self,
+        data: &MandelbrotData,
+        smooth: f64,
+        palette: &Palette,
+    ) -> [u8; 4] {
         // Interior points are black
         if !data.escaped {
             return [0, 0, 0, 255];
@@ -51,18 +78,6 @@ impl SmoothIterationColorizer {
         if data.max_iterations == 0 {
             return [0, 0, 0, 255];
         }
-
-        // Smooth iteration count: μ = n + 1 - log₂(ln(|z|))
-        // Since we have |z|²: ln(|z|) = ln(|z|²) / 2
-        let smooth = if data.final_z_norm_sq > 1.0 {
-            let z_norm_sq = data.final_z_norm_sq as f64;
-            let log_z = z_norm_sq.ln() / 2.0; // ln(|z|)
-            let nu = log_z.ln() / std::f64::consts::LN_2; // log₂(ln(|z|))
-            data.iterations as f64 + 1.0 - nu
-        } else {
-            // Fallback for edge cases
-            data.iterations as f64
-        };
 
         let t = (smooth / data.max_iterations as f64).clamp(0.0, 1.0);
         let [r, g, b] = palette.sample(t);
@@ -134,7 +149,7 @@ mod tests {
     fn interior_is_black() {
         let colorizer = SmoothIterationColorizer;
         let palette = Palette::grayscale();
-        let color = colorizer.colorize(&make_interior(), &(), &palette);
+        let color = colorizer.colorize(&make_interior(), &vec![], &palette, 0);
         assert_eq!(color, [0, 0, 0, 255]);
     }
 
@@ -142,7 +157,7 @@ mod tests {
     fn escaped_at_zero_is_dark() {
         let colorizer = SmoothIterationColorizer;
         let palette = Palette::grayscale();
-        let color = colorizer.colorize(&make_escaped(0, 1000), &(), &palette);
+        let color = colorizer.colorize(&make_escaped(0, 1000), &vec![], &palette, 0);
         assert!(color[0] < 10, "Expected near black, got {:?}", color);
     }
 
@@ -150,7 +165,7 @@ mod tests {
     fn escaped_at_max_is_bright() {
         let colorizer = SmoothIterationColorizer;
         let palette = Palette::grayscale();
-        let color = colorizer.colorize(&make_escaped(1000, 1000), &(), &palette);
+        let color = colorizer.colorize(&make_escaped(1000, 1000), &vec![], &palette, 0);
         assert!(color[0] > 245, "Expected near white, got {:?}", color);
     }
 
@@ -158,8 +173,8 @@ mod tests {
     fn higher_iterations_are_brighter() {
         let colorizer = SmoothIterationColorizer;
         let palette = Palette::grayscale();
-        let low = colorizer.colorize(&make_escaped(100, 1000), &(), &palette);
-        let high = colorizer.colorize(&make_escaped(900, 1000), &(), &palette);
+        let low = colorizer.colorize(&make_escaped(100, 1000), &vec![], &palette, 0);
+        let high = colorizer.colorize(&make_escaped(900, 1000), &vec![], &palette, 0);
         assert!(high[0] > low[0], "Higher iterations should be brighter");
     }
 
@@ -187,8 +202,8 @@ mod tests {
             final_z_norm_sq: 100000000.0, // Very large |z|²
         });
 
-        let color1 = colorizer.colorize(&data1, &(), &palette);
-        let color2 = colorizer.colorize(&data2, &(), &palette);
+        let color1 = colorizer.colorize(&data1, &vec![], &palette, 0);
+        let color2 = colorizer.colorize(&data2, &vec![], &palette, 0);
 
         // With smooth formula, larger |z|² means lower μ, so darker color
         assert!(
