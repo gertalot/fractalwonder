@@ -1,5 +1,6 @@
 //! Colorizer trait for mapping compute data to colors.
 
+use super::smooth_iteration::SmoothIterationContext;
 use super::{ColorSettings, SmoothIterationColorizer};
 use fractalwonder_core::ComputeData;
 
@@ -15,7 +16,7 @@ pub trait Colorizer {
 
     /// Analyze all pixels, build context.
     /// Default: no-op, returns `Default::default()`.
-    fn preprocess(&self, _data: &[ComputeData]) -> Self::Context {
+    fn preprocess(&self, _data: &[ComputeData], _settings: &ColorSettings) -> Self::Context {
         Self::Context::default()
     }
 
@@ -69,7 +70,7 @@ impl ColorizerKind {
     ) -> Vec<[u8; 4]> {
         match self {
             Self::SmoothIteration(c) => {
-                let ctx = c.preprocess(data);
+                let ctx = c.preprocess(data, settings);
                 let mut pixels: Vec<[u8; 4]> = data
                     .iter()
                     .enumerate()
@@ -84,7 +85,9 @@ impl ColorizerKind {
     /// Quick colorization for progressive rendering (no pre/post processing).
     pub fn colorize_quick(&self, data: &ComputeData, settings: &ColorSettings) -> [u8; 4] {
         match self {
-            Self::SmoothIteration(c) => c.colorize(data, &Vec::new(), settings, 0),
+            Self::SmoothIteration(c) => {
+                c.colorize(data, &SmoothIterationContext::default(), settings, 0)
+            }
         }
     }
 }

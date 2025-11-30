@@ -1,7 +1,7 @@
 //! Smooth iteration colorizer using the formula μ = n + 1 - log₂(ln(|z|))
 //! to eliminate banding in exterior regions.
 
-use super::{shading::apply_slope_shading, ColorSettings, Colorizer, Palette};
+use super::{shading::apply_slope_shading, ColorSettings, Colorizer};
 use fractalwonder_core::{ComputeData, MandelbrotData};
 
 /// Colorizer that uses smooth iteration count to eliminate banding.
@@ -69,15 +69,36 @@ pub fn build_histogram_cdf(data: &[ComputeData], max_iterations: u32) -> Vec<f64
 }
 
 impl Colorizer for SmoothIterationColorizer {
-    type Context = Vec<f64>;
+    type Context = SmoothIterationContext;
 
-    fn preprocess(&self, data: &[ComputeData]) -> Self::Context {
-        data.iter()
+    fn preprocess(&self, data: &[ComputeData], settings: &ColorSettings) -> Self::Context {
+        let smooth_values: Vec<f64> = data
+            .iter()
             .map(|d| match d {
                 ComputeData::Mandelbrot(m) => compute_smooth_iteration(m),
                 ComputeData::TestImage(_) => 0.0,
             })
-            .collect()
+            .collect();
+
+        let cdf = if settings.histogram_enabled {
+            // Find max_iterations from first Mandelbrot data point
+            let max_iter = data
+                .iter()
+                .find_map(|d| {
+                    if let ComputeData::Mandelbrot(m) = d {
+                        Some(m.max_iterations)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(1000);
+
+            Some(build_histogram_cdf(data, max_iter))
+        } else {
+            None
+        };
+
+        SmoothIterationContext { smooth_values, cdf }
     }
 
     fn colorize(
@@ -89,12 +110,12 @@ impl Colorizer for SmoothIterationColorizer {
     ) -> [u8; 4] {
         match data {
             ComputeData::Mandelbrot(m) => {
-                let smooth = if index < context.len() {
-                    context[index]
+                let smooth = if index < context.smooth_values.len() {
+                    context.smooth_values[index]
                 } else {
                     compute_smooth_iteration(m)
                 };
-                self.colorize_mandelbrot_smooth(m, smooth, &settings.palette, settings.cycle_count)
+                self.colorize_mandelbrot(m, smooth, context, settings)
             }
             ComputeData::TestImage(_) => {
                 // Test image uses its own colorizer
@@ -116,7 +137,7 @@ impl Colorizer for SmoothIterationColorizer {
         apply_slope_shading(
             pixels,
             data,
-            context,
+            &context.smooth_values,
             &settings.shading,
             width,
             height,
@@ -126,12 +147,12 @@ impl Colorizer for SmoothIterationColorizer {
 }
 
 impl SmoothIterationColorizer {
-    fn colorize_mandelbrot_smooth(
+    fn colorize_mandelbrot(
         &self,
         data: &MandelbrotData,
         smooth: f64,
-        palette: &Palette,
-        cycle_count: f64,
+        _context: &SmoothIterationContext,
+        settings: &ColorSettings,
     ) -> [u8; 4] {
         // Interior points are black
         if !data.escaped {
@@ -143,10 +164,10 @@ impl SmoothIterationColorizer {
             return [0, 0, 0, 255];
         }
 
-        // Normalize and apply cycling for better color variation at deep zooms
+        // Normalize using smooth value (Task 5 will add CDF usage)
         let normalized = smooth / data.max_iterations as f64;
-        let t = (normalized * cycle_count).fract(); // Cycle through palette
-        let [r, g, b] = palette.sample(t);
+        let t = (normalized * settings.cycle_count).fract();
+        let [r, g, b] = settings.palette.sample(t);
         [r, g, b, 255]
     }
 }
@@ -215,7 +236,8 @@ mod tests {
     fn interior_is_black() {
         let colorizer = SmoothIterationColorizer;
         let settings = ColorSettings::with_palette(Palette::grayscale());
-        let color = colorizer.colorize(&make_interior(), &vec![], &settings, 0);
+        let ctx = SmoothIterationContext::default();
+        let color = colorizer.colorize(&make_interior(), &ctx, &settings, 0);
         assert_eq!(color, [0, 0, 0, 255]);
     }
 
@@ -223,7 +245,8 @@ mod tests {
     fn escaped_at_zero_is_dark() {
         let colorizer = SmoothIterationColorizer;
         let settings = ColorSettings::with_palette(Palette::grayscale());
-        let color = colorizer.colorize(&make_escaped(0, 1000), &vec![], &settings, 0);
+        let ctx = SmoothIterationContext::default();
+        let color = colorizer.colorize(&make_escaped(0, 1000), &ctx, &settings, 0);
         assert!(color[0] < 10, "Expected near black, got {:?}", color);
     }
 
@@ -231,9 +254,10 @@ mod tests {
     fn cycling_produces_color_variation() {
         let colorizer = SmoothIterationColorizer;
         let settings = ColorSettings::with_palette(Palette::grayscale());
+        let ctx = SmoothIterationContext::default();
         // With cycling, nearby iteration values should produce different colors
-        let color1 = colorizer.colorize(&make_escaped(500, 1000), &vec![], &settings, 0);
-        let color2 = colorizer.colorize(&make_escaped(510, 1000), &vec![], &settings, 0);
+        let color1 = colorizer.colorize(&make_escaped(500, 1000), &ctx, &settings, 0);
+        let color2 = colorizer.colorize(&make_escaped(510, 1000), &ctx, &settings, 0);
         // Just verify we get valid colors (alpha = 255)
         assert_eq!(color1[3], 255);
         assert_eq!(color2[3], 255);
@@ -243,8 +267,9 @@ mod tests {
     fn higher_iterations_are_brighter() {
         let colorizer = SmoothIterationColorizer;
         let settings = ColorSettings::with_palette(Palette::grayscale());
-        let low = colorizer.colorize(&make_escaped(100, 1000), &vec![], &settings, 0);
-        let high = colorizer.colorize(&make_escaped(900, 1000), &vec![], &settings, 0);
+        let ctx = SmoothIterationContext::default();
+        let low = colorizer.colorize(&make_escaped(100, 1000), &ctx, &settings, 0);
+        let high = colorizer.colorize(&make_escaped(900, 1000), &ctx, &settings, 0);
         assert!(high[0] > low[0], "Higher iterations should be brighter");
     }
 
@@ -272,8 +297,9 @@ mod tests {
             final_z_norm_sq: 100000000.0, // Very large |z|²
         });
 
-        let color1 = colorizer.colorize(&data1, &vec![], &settings, 0);
-        let color2 = colorizer.colorize(&data2, &vec![], &settings, 0);
+        let ctx = SmoothIterationContext::default();
+        let color1 = colorizer.colorize(&data1, &ctx, &settings, 0);
+        let color2 = colorizer.colorize(&data2, &ctx, &settings, 0);
 
         // With smooth formula, larger |z|² means lower μ, so darker color
         assert!(
@@ -372,5 +398,43 @@ mod tests {
 
         // Only 1 exterior pixel at iteration 5
         assert_eq!(cdf[5], 1.0);
+    }
+
+    #[test]
+    fn preprocess_builds_cdf_when_histogram_enabled() {
+        let colorizer = SmoothIterationColorizer;
+        let settings = ColorSettings {
+            histogram_enabled: true,
+            ..ColorSettings::with_palette(Palette::grayscale())
+        };
+
+        let data: Vec<ComputeData> = (0..10)
+            .map(|i| {
+                ComputeData::Mandelbrot(MandelbrotData {
+                    iterations: i,
+                    max_iterations: 10,
+                    escaped: true,
+                    glitched: false,
+                    final_z_norm_sq: 100000.0,
+                })
+            })
+            .collect();
+
+        let ctx = colorizer.preprocess(&data, &settings);
+
+        assert!(ctx.cdf.is_some());
+        let cdf = ctx.cdf.unwrap();
+        assert_eq!(cdf.len(), 11);
+    }
+
+    #[test]
+    fn preprocess_no_cdf_when_histogram_disabled() {
+        let colorizer = SmoothIterationColorizer;
+        let settings = ColorSettings::with_palette(Palette::grayscale());
+
+        let data = vec![make_escaped(5, 10)];
+        let ctx = colorizer.preprocess(&data, &settings);
+
+        assert!(ctx.cdf.is_none());
     }
 }
