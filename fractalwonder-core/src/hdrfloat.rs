@@ -89,6 +89,31 @@ impl HDRFloat {
         mantissa * exp2_i32(self.exp)
     }
 
+    /// Create from f64, splitting into head + tail for ~48-bit precision.
+    pub fn from_f64(val: f64) -> Self {
+        if val == 0.0 {
+            return Self::ZERO;
+        }
+
+        // Extract mantissa and exponent from f64
+        let (mantissa, exp) = frexp_f64(val);
+
+        // Split 53-bit mantissa into head (24 bits) + tail (remaining ~29 bits)
+        let head = mantissa as f32;
+        let tail = (mantissa - head as f64) as f32;
+
+        Self { head, tail, exp }.normalize()
+    }
+
+    /// Convert to f64.
+    pub fn to_f64(&self) -> f64 {
+        if self.head == 0.0 {
+            return 0.0;
+        }
+        let mantissa = self.head as f64 + self.tail as f64;
+        libm::ldexp(mantissa, self.exp)
+    }
+
     /// Normalize head to [0.5, 1.0) range.
     #[inline]
     pub fn normalize(self) -> Self {
@@ -181,6 +206,16 @@ fn frexp_f32(val: f32) -> (f32, i32) {
     (f32::from_bits(mantissa_bits), exp)
 }
 
+/// Extract mantissa and exponent from f64: val = mantissa × 2^exp, mantissa in [0.5, 1.0)
+#[inline]
+fn frexp_f64(val: f64) -> (f64, i32) {
+    if val == 0.0 {
+        return (0.0, 0);
+    }
+    let (m, e) = libm::frexp(val);
+    (m, e)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,5 +266,43 @@ mod tests {
         let normalized = h.normalize();
         assert!((normalized.head - 0.75).abs() < 1e-7);
         assert_eq!(normalized.exp, 1);
+    }
+
+    #[test]
+    fn from_f64_captures_more_precision_than_f32() {
+        // Value with more precision than f32 can represent
+        let val: f64 = 1.0 + 1e-10;
+        let h = HDRFloat::from_f64(val);
+
+        // Converting back should preserve more precision than direct f32 cast
+        let back = h.to_f64();
+        let direct = val as f32 as f64;
+
+        let error_hdr = (back - val).abs();
+        let error_direct = (direct - val).abs();
+
+        assert!(
+            error_hdr < error_direct,
+            "HDRFloat error {} should be less than direct f32 error {}",
+            error_hdr,
+            error_direct
+        );
+    }
+
+    #[test]
+    fn from_f64_preserves_value() {
+        let values = [1.0f64, -1.0, 0.5, 2.0, 1e10, 1e-10, std::f64::consts::PI];
+        for v in values {
+            let h = HDRFloat::from_f64(v);
+            let back = h.to_f64();
+            // Should preserve ~48 bits of precision
+            assert!(
+                (back - v).abs() < v.abs() * 1e-14 + 1e-300,
+                "from_f64({}) -> to_f64() = {}, diff = {}",
+                v,
+                back,
+                (back - v).abs()
+            );
+        }
     }
 }
