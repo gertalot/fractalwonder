@@ -33,22 +33,27 @@ fn hdr_two_sum_err(a: f32, b: f32, sum: f32) -> f32 {
     return (a - a_virtual) + (b - b_virtual);
 }
 
-// Normalize head to [0.5, 1.0)
+// Normalize head to [0.5, 1.0) - iterative version (WGSL doesn't support recursion)
 fn hdr_normalize(x: HDRFloat) -> HDRFloat {
-    if x.head == 0.0 {
-        if x.tail != 0.0 {
-            // Promote tail to head
-            return hdr_normalize(HDRFloat(x.tail, 0.0, x.exp));
+    var head = x.head;
+    var tail = x.tail;
+    var exp = x.exp;
+
+    // If head is zero, promote tail to head
+    if head == 0.0 {
+        if tail == 0.0 {
+            return HDR_ZERO;
         }
-        return HDR_ZERO;
+        head = tail;
+        tail = 0.0;
     }
 
-    let abs_head = abs(x.head);
+    let abs_head = abs(head);
     if abs_head >= 0.5 && abs_head < 1.0 {
-        return x;
+        return HDRFloat(head, tail, exp);
     }
 
-    let bits = bitcast<u32>(x.head);
+    let bits = bitcast<u32>(head);
     let sign = bits & 0x80000000u;
     let biased_exp = i32((bits >> 23u) & 0xFFu);
 
@@ -56,9 +61,9 @@ fn hdr_normalize(x: HDRFloat) -> HDRFloat {
     let new_mantissa_bits = (bits & 0x807FFFFFu) | 0x3F000000u;
     let new_head = bitcast<f32>(new_mantissa_bits | sign);
     let scale = hdr_exp2(-exp_adjust);
-    let new_tail = x.tail * scale;
+    let new_tail = tail * scale;
 
-    return HDRFloat(new_head, new_tail, x.exp + exp_adjust);
+    return HDRFloat(new_head, new_tail, exp + exp_adjust);
 }
 
 // Negate
