@@ -3,6 +3,7 @@ pub mod colorizer;
 pub mod palette;
 pub mod presets;
 pub mod settings;
+pub mod shading;
 pub mod smooth_iteration;
 
 use fractalwonder_core::ComputeData;
