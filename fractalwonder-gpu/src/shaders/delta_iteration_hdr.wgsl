@@ -230,8 +230,8 @@ struct Uniforms {
 const SENTINEL_NOT_COMPUTED: u32 = 0xFFFFFFFFu;
 
 // Adam7 interlacing pattern
-fn adam7_coords(pass: u32) -> vec2<u32> {
-    switch pass {
+fn adam7_coords(pass_idx: u32) -> vec2<u32> {
+    switch pass_idx {
         case 1u: { return vec2<u32>(0u, 0u); }
         case 2u: { return vec2<u32>(4u, 0u); }
         case 3u: { return vec2<u32>(0u, 4u); }
@@ -243,8 +243,8 @@ fn adam7_coords(pass: u32) -> vec2<u32> {
     }
 }
 
-fn adam7_step_size(pass: u32) -> vec2<u32> {
-    switch pass {
+fn adam7_step_size(pass_idx: u32) -> vec2<u32> {
+    switch pass_idx {
         case 1u: { return vec2<u32>(8u, 8u); }
         case 2u: { return vec2<u32>(8u, 8u); }
         case 3u: { return vec2<u32>(4u, 8u); }
