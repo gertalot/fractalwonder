@@ -12,6 +12,7 @@ pub use colorizer::{Colorizer, ColorizerKind};
 pub use palette::Palette;
 pub use presets::{presets, ColorSchemePreset};
 pub use settings::{ColorSettings, ShadingSettings};
+pub use shading::apply_slope_shading;
 pub use smooth_iteration::SmoothIterationColorizer;
 
 /// Colorize a single pixel using the provided palette and colorizer.

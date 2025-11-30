@@ -1,5 +1,70 @@
 //! Slope shading for 3D lighting effect on iteration height field.
 
+use super::ShadingSettings;
+use fractalwonder_core::ComputeData;
+
+/// Check if a compute data point is interior (didn't escape).
+fn is_interior(data: &ComputeData) -> bool {
+    match data {
+        ComputeData::Mandelbrot(m) => !m.escaped,
+        ComputeData::TestImage(_) => false,
+    }
+}
+
+/// Apply slope shading to a pixel buffer in place.
+///
+/// # Arguments
+/// * `pixels` - RGBA pixel buffer to modify
+/// * `data` - Original compute data (to check for interior points)
+/// * `smooth_iters` - Precomputed smooth iteration values
+/// * `settings` - Shading settings
+/// * `width` - Image width in pixels
+/// * `height` - Image height in pixels
+/// * `zoom_level` - Current zoom level for auto-scaling height factor
+pub fn apply_slope_shading(
+    pixels: &mut [[u8; 4]],
+    data: &[ComputeData],
+    smooth_iters: &[f64],
+    settings: &ShadingSettings,
+    width: usize,
+    height: usize,
+    zoom_level: f64,
+) {
+    if !settings.enabled || settings.blend <= 0.0 {
+        return;
+    }
+
+    // Auto-scale height factor with zoom
+    let effective_height = settings.height_factor * (1.0 + zoom_level.log10().max(0.0) / 10.0);
+
+    let light_x = settings.light_angle.cos();
+    let light_y = settings.light_angle.sin();
+
+    for y in 0..height {
+        for x in 0..width {
+            let idx = y * width + x;
+
+            // Skip interior pixels - keep them pure black
+            if is_interior(&data[idx]) {
+                continue;
+            }
+
+            let shade = compute_shade_8neighbor(
+                smooth_iters,
+                width,
+                height,
+                x,
+                y,
+                light_x,
+                light_y,
+                effective_height,
+            );
+
+            pixels[idx] = blend_shade(pixels[idx], shade, settings.blend);
+        }
+    }
+}
+
 /// Compute shade value for a single pixel using 8-neighbor gradient.
 /// Uses Sobel operator for robust gradient estimation.
 /// Returns value in [0, 1] range where 0.5 is neutral.
@@ -171,5 +236,68 @@ mod tests {
         let base = [128, 128, 128, 255];
         let result = blend_shade(base, 0.0, 0.0);
         assert_eq!(result, base);
+    }
+
+    use fractalwonder_core::MandelbrotData;
+
+    fn make_exterior_data(iterations: u32) -> ComputeData {
+        ComputeData::Mandelbrot(MandelbrotData {
+            iterations,
+            max_iterations: 100,
+            escaped: true,
+            glitched: false,
+            final_z_norm_sq: 100000.0,
+        })
+    }
+
+    fn make_interior_data() -> ComputeData {
+        ComputeData::Mandelbrot(MandelbrotData {
+            iterations: 100,
+            max_iterations: 100,
+            escaped: false,
+            glitched: false,
+            final_z_norm_sq: 4.0,
+        })
+    }
+
+    #[test]
+    fn apply_shading_disabled_no_change() {
+        let mut pixels = vec![[128, 128, 128, 255]; 9];
+        let original = pixels.clone();
+        let data: Vec<_> = (0..9).map(|i| make_exterior_data(i as u32 * 10)).collect();
+        let smooth: Vec<_> = (0..9).map(|i| i as f64 * 10.0).collect();
+        let settings = ShadingSettings::disabled();
+
+        apply_slope_shading(&mut pixels, &data, &smooth, &settings, 3, 3, 1.0);
+
+        assert_eq!(pixels, original);
+    }
+
+    #[test]
+    fn apply_shading_interior_unchanged() {
+        let mut pixels = vec![[0, 0, 0, 255]; 9];
+        let original = pixels.clone();
+        let data = vec![make_interior_data(); 9];
+        let smooth = vec![100.0; 9];
+        let settings = ShadingSettings::enabled();
+
+        apply_slope_shading(&mut pixels, &data, &smooth, &settings, 3, 3, 1.0);
+
+        assert_eq!(pixels, original);
+    }
+
+    #[test]
+    fn apply_shading_modifies_exterior() {
+        let mut pixels = vec![[128, 128, 128, 255]; 9];
+        let original = pixels.clone();
+        // Create gradient in iterations
+        let data: Vec<_> = (0..9).map(|i| make_exterior_data(i as u32 * 10)).collect();
+        let smooth: Vec<_> = (0..9).map(|i| i as f64 * 10.0).collect();
+        let settings = ShadingSettings::enabled();
+
+        apply_slope_shading(&mut pixels, &data, &smooth, &settings, 3, 3, 1.0);
+
+        // At least some pixels should be modified (the center has neighbors)
+        assert_ne!(pixels, original, "shading should modify some pixels");
     }
 }
