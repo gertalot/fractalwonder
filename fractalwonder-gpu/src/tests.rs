@@ -1,10 +1,8 @@
 //! Tests for GPU renderer - verifies GPU output matches CPU perturbation.
 
-use crate::{
-    Adam7Pass, GpuAvailability, GpuContext, GpuDirectFloatExpRenderer, GpuPerturbationRenderer,
-};
+use crate::{Adam7Pass, GpuAvailability, GpuContext, GpuPerturbationRenderer};
 use fractalwonder_compute::{compute_pixel_perturbation, ReferenceOrbit};
-use fractalwonder_core::{BigFloat, ComputeData, FloatExp, MandelbrotData};
+use fractalwonder_core::{BigFloat, ComputeData, MandelbrotData};
 
 /// Helper to create a reference orbit at a given center point.
 fn create_reference_orbit(center_re: f64, center_im: f64, max_iter: u32) -> ReferenceOrbit {
@@ -289,139 +287,140 @@ fn gpu_escaping_points_escape_quickly() {
     });
 }
 
-/// Helper to convert FloatExp to tuple format for renderer.
-fn floatexp_to_tuple(re: FloatExp, im: FloatExp) -> (f32, i32, f32, i32) {
-    (
-        re.mantissa() as f32,
-        re.exp() as i32,
-        im.mantissa() as f32,
-        im.exp() as i32,
-    )
-}
-
-/// Test that DirectFloatExp renderer initializes without panic.
-#[test]
-fn direct_floatexp_init_does_not_panic() {
-    pollster::block_on(async {
-        let GpuAvailability::Available(ctx) = GpuContext::try_init().await else {
-            println!("Skipping test: no GPU available");
-            return;
-        };
-        let _renderer = GpuDirectFloatExpRenderer::new(ctx);
-        println!("GpuDirectFloatExpRenderer initialized successfully");
-    });
-}
-
-/// Test that DirectFloatExp produces correct results for known points.
-#[test]
-fn direct_floatexp_known_points() {
-    pollster::block_on(async {
-        let GpuAvailability::Available(ctx) = GpuContext::try_init().await else {
-            println!("Skipping test: no GPU available");
-            return;
-        };
-
-        let mut renderer = GpuDirectFloatExpRenderer::new(ctx);
-
-        let width = 3u32;
-        let height = 1u32;
-        let max_iter = 100;
-
-        // Test 3 points: origin (in set), c=3 (escapes fast), c=-2 (boundary)
-        let c_origin = floatexp_to_tuple(FloatExp::from_f64(0.0), FloatExp::from_f64(0.0));
-        let c_step = floatexp_to_tuple(
-            FloatExp::from_f64(1.5), // 0, 1.5, 3.0
-            FloatExp::from_f64(0.0),
-        );
-
-        let result = renderer
-            .render(
-                c_origin,
-                c_step,
-                width,
-                height,
-                max_iter,
-                Adam7Pass::all_pixels(),
-            )
-            .await
-            .expect("Render should succeed");
-
-        let iter_0 = as_mandelbrot(&result.data[0]).iterations;
-        let iter_1 = as_mandelbrot(&result.data[1]).iterations;
-        let iter_2 = as_mandelbrot(&result.data[2]).iterations;
-
-        println!("c=0: {} iterations", iter_0);
-        println!("c=1.5: {} iterations", iter_1);
-        println!("c=3: {} iterations", iter_2);
-
-        // Origin should reach max_iter (in set)
-        assert_eq!(iter_0, max_iter, "c=0 should be in set");
-
-        // c=3 should escape very quickly (1-2 iterations)
-        assert!(iter_2 < 5, "c=3 should escape within 5 iterations");
-    });
-}
-
-/// Test DirectFloatExp at moderate zoom (10^4) - the problematic range.
-#[test]
-fn direct_floatexp_moderate_zoom() {
-    pollster::block_on(async {
-        let GpuAvailability::Available(ctx) = GpuContext::try_init().await else {
-            println!("Skipping test: no GPU available");
-            return;
-        };
-
-        let mut renderer = GpuDirectFloatExpRenderer::new(ctx);
-
-        let width = 64u32;
-        let height = 64u32;
-        let max_iter = 500;
-
-        // Zoom 10^4 near the main cardioid boundary
-        let center_re = -0.1;
-        let center_im = 0.65;
-        let view_size = 5e-4;
-
-        let c_origin = floatexp_to_tuple(
-            FloatExp::from_f64(center_re - view_size / 2.0),
-            FloatExp::from_f64(center_im - view_size / 2.0),
-        );
-        let c_step = floatexp_to_tuple(
-            FloatExp::from_f64(view_size / width as f64),
-            FloatExp::from_f64(view_size / height as f64),
-        );
-
-        let result = renderer
-            .render(
-                c_origin,
-                c_step,
-                width,
-                height,
-                max_iter,
-                Adam7Pass::all_pixels(),
-            )
-            .await
-            .expect("Render should succeed");
-
-        // Count escaped vs in-set pixels
-        let escaped = result
-            .data
-            .iter()
-            .filter(|d| as_mandelbrot(d).escaped)
-            .count();
-        let in_set = result
-            .data
-            .iter()
-            .filter(|d| !as_mandelbrot(d).escaped)
-            .count();
-
-        println!("Moderate zoom (10^4) at ({}, {}):", center_re, center_im);
-        println!("  Escaped: {}", escaped);
-        println!("  In set: {}", in_set);
-        println!("  Compute time: {:.2}ms", result.compute_time_ms);
-
-        // Should have a mix of escaped and in-set pixels at boundary
-        assert!(escaped > 0, "Should have some escaped pixels");
-        assert!(in_set > 0, "Should have some in-set pixels");
-    });
-}
+// TODO: These tests use the deleted DirectFloatExp renderer - need to be updated for HDR
+// /// Helper to convert FloatExp to tuple format for renderer.
+// fn floatexp_to_tuple(re: FloatExp, im: FloatExp) -> (f32, i32, f32, i32) {
+//     (
+//         re.mantissa() as f32,
+//         re.exp() as i32,
+//         im.mantissa() as f32,
+//         im.exp() as i32,
+//     )
+// }
+//
+// /// Test that DirectFloatExp renderer initializes without panic.
+// #[test]
+// fn direct_floatexp_init_does_not_panic() {
+//     pollster::block_on(async {
+//         let GpuAvailability::Available(ctx) = GpuContext::try_init().await else {
+//             println!("Skipping test: no GPU available");
+//             return;
+//         };
+//         let _renderer = GpuDirectFloatExpRenderer::new(ctx);
+//         println!("GpuDirectFloatExpRenderer initialized successfully");
+//     });
+// }
+//
+// /// Test that DirectFloatExp produces correct results for known points.
+// #[test]
+// fn direct_floatexp_known_points() {
+//     pollster::block_on(async {
+//         let GpuAvailability::Available(ctx) = GpuContext::try_init().await else {
+//             println!("Skipping test: no GPU available");
+//             return;
+//         };
+//
+//         let mut renderer = GpuDirectFloatExpRenderer::new(ctx);
+//
+//         let width = 3u32;
+//         let height = 1u32;
+//         let max_iter = 100;
+//
+//         // Test 3 points: origin (in set), c=3 (escapes fast), c=-2 (boundary)
+//         let c_origin = floatexp_to_tuple(FloatExp::from_f64(0.0), FloatExp::from_f64(0.0));
+//         let c_step = floatexp_to_tuple(
+//             FloatExp::from_f64(1.5), // 0, 1.5, 3.0
+//             FloatExp::from_f64(0.0),
+//         );
+//
+//         let result = renderer
+//             .render(
+//                 c_origin,
+//                 c_step,
+//                 width,
+//                 height,
+//                 max_iter,
+//                 Adam7Pass::all_pixels(),
+//             )
+//             .await
+//             .expect("Render should succeed");
+//
+//         let iter_0 = as_mandelbrot(&result.data[0]).iterations;
+//         let iter_1 = as_mandelbrot(&result.data[1]).iterations;
+//         let iter_2 = as_mandelbrot(&result.data[2]).iterations;
+//
+//         println!("c=0: {} iterations", iter_0);
+//         println!("c=1.5: {} iterations", iter_1);
+//         println!("c=3: {} iterations", iter_2);
+//
+//         // Origin should reach max_iter (in set)
+//         assert_eq!(iter_0, max_iter, "c=0 should be in set");
+//
+//         // c=3 should escape very quickly (1-2 iterations)
+//         assert!(iter_2 < 5, "c=3 should escape within 5 iterations");
+//     });
+// }
+//
+// /// Test DirectFloatExp at moderate zoom (10^4) - the problematic range.
+// #[test]
+// fn direct_floatexp_moderate_zoom() {
+//     pollster::block_on(async {
+//         let GpuAvailability::Available(ctx) = GpuContext::try_init().await else {
+//             println!("Skipping test: no GPU available");
+//             return;
+//         };
+//
+//         let mut renderer = GpuDirectFloatExpRenderer::new(ctx);
+//
+//         let width = 64u32;
+//         let height = 64u32;
+//         let max_iter = 500;
+//
+//         // Zoom 10^4 near the main cardioid boundary
+//         let center_re = -0.1;
+//         let center_im = 0.65;
+//         let view_size = 5e-4;
+//
+//         let c_origin = floatexp_to_tuple(
+//             FloatExp::from_f64(center_re - view_size / 2.0),
+//             FloatExp::from_f64(center_im - view_size / 2.0),
+//         );
+//         let c_step = floatexp_to_tuple(
+//             FloatExp::from_f64(view_size / width as f64),
+//             FloatExp::from_f64(view_size / height as f64),
+//         );
+//
+//         let result = renderer
+//             .render(
+//                 c_origin,
+//                 c_step,
+//                 width,
+//                 height,
+//                 max_iter,
+//                 Adam7Pass::all_pixels(),
+//             )
+//             .await
+//             .expect("Render should succeed");
+//
+//         // Count escaped vs in-set pixels
+//         let escaped = result
+//             .data
+//             .iter()
+//             .filter(|d| as_mandelbrot(d).escaped)
+//             .count();
+//         let in_set = result
+//             .data
+//             .iter()
+//             .filter(|d| !as_mandelbrot(d).escaped)
+//             .count();
+//
+//         println!("Moderate zoom (10^4) at ({}, {}):", center_re, center_im);
+//         println!("  Escaped: {}", escaped);
+//         println!("  In set: {}", in_set);
+//         println!("  Compute time: {:.2}ms", result.compute_time_ms);
+//
+//         // Should have a mix of escaped and in-set pixels at boundary
+//         assert!(escaped > 0, "Should have some escaped pixels");
+//         assert!(in_set > 0, "Should have some in-set pixels");
+//     });
+// }
