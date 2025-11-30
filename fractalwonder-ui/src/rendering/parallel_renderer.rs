@@ -400,7 +400,8 @@ impl ParallelRenderer {
                 match GpuContext::try_init().await {
                     GpuAvailability::Available(ctx) => {
                         log::info!("Direct GPU FloatExp renderer initialized");
-                        *direct_gpu_renderer.borrow_mut() = Some(GpuDirectFloatExpRenderer::new(ctx));
+                        *direct_gpu_renderer.borrow_mut() =
+                            Some(GpuDirectFloatExpRenderer::new(ctx));
                     }
                     GpuAvailability::Unavailable(reason) => {
                         log::warn!("GPU unavailable for direct FloatExp: {reason}");
@@ -791,7 +792,10 @@ fn schedule_direct_adam7_pass(
                     if let Ok(ctx) = get_2d_context(&canvas_element_spawn) {
                         match draw_full_frame(&ctx, &pixels, width, height) {
                             Ok(()) => {
-                                log::info!("Drew direct FloatExp Adam7 pass {} to canvas", pass.step())
+                                log::info!(
+                                    "Drew direct FloatExp Adam7 pass {} to canvas",
+                                    pass.step()
+                                )
                             }
                             Err(e) => {
                                 log::error!(
@@ -935,7 +939,8 @@ fn schedule_adam7_pass(
             step_im.exp() as i32,
         );
         let tau_sq = config.tau_sq as f32;
-        let reference_escaped = orbit_data_spawn.orbit.len() < orbit_data_spawn.max_iterations as usize;
+        let reference_escaped =
+            orbit_data_spawn.orbit.len() < orbit_data_spawn.max_iterations as usize;
 
         // Mark GPU as in use
         gpu_in_use_spawn.set(true);

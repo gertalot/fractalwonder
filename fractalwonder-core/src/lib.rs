@@ -1,6 +1,5 @@
 pub mod bigfloat;
 pub mod compute_data;
-pub mod floatexp;
 pub mod hdrfloat;
 pub mod messages;
 pub mod pixel_rect;
@@ -10,7 +9,6 @@ pub mod viewport;
 
 pub use bigfloat::BigFloat;
 pub use compute_data::{ComputeData, MandelbrotData, TestImageData};
-pub use floatexp::FloatExp;
 pub use hdrfloat::{HDRComplex, HDRFloat};
 pub use messages::{MainToWorker, WorkerToMain};
 pub use pixel_rect::PixelRect;

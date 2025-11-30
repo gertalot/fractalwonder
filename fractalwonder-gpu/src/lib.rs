@@ -24,7 +24,9 @@ pub use direct_renderer::{DirectFloatExpResult, GpuDirectFloatExpRenderer};
 pub use error::GpuError;
 pub use pass::Adam7Pass;
 pub use perturbation_floatexp_pipeline::PerturbationFloatExpPipeline;
-pub use perturbation_floatexp_renderer::{GpuPerturbationFloatExpRenderer, GpuPerturbationFloatExpResult};
+pub use perturbation_floatexp_renderer::{
+    GpuPerturbationFloatExpRenderer, GpuPerturbationFloatExpResult,
+};
 pub use pipeline::GpuPipeline;
 pub use renderer::{GpuPerturbationRenderer, GpuRenderResult};
 pub use stretch::{Adam7Accumulator, SENTINEL_NOT_COMPUTED};
