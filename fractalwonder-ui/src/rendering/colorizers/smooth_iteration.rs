@@ -151,7 +151,7 @@ impl SmoothIterationColorizer {
         &self,
         data: &MandelbrotData,
         smooth: f64,
-        _context: &SmoothIterationContext,
+        context: &SmoothIterationContext,
         settings: &ColorSettings,
     ) -> [u8; 4] {
         // Interior points are black
@@ -164,9 +164,21 @@ impl SmoothIterationColorizer {
             return [0, 0, 0, 255];
         }
 
-        // Normalize using smooth value (Task 5 will add CDF usage)
-        let normalized = smooth / data.max_iterations as f64;
-        let t = (normalized * settings.cycle_count).fract();
+        // Normalize: use CDF if available, otherwise linear
+        let normalized = if let Some(cdf) = &context.cdf {
+            // Use integer iteration for CDF lookup
+            let idx = (data.iterations as usize).min(cdf.len().saturating_sub(1));
+            cdf[idx]
+        } else {
+            smooth / data.max_iterations as f64
+        };
+
+        // Apply cycling and sample palette
+        let t = if settings.cycle_count > 1.0 {
+            (normalized * settings.cycle_count).fract()
+        } else {
+            (normalized * settings.cycle_count).clamp(0.0, 1.0)
+        };
         let [r, g, b] = settings.palette.sample(t);
         [r, g, b, 255]
     }
@@ -436,5 +448,56 @@ mod tests {
         let ctx = colorizer.preprocess(&data, &settings);
 
         assert!(ctx.cdf.is_none());
+    }
+
+    #[test]
+    fn colorize_uses_cdf_when_available() {
+        let colorizer = SmoothIterationColorizer;
+        let settings = ColorSettings {
+            histogram_enabled: true,
+            cycle_count: 1.0, // No cycling for predictable results
+            ..ColorSettings::with_palette(Palette::grayscale())
+        };
+
+        // Create skewed data: 90 pixels at iter 1, 10 at iter 9
+        let mut data = Vec::new();
+        for _ in 0..90 {
+            data.push(ComputeData::Mandelbrot(MandelbrotData {
+                iterations: 1,
+                max_iterations: 10,
+                escaped: true,
+                glitched: false,
+                final_z_norm_sq: 100000.0,
+            }));
+        }
+        for _ in 0..10 {
+            data.push(ComputeData::Mandelbrot(MandelbrotData {
+                iterations: 9,
+                max_iterations: 10,
+                escaped: true,
+                glitched: false,
+                final_z_norm_sq: 100000.0,
+            }));
+        }
+
+        let ctx = colorizer.preprocess(&data, &settings);
+
+        // First pixel (iter 1) should map to CDF[1] = 0.9 (90% of pixels)
+        let color1 = colorizer.colorize(&data[0], &ctx, &settings, 0);
+        // Last pixel (iter 9) should map to CDF[9] = 1.0
+        let color2 = colorizer.colorize(&data[90], &ctx, &settings, 90);
+
+        // With grayscale and CDF, iter 1 gets bright (0.9), iter 9 gets white (1.0)
+        // Both should be quite bright since CDF values are high
+        assert!(
+            color1[0] > 200,
+            "iter 1 with CDF 0.9 should be bright: {:?}",
+            color1
+        );
+        assert!(
+            color2[0] > 250,
+            "iter 9 with CDF 1.0 should be near white: {:?}",
+            color2
+        );
     }
 }
