@@ -96,6 +96,67 @@ impl DirectFloatExpUniforms {
     }
 }
 
+/// GPU buffers for direct FloatExp rendering.
+/// Simpler than perturbation buffers - no reference orbit, no glitch flags.
+pub struct DirectFloatExpBuffers {
+    pub uniforms: wgpu::Buffer,
+    pub results: wgpu::Buffer,
+    pub z_norm_sq: wgpu::Buffer,
+    pub staging_results: wgpu::Buffer,
+    pub staging_z_norm_sq: wgpu::Buffer,
+    pub pixel_count: u32,
+}
+
+impl DirectFloatExpBuffers {
+    pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
+        let pixel_count = width * height;
+
+        let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("direct_floatexp_uniforms"),
+            size: std::mem::size_of::<DirectFloatExpUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let results = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("direct_floatexp_results"),
+            size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("direct_floatexp_z_norm_sq"),
+            size: (pixel_count as usize * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let staging_results = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("direct_floatexp_staging_results"),
+            size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let staging_z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("direct_floatexp_staging_z_norm_sq"),
+            size: (pixel_count as usize * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        Self {
+            uniforms,
+            results,
+            z_norm_sq,
+            staging_results,
+            staging_z_norm_sq,
+            pixel_count,
+        }
+    }
+}
+
 /// Manages GPU buffers for rendering.
 pub struct GpuBuffers {
     pub uniforms: wgpu::Buffer,
