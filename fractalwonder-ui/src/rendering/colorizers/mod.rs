@@ -26,17 +26,61 @@ pub struct PaletteEntry {
 /// Get all available color palettes.
 pub fn palettes() -> Vec<PaletteEntry> {
     vec![
-        PaletteEntry { id: "classic", name: "Classic", palette: Palette::ultra_fractal() },
-        PaletteEntry { id: "fire", name: "Fire", palette: Palette::fire() },
-        PaletteEntry { id: "ocean", name: "Ocean", palette: Palette::ocean() },
-        PaletteEntry { id: "electric", name: "Electric", palette: Palette::electric() },
-        PaletteEntry { id: "grayscale", name: "Grayscale", palette: Palette::grayscale() },
-        PaletteEntry { id: "rainbow", name: "Rainbow", palette: Palette::rainbow() },
-        PaletteEntry { id: "neon", name: "Neon", palette: Palette::neon() },
-        PaletteEntry { id: "twilight", name: "Twilight", palette: Palette::twilight() },
-        PaletteEntry { id: "candy", name: "Candy", palette: Palette::candy() },
-        PaletteEntry { id: "inferno", name: "Inferno", palette: Palette::inferno() },
-        PaletteEntry { id: "aurora", name: "Aurora", palette: Palette::aurora() },
+        PaletteEntry {
+            id: "classic",
+            name: "Classic",
+            palette: Palette::ultra_fractal(),
+        },
+        PaletteEntry {
+            id: "fire",
+            name: "Fire",
+            palette: Palette::fire(),
+        },
+        PaletteEntry {
+            id: "ocean",
+            name: "Ocean",
+            palette: Palette::ocean(),
+        },
+        PaletteEntry {
+            id: "electric",
+            name: "Electric",
+            palette: Palette::electric(),
+        },
+        PaletteEntry {
+            id: "grayscale",
+            name: "Grayscale",
+            palette: Palette::grayscale(),
+        },
+        PaletteEntry {
+            id: "rainbow",
+            name: "Rainbow",
+            palette: Palette::rainbow(),
+        },
+        PaletteEntry {
+            id: "neon",
+            name: "Neon",
+            palette: Palette::neon(),
+        },
+        PaletteEntry {
+            id: "twilight",
+            name: "Twilight",
+            palette: Palette::twilight(),
+        },
+        PaletteEntry {
+            id: "candy",
+            name: "Candy",
+            palette: Palette::candy(),
+        },
+        PaletteEntry {
+            id: "inferno",
+            name: "Inferno",
+            palette: Palette::inferno(),
+        },
+        PaletteEntry {
+            id: "aurora",
+            name: "Aurora",
+            palette: Palette::aurora(),
+        },
     ]
 }
 
@@ -63,6 +107,43 @@ pub fn colorize_with_palette(
     }
 
     colorizer.colorize_quick(data, settings)
+}
+
+/// Colorize using discrete iteration count (no smooth interpolation).
+pub fn colorize_discrete(
+    data: &ComputeData,
+    settings: &ColorSettings,
+    xray_enabled: bool,
+) -> [u8; 4] {
+    // Handle xray mode for glitched pixels
+    if xray_enabled {
+        if let ComputeData::Mandelbrot(m) = data {
+            if m.glitched {
+                if m.max_iterations == 0 {
+                    return [0, 255, 255, 255];
+                }
+                let normalized = m.iterations as f64 / m.max_iterations as f64;
+                let brightness = (64.0 + normalized * 191.0) as u8;
+                return [0, brightness, brightness, 255];
+            }
+        }
+    }
+
+    match data {
+        ComputeData::Mandelbrot(m) => {
+            if !m.escaped {
+                return [0, 0, 0, 255];
+            }
+            if m.max_iterations == 0 {
+                return [0, 0, 0, 255];
+            }
+            let normalized = m.iterations as f64 / m.max_iterations as f64;
+            let t = (normalized * settings.cycle_count).fract();
+            let [r, g, b] = settings.palette.sample(t);
+            [r, g, b, 255]
+        }
+        ComputeData::TestImage(_) => [128, 128, 128, 255],
+    }
 }
 
 #[cfg(test)]

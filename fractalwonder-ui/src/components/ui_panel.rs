@@ -1,5 +1,5 @@
 // fractalwonder-ui/src/components/ui_panel.rs
-use crate::components::{DropdownMenu, FullscreenButton, HomeButton, InfoButton};
+use crate::components::{DropdownMenu, FullscreenButton, HomeButton, InfoButton, OptionsMenu};
 use crate::config::FractalConfig;
 use crate::rendering::RenderProgress;
 use fractalwonder_core::{calculate_max_iterations, BigFloat, Viewport};
@@ -15,12 +15,26 @@ pub fn UIPanel(
     precision_bits: Signal<usize>,
     /// Callback when home button is clicked
     on_home_click: Callback<()>,
-    /// Colorizer selection options (id, display_name)
-    colorizer_options: Signal<Vec<(String, String)>>,
-    /// Currently selected colorizer ID
-    selected_colorizer_id: Signal<String>,
-    /// Callback when colorizer is selected
-    on_colorizer_select: Callback<String>,
+    /// Palette options (id, display_name)
+    palette_options: Signal<Vec<(String, String)>>,
+    /// Currently selected palette ID
+    selected_palette_id: Signal<String>,
+    /// Callback when palette is selected
+    on_palette_select: Callback<String>,
+    /// 3D shading enabled
+    shading_enabled: Signal<bool>,
+    /// Callback to toggle 3D
+    on_shading_toggle: Callback<()>,
+    /// Smooth iteration enabled
+    smooth_enabled: Signal<bool>,
+    /// Callback to toggle smooth
+    on_smooth_toggle: Callback<()>,
+    /// Cycle count
+    cycle_count: Signal<u32>,
+    /// Callback to increase cycles
+    on_cycle_up: Callback<()>,
+    /// Callback to decrease cycles
+    on_cycle_down: Callback<()>,
     /// Render progress signal
     render_progress: Signal<RwSignal<RenderProgress>>,
     /// UI visibility signal (from parent)
@@ -67,7 +81,7 @@ pub fn UIPanel(
             }
         >
             <div class="flex items-center justify-between px-4 py-3 bg-black/50 backdrop-blur-sm">
-                // Left section: info button, home button, and dropdowns
+                // Left section: info button, home button, and menus
                 <div class="flex items-center space-x-2">
                     <InfoButton
                         is_open=is_info_open
@@ -77,10 +91,19 @@ pub fn UIPanel(
                     />
                     <HomeButton on_click=on_home_click />
                     <DropdownMenu
-                        label="Colors".to_string()
-                        options=colorizer_options
-                        selected_id=selected_colorizer_id
-                        on_select=move |id| on_colorizer_select.call(id)
+                        label="Palette".to_string()
+                        options=palette_options
+                        selected_id=selected_palette_id
+                        on_select=move |id| on_palette_select.call(id)
+                    />
+                    <OptionsMenu
+                        shading_enabled=shading_enabled
+                        on_shading_toggle=on_shading_toggle
+                        smooth_enabled=smooth_enabled
+                        on_smooth_toggle=on_smooth_toggle
+                        cycle_count=cycle_count
+                        on_cycle_up=on_cycle_up
+                        on_cycle_down=on_cycle_down
                     />
                 </div>
 

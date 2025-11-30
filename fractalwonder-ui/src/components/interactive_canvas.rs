@@ -1,7 +1,7 @@
 // fractalwonder-ui/src/components/interactive_canvas.rs
 use crate::config::FractalConfig;
 use crate::hooks::use_canvas_interaction;
-use crate::rendering::colorizers::presets;
+use crate::rendering::colorizers::ColorOptions;
 use crate::rendering::ParallelRenderer;
 use fractalwonder_core::{apply_pixel_transform_to_viewport, Viewport};
 use leptos::*;
@@ -32,12 +32,9 @@ pub fn InteractiveCanvas(
     /// X-ray mode enabled signal
     #[prop(optional)]
     xray_enabled: Option<ReadSignal<bool>>,
-    /// Callback fired with available color scheme options (id, name) on mount
+    /// Color options signal
     #[prop(optional)]
-    on_color_schemes: Option<Callback<Vec<(String, String)>>>,
-    /// Selected color scheme ID signal
-    #[prop(optional)]
-    selected_color_scheme: Option<ReadSignal<String>>,
+    color_options: Option<Signal<ColorOptions>>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
@@ -115,31 +112,19 @@ pub fn InteractiveCanvas(
         });
     }
 
-    // Notify parent of available color schemes
-    if let Some(callback) = on_color_schemes {
-        let schemes: Vec<(String, String)> = presets()
-            .iter()
-            .map(|p| (p.name.to_string(), p.name.to_string()))
-            .collect();
-        callback.call(schemes);
-    }
+    // Watch for color options changes - update renderer and recolorize
+    if let Some(options_signal) = color_options {
+        create_effect(move |prev: Option<ColorOptions>| {
+            let options = options_signal.get();
 
-    // Watch for color scheme changes - update renderer and recolorize
-    if let Some(scheme_signal) = selected_color_scheme {
-        create_effect(move |prev: Option<String>| {
-            let scheme_id = scheme_signal.get();
+            renderer.with_value(|r| r.set_color_options(&options));
 
-            // Find the preset by name and apply it
-            if let Some(preset) = presets().into_iter().find(|p| p.name == scheme_id) {
-                renderer.with_value(|r| r.set_color_scheme(&preset));
-
-                // Recolorize when scheme changes (not on initial mount)
-                if prev.is_some() && prev.as_ref() != Some(&scheme_id) {
-                    renderer.with_value(|r| r.recolorize());
-                }
+            // Recolorize when options change (not on initial mount)
+            if prev.is_some() && prev.as_ref() != Some(&options) {
+                renderer.with_value(|r| r.recolorize());
             }
 
-            scheme_id
+            options
         });
     }
 

@@ -5,12 +5,12 @@
 //! Priority on load: URL hash > localStorage > defaults.
 //! Enables users to continue exploring from their last position and share fractals via URL.
 
+use crate::rendering::colorizers::ColorOptions;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use flate2::{read::DeflateDecoder, write::DeflateEncoder, Compression};
 use fractalwonder_core::Viewport;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
-use crate::rendering::colorizers::ColorOptions;
 
 const STORAGE_KEY: &str = "fractalwonder_state";
 const URL_HASH_PREFIX: &str = "v1:";
@@ -302,12 +302,15 @@ mod tests {
         use crate::rendering::colorizers::ColorOptions;
 
         let viewport = fractalwonder_core::Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64);
-        let mut options = ColorOptions::default();
-        options.palette_id = "fire".to_string();
-        options.shading_enabled = true;
-        options.cycle_count = 64;
+        let options = ColorOptions {
+            palette_id: "fire".to_string(),
+            shading_enabled: true,
+            cycle_count: 64,
+            ..Default::default()
+        };
 
-        let state = PersistedState::new(viewport.clone(), "mandelbrot".to_string(), options.clone());
+        let state =
+            PersistedState::new(viewport.clone(), "mandelbrot".to_string(), options.clone());
 
         let encoded = encode_state(&state).expect("encoding should succeed");
         let decoded = decode_state(&encoded).expect("decoding should succeed");
@@ -322,8 +325,10 @@ mod tests {
         use crate::rendering::colorizers::ColorOptions;
 
         let viewport = fractalwonder_core::Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64);
-        let mut options = ColorOptions::default();
-        options.palette_id = "fire".to_string();
+        let options = ColorOptions {
+            palette_id: "fire".to_string(),
+            ..Default::default()
+        };
         let state = PersistedState::new(viewport, "mandelbrot".to_string(), options);
 
         let encoded = encode_state(&state).expect("encoding should succeed");

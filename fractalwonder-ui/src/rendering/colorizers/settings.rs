@@ -192,8 +192,10 @@ mod tests {
 
     #[test]
     fn color_options_to_color_settings_uses_palette() {
-        let mut options = ColorOptions::default();
-        options.palette_id = "fire".to_string();
+        let options = ColorOptions {
+            palette_id: "fire".to_string(),
+            ..Default::default()
+        };
         let settings = options.to_color_settings();
         // Fire palette starts dark, sample at 0 should be near black
         let sample = settings.palette.sample(0.0);
@@ -202,8 +204,10 @@ mod tests {
 
     #[test]
     fn color_options_to_color_settings_shading() {
-        let mut options = ColorOptions::default();
-        options.shading_enabled = true;
+        let options = ColorOptions {
+            shading_enabled: true,
+            ..Default::default()
+        };
         let settings = options.to_color_settings();
         assert!(settings.shading.enabled);
     }

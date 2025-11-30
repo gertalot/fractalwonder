@@ -3,13 +3,13 @@ use fractalwonder_core::{calculate_precision_bits, fit_viewport_to_canvas, Viewp
 use leptos::*;
 use wasm_bindgen::prelude::Closure;
 
-use crate::components::{CircularProgress, InteractiveCanvas, UIPanel};
+use crate::components::{CircularProgress, InteractiveCanvas, Toast, UIPanel};
 use crate::config::{default_config, get_config};
 use crate::hooks::{
     load_state, save_state, use_hashchange_listener, use_ui_visibility, PersistedState,
 };
+use crate::rendering::colorizers::palettes;
 use crate::rendering::RenderProgress;
-use crate::rendering::colorizers::ColorOptions;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -21,10 +21,10 @@ pub fn App() -> impl IntoView {
         .as_ref()
         .map(|s| s.config_id.clone())
         .unwrap_or_else(|| "mandelbrot".to_string());
-    let initial_color_scheme_id = persisted
+    let initial_color_options = persisted
         .as_ref()
-        .map(|s| s.color_options.palette_id.clone())
-        .unwrap_or_else(|| "classic".to_string());
+        .map(|s| s.color_options.clone())
+        .unwrap_or_default();
     let persisted_viewport = persisted.map(|s| s.viewport);
 
     // Store persisted viewport for use in effect (consumed on first use)
@@ -44,10 +44,25 @@ pub fn App() -> impl IntoView {
     let config =
         create_memo(move |_| get_config(&selected_config_id.get()).unwrap_or_else(default_config));
 
-    // Colorizer options - populated by InteractiveCanvas on mount
-    let (colorizer_options, set_colorizer_options) =
-        create_signal(vec![("Classic".to_string(), "Classic".to_string())]);
-    let (selected_colorizer_id, set_selected_colorizer_id) = create_signal(initial_color_scheme_id);
+    // Color options state
+    let (color_options, set_color_options) = create_signal(initial_color_options);
+
+    // Derive individual signals for UI components
+    let palette_id = create_memo(move |_| color_options.get().palette_id.clone());
+    let shading_enabled = create_memo(move |_| color_options.get().shading_enabled);
+    let smooth_enabled = create_memo(move |_| color_options.get().smooth_enabled);
+    let cycle_count = create_memo(move |_| color_options.get().cycle_count);
+
+    // Palette options for dropdown
+    let palette_options = Signal::derive(move || {
+        palettes()
+            .iter()
+            .map(|p| (p.id.to_string(), p.name.to_string()))
+            .collect::<Vec<_>>()
+    });
+
+    // Toast message signal
+    let (toast_message, set_toast_message) = create_signal::<Option<String>>(None);
 
     // Viewport signal - now writable for interaction updates
     let (viewport, set_viewport) = create_signal(Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64));
@@ -129,24 +144,18 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    // Persist state to localStorage when viewport, config, or color scheme changes
+    // Persist state to localStorage when viewport or color options change
     create_effect(move |_| {
         let vp = viewport.get();
         let config_id = selected_config_id.get();
-        let color_scheme_id = selected_colorizer_id.get();
+        let options = color_options.get();
 
         // Skip saving if viewport hasn't been initialized yet
         if vp.width.to_f64() == 4.0 && vp.height.to_f64() == 3.0 {
             return;
         }
 
-        // Create color options with the selected palette
-        let color_options = ColorOptions {
-            palette_id: color_scheme_id,
-            ..ColorOptions::default()
-        };
-
-        let state = PersistedState::new(vp, config_id, color_options);
+        let state = PersistedState::new(vp, config_id, options);
         save_state(&state);
     });
 
@@ -158,9 +167,8 @@ pub fn App() -> impl IntoView {
             // Fit the persisted viewport to the current canvas size
             let fitted = fit_viewport_to_canvas(&state.viewport, size);
             set_viewport.set(fitted);
-            // Restore color scheme from color options
-            set_selected_colorizer_id.set(state.color_options.palette_id.clone());
-            log::info!("Restored viewport and color scheme from URL hash change");
+            set_color_options.set(state.color_options.clone());
+            log::info!("Restored viewport and color options from URL hash change");
         }
     });
 
@@ -216,7 +224,7 @@ pub fn App() -> impl IntoView {
     // Trigger for quadtree subdivision (incremented by "d" key when x-ray enabled)
     let (subdivide_trigger, set_subdivide_trigger) = create_signal(0u32);
 
-    // Global keyboard handler for x-ray mode and subdivision
+    // Global keyboard handler for shortcuts
     // Store handler in a StoredValue so it lives for the component lifetime
     // and can be properly cleaned up
     let keyboard_handler = store_value::<Option<Closure<dyn FnMut(web_sys::KeyboardEvent)>>>(None);
@@ -226,55 +234,92 @@ pub fn App() -> impl IntoView {
         use wasm_bindgen::JsCast;
 
         let handler = Closure::wrap(Box::new(move |e: web_sys::KeyboardEvent| {
+            // Skip if typing in an input field
+            if let Some(target) = e.target() {
+                if let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() {
+                    let tag = element.tag_name().to_lowercase();
+                    if tag == "input" || tag == "textarea" {
+                        return;
+                    }
+                }
+            }
+
             match e.key().as_str() {
                 "x" | "X" => {
                     // Toggle x-ray mode
                     set_xray_enabled.update(|v| {
                         *v = !*v;
-                        web_sys::console::log_1(
-                            &format!("[App] X-ray mode: {}", if *v { "ON" } else { "OFF" }).into(),
-                        );
+                        let msg = if *v { "X-ray: On" } else { "X-ray: Off" };
+                        set_toast_message.set(Some(msg.to_string()));
                     });
                 }
                 "d" | "D" => {
                     // Subdivide quadtree (only when x-ray enabled)
                     if xray_enabled.get_untracked() {
                         set_subdivide_trigger.update(|v| *v = v.wrapping_add(1));
-                        web_sys::console::log_1(&"[App] Subdivision triggered".into());
-                    } else {
-                        web_sys::console::log_1(
-                            &"[App] 'd' pressed but x-ray mode disabled - ignoring".into(),
-                        );
                     }
                 }
-                "ArrowUp" | "ArrowDown" => {
-                    // Cycle through color schemes
-                    let opts = colorizer_options.get_untracked();
-                    if opts.is_empty() {
-                        return;
-                    }
-
-                    let current_id = selected_colorizer_id.get_untracked();
-                    let current_idx = opts
-                        .iter()
-                        .position(|(id, _)| *id == current_id)
-                        .unwrap_or(0);
-
-                    let new_idx = if e.key() == "ArrowUp" {
-                        // Previous (wrap to end)
-                        if current_idx == 0 {
-                            opts.len() - 1
+                "3" => {
+                    // Toggle 3D shading
+                    set_color_options.update(|opts| {
+                        opts.shading_enabled = !opts.shading_enabled;
+                        let msg = if opts.shading_enabled {
+                            "3D: On"
                         } else {
-                            current_idx - 1
-                        }
+                            "3D: Off"
+                        };
+                        set_toast_message.set(Some(msg.to_string()));
+                    });
+                }
+                "s" | "S" => {
+                    // Toggle smooth iteration
+                    set_color_options.update(|opts| {
+                        opts.smooth_enabled = !opts.smooth_enabled;
+                        let msg = if opts.smooth_enabled {
+                            "Smooth: On"
+                        } else {
+                            "Smooth: Off"
+                        };
+                        set_toast_message.set(Some(msg.to_string()));
+                    });
+                }
+                "ArrowLeft" => {
+                    // Previous palette
+                    let opts = palettes();
+                    let current_id = color_options.get_untracked().palette_id;
+                    let current_idx = opts.iter().position(|p| p.id == current_id).unwrap_or(0);
+                    let new_idx = if current_idx == 0 {
+                        opts.len() - 1
                     } else {
-                        // Next (wrap to start)
-                        (current_idx + 1) % opts.len()
+                        current_idx - 1
                     };
-
-                    let (new_id, new_name) = &opts[new_idx];
-                    set_selected_colorizer_id.set(new_id.clone());
-                    web_sys::console::log_1(&format!("[App] Color scheme: {}", new_name).into());
+                    let new_palette = &opts[new_idx];
+                    set_color_options.update(|o| o.palette_id = new_palette.id.to_string());
+                    set_toast_message.set(Some(format!("Palette: {}", new_palette.name)));
+                }
+                "ArrowRight" => {
+                    // Next palette
+                    let opts = palettes();
+                    let current_id = color_options.get_untracked().palette_id;
+                    let current_idx = opts.iter().position(|p| p.id == current_id).unwrap_or(0);
+                    let new_idx = (current_idx + 1) % opts.len();
+                    let new_palette = &opts[new_idx];
+                    set_color_options.update(|o| o.palette_id = new_palette.id.to_string());
+                    set_toast_message.set(Some(format!("Palette: {}", new_palette.name)));
+                }
+                "ArrowUp" => {
+                    // Increase cycle count
+                    set_color_options.update(|opts| {
+                        opts.cycle_up();
+                        set_toast_message.set(Some(format!("Cycles: {}", opts.cycle_count)));
+                    });
+                }
+                "ArrowDown" => {
+                    // Decrease cycle count
+                    set_color_options.update(|opts| {
+                        opts.cycle_down();
+                        set_toast_message.set(Some(format!("Cycles: {}", opts.cycle_count)));
+                    });
                 }
                 _ => {}
             }
@@ -285,11 +330,9 @@ pub fn App() -> impl IntoView {
                 .add_event_listener_with_callback("keydown", handler.as_ref().unchecked_ref());
         }
 
-        // Store handler to keep it alive (prevents drop) without using forget()
         keyboard_handler.set_value(Some(handler));
 
         on_cleanup(move || {
-            // Remove event listener on cleanup
             keyboard_handler.with_value(|handler_opt| {
                 if let Some(handler) = handler_opt {
                     if let Some(window) = web_sys::window() {
@@ -304,11 +347,6 @@ pub fn App() -> impl IntoView {
         });
     });
 
-    // Callback for receiving color scheme options from InteractiveCanvas
-    let on_color_schemes = Callback::new(move |schemes: Vec<(String, String)>| {
-        set_colorizer_options.set(schemes);
-    });
-
     view! {
         <InteractiveCanvas
             viewport=viewport.into()
@@ -319,18 +357,56 @@ pub fn App() -> impl IntoView {
             cancel_trigger=cancel_trigger
             subdivide_trigger=subdivide_trigger
             xray_enabled=xray_enabled
-            on_color_schemes=on_color_schemes
-            selected_color_scheme=selected_colorizer_id
+            color_options=color_options.into()
         />
         <UIPanel
             viewport=viewport.into()
             config=config.into()
             precision_bits=precision_bits.into()
             on_home_click=on_home_click
-            colorizer_options=Signal::derive(move || colorizer_options.get())
-            selected_colorizer_id=Signal::derive(move || selected_colorizer_id.get())
-            on_colorizer_select=Callback::new(move |id: String| {
-                set_selected_colorizer_id.set(id);
+            palette_options=palette_options
+            selected_palette_id=Signal::derive(move || palette_id.get())
+            on_palette_select=Callback::new(move |id: String| {
+                let name = palettes()
+                    .iter()
+                    .find(|p| p.id == id)
+                    .map(|p| p.name)
+                    .unwrap_or("Unknown");
+                set_color_options.update(|o| o.palette_id = id);
+                set_toast_message.set(Some(format!("Palette: {}", name)));
+            })
+            shading_enabled=Signal::derive(move || shading_enabled.get())
+            on_shading_toggle=Callback::new(move |_| {
+                set_color_options.update(|opts| {
+                    opts.shading_enabled = !opts.shading_enabled;
+                    let msg = if opts.shading_enabled { "3D: On" } else { "3D: Off" };
+                    set_toast_message.set(Some(msg.to_string()));
+                });
+            })
+            smooth_enabled=Signal::derive(move || smooth_enabled.get())
+            on_smooth_toggle=Callback::new(move |_| {
+                set_color_options.update(|opts| {
+                    opts.smooth_enabled = !opts.smooth_enabled;
+                    let msg = if opts.smooth_enabled {
+                        "Smooth: On"
+                    } else {
+                        "Smooth: Off"
+                    };
+                    set_toast_message.set(Some(msg.to_string()));
+                });
+            })
+            cycle_count=Signal::derive(move || cycle_count.get())
+            on_cycle_up=Callback::new(move |_| {
+                set_color_options.update(|opts| {
+                    opts.cycle_up();
+                    set_toast_message.set(Some(format!("Cycles: {}", opts.cycle_count)));
+                });
+            })
+            on_cycle_down=Callback::new(move |_| {
+                set_color_options.update(|opts| {
+                    opts.cycle_down();
+                    set_toast_message.set(Some(format!("Cycles: {}", opts.cycle_count)));
+                });
             })
             render_progress=render_progress.into()
             is_visible=ui_visibility.is_visible
@@ -338,6 +414,10 @@ pub fn App() -> impl IntoView {
             on_cancel=on_cancel
             xray_enabled=xray_enabled
             set_xray_enabled=set_xray_enabled
+        />
+        <Toast
+            message=Signal::derive(move || toast_message.get())
+            ui_visible=ui_visibility.is_visible.into()
         />
         <CircularProgress
             progress=render_progress.into()

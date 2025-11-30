@@ -3,7 +3,7 @@ use crate::rendering::canvas_utils::{
     draw_full_frame, draw_pixels_to_canvas, get_2d_context, performance_now,
 };
 use crate::rendering::colorizers::{
-    colorize_with_palette, presets, ColorSchemePreset, ColorizerKind, Palette,
+    colorize_with_palette, presets, ColorOptions, ColorSchemePreset, ColorSettings, ColorizerKind,
 };
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
@@ -38,10 +38,14 @@ pub struct ParallelRenderer {
     render_generation: Rc<Cell<u32>>,
     /// Adam7 accumulator for progressive rendering
     adam7_accumulator: Rc<RefCell<Option<Adam7Accumulator>>>,
-    /// Current palette for colorization
-    palette: Rc<RefCell<Palette>>,
+    /// Current color settings for colorization
+    settings: Rc<RefCell<ColorSettings>>,
     /// Current colorizer algorithm
     colorizer: Rc<RefCell<ColorizerKind>>,
+    /// Current viewport for zoom calculation in recolorize
+    current_viewport: Rc<RefCell<Option<Viewport>>>,
+    /// Whether smooth iteration is enabled
+    smooth_enabled: Rc<Cell<bool>>,
 }
 
 impl ParallelRenderer {
@@ -56,28 +60,39 @@ impl ParallelRenderer {
         let canvas_size: Rc<Cell<(u32, u32)>> = Rc::new(Cell::new((0, 0)));
         let render_generation: Rc<Cell<u32>> = Rc::new(Cell::new(0));
         let adam7_accumulator: Rc<RefCell<Option<Adam7Accumulator>>> = Rc::new(RefCell::new(None));
+        let smooth_enabled: Rc<Cell<bool>> = Rc::new(Cell::new(true));
 
         // Initialize with default color scheme (Classic preset)
         let default_preset = &presets()[0];
-        let palette: Rc<RefCell<Palette>> = Rc::new(RefCell::new(default_preset.palette.clone()));
+        let settings: Rc<RefCell<ColorSettings>> =
+            Rc::new(RefCell::new(default_preset.settings.clone()));
         let colorizer: Rc<RefCell<ColorizerKind>> =
             Rc::new(RefCell::new(default_preset.colorizer.clone()));
 
         let ctx_clone = Rc::clone(&canvas_ctx);
         let xray_clone = Rc::clone(&xray_enabled);
         let results_clone = Rc::clone(&tile_results);
-        let palette_clone = Rc::clone(&palette);
+        let settings_clone = Rc::clone(&settings);
         let colorizer_clone = Rc::clone(&colorizer);
+        let smooth_enabled_clone = Rc::clone(&smooth_enabled);
         let on_tile_complete = move |result: TileResult| {
             if let Some(ctx) = ctx_clone.borrow().as_ref() {
-                // Colorize with current palette, colorizer, and xray state
+                // Colorize with current settings, colorizer, and xray state
                 let xray = xray_clone.get();
-                let pal = palette_clone.borrow();
+                let s = settings_clone.borrow();
                 let col = colorizer_clone.borrow();
+                let use_smooth = smooth_enabled_clone.get();
+
                 let pixels: Vec<u8> = result
                     .data
                     .iter()
-                    .flat_map(|d| colorize_with_palette(d, &pal, &col, xray))
+                    .flat_map(|d| {
+                        if use_smooth {
+                            colorize_with_palette(d, &s, &col, xray)
+                        } else {
+                            crate::rendering::colorizers::colorize_discrete(d, &s, xray)
+                        }
+                    })
                     .collect();
 
                 // Draw to canvas
@@ -96,6 +111,54 @@ impl ParallelRenderer {
 
         let worker_pool = WorkerPool::new(config.id, on_tile_complete, progress)?;
 
+        // Set up render complete callback to apply postprocessing (shading) when all tiles done
+        let settings_complete = Rc::clone(&settings);
+        let colorizer_complete = Rc::clone(&colorizer);
+        let tile_results_complete = Rc::clone(&tile_results);
+        let canvas_ctx_complete = Rc::clone(&canvas_ctx);
+        let current_viewport: Rc<RefCell<Option<Viewport>>> = Rc::new(RefCell::new(None));
+        let current_viewport_complete = Rc::clone(&current_viewport);
+        worker_pool.borrow().set_render_complete_callback(move || {
+            let settings = settings_complete.borrow();
+            // Only apply postprocessing if shading is enabled
+            if !settings.shading.enabled {
+                return;
+            }
+
+            let colorizer = colorizer_complete.borrow();
+            let ctx_ref = canvas_ctx_complete.borrow();
+            let Some(ctx) = ctx_ref.as_ref() else {
+                return;
+            };
+
+            // Compute zoom level from stored viewport
+            let zoom_level = if let Some(ref viewport) = *current_viewport_complete.borrow() {
+                let reference_width = config.default_viewport(viewport.precision_bits()).width;
+                reference_width.to_f64() / viewport.width.to_f64()
+            } else {
+                1.0
+            };
+
+            // Re-colorize with full pipeline (applies shading)
+            for result in tile_results_complete.borrow().iter() {
+                let pixels = colorizer.run_pipeline(
+                    &result.data,
+                    &settings,
+                    result.tile.width as usize,
+                    result.tile.height as usize,
+                    zoom_level,
+                );
+                let pixel_bytes: Vec<u8> = pixels.into_iter().flatten().collect();
+                let _ = draw_pixels_to_canvas(
+                    ctx,
+                    &pixel_bytes,
+                    result.tile.width,
+                    result.tile.x as f64,
+                    result.tile.y as f64,
+                );
+            }
+        });
+
         Ok(Self {
             config,
             worker_pool,
@@ -109,8 +172,10 @@ impl ParallelRenderer {
             canvas_size,
             render_generation,
             adam7_accumulator,
-            palette,
+            settings,
             colorizer,
+            current_viewport,
+            smooth_enabled,
         })
     }
 
@@ -119,25 +184,54 @@ impl ParallelRenderer {
         self.xray_enabled.set(enabled);
     }
 
-    /// Re-colorize all stored tiles with current xray state (no recompute).
+    /// Re-colorize all stored tiles using full pipeline (no recompute).
     pub fn recolorize(&self) {
-        let xray = self.xray_enabled.get();
-        let palette = self.palette.borrow();
+        let settings = self.settings.borrow();
         let colorizer = self.colorizer.borrow();
         let ctx_ref = self.canvas_ctx.borrow();
         let Some(ctx) = ctx_ref.as_ref() else {
             return;
         };
+        let use_smooth = self.smooth_enabled.get();
+
+        // Compute zoom level from stored viewport
+        let zoom_level = if let Some(ref viewport) = *self.current_viewport.borrow() {
+            let reference_width = self
+                .config
+                .default_viewport(viewport.precision_bits())
+                .width;
+            reference_width.to_f64() / viewport.width.to_f64()
+        } else {
+            1.0
+        };
 
         for result in self.tile_results.borrow().iter() {
-            let pixels: Vec<u8> = result
-                .data
-                .iter()
-                .flat_map(|d| colorize_with_palette(d, &palette, &colorizer, xray))
-                .collect();
+            let pixels = if use_smooth {
+                colorizer.run_pipeline(
+                    &result.data,
+                    &settings,
+                    result.tile.width as usize,
+                    result.tile.height as usize,
+                    zoom_level,
+                )
+            } else {
+                // Discrete coloring - no pipeline, just direct color mapping
+                result
+                    .data
+                    .iter()
+                    .map(|d| {
+                        crate::rendering::colorizers::colorize_discrete(
+                            d,
+                            &settings,
+                            self.xray_enabled.get(),
+                        )
+                    })
+                    .collect()
+            };
+            let pixel_bytes: Vec<u8> = pixels.into_iter().flatten().collect();
             let _ = draw_pixels_to_canvas(
                 ctx,
-                &pixels,
+                &pixel_bytes,
                 result.tile.width,
                 result.tile.x as f64,
                 result.tile.y as f64,
@@ -158,10 +252,17 @@ impl ParallelRenderer {
         self.worker_pool.borrow_mut().subdivide_glitched_cells();
     }
 
-    /// Set the color scheme (palette and colorizer).
+    /// Set the color scheme (settings and colorizer).
     pub fn set_color_scheme(&self, preset: &ColorSchemePreset) {
-        *self.palette.borrow_mut() = preset.palette.clone();
+        *self.settings.borrow_mut() = preset.settings.clone();
         *self.colorizer.borrow_mut() = preset.colorizer.clone();
+    }
+
+    /// Set color options from UI.
+    pub fn set_color_options(&self, options: &ColorOptions) {
+        let settings = options.to_color_settings();
+        *self.settings.borrow_mut() = settings;
+        self.smooth_enabled.set(options.smooth_enabled);
     }
 
     /// Get available color scheme presets.
@@ -179,6 +280,9 @@ impl ParallelRenderer {
 
         // Clear stored tile results from previous render
         self.tile_results.borrow_mut().clear();
+
+        // Store viewport for zoom calculation in recolorize
+        *self.current_viewport.borrow_mut() = Some(viewport.clone());
 
         // Store canvas context for tile callbacks
         if let Ok(ctx) = get_2d_context(canvas) {
@@ -250,7 +354,7 @@ impl ParallelRenderer {
         let tile_results = Rc::clone(&self.tile_results);
         let worker_pool = Rc::clone(&self.worker_pool);
         let adam7_accumulator = Rc::clone(&self.adam7_accumulator);
-        let palette = Rc::clone(&self.palette);
+        let settings = Rc::clone(&self.settings);
         let colorizer = Rc::clone(&self.colorizer);
         let progress = self.progress;
         let config = self.config;
@@ -278,7 +382,7 @@ impl ParallelRenderer {
                 let tile_results = Rc::clone(&tile_results);
                 let worker_pool = Rc::clone(&worker_pool);
                 let adam7_accumulator = Rc::clone(&adam7_accumulator);
-                let palette = Rc::clone(&palette);
+                let settings = Rc::clone(&settings);
                 let colorizer = Rc::clone(&colorizer);
                 let viewport = viewport_clone.clone();
                 let tiles = tiles.clone();
@@ -330,7 +434,7 @@ impl ParallelRenderer {
                         let worker_pool = Rc::clone(&worker_pool);
                         let adam7_accumulator = Rc::clone(&adam7_accumulator);
                         let orbit_data = Rc::clone(&orbit_data_init);
-                        let palette = Rc::clone(&palette);
+                        let settings = Rc::clone(&settings);
                         let colorizer = Rc::clone(&colorizer);
 
                         // Use requestAnimationFrame to retry
@@ -362,7 +466,7 @@ impl ParallelRenderer {
                                     render_start_time,
                                     gpu_in_use,
                                     adam7_accumulator,
-                                    palette,
+                                    settings,
                                     colorizer,
                                 );
                             } else {
@@ -402,7 +506,7 @@ impl ParallelRenderer {
                         render_start_time,
                         Rc::clone(&gpu_in_use),
                         Rc::clone(&adam7_accumulator),
-                        Rc::clone(&palette),
+                        Rc::clone(&settings),
                         Rc::clone(&colorizer),
                     );
                 });
@@ -444,7 +548,7 @@ fn schedule_adam7_pass(
     render_start_time: f64,
     gpu_in_use: Rc<Cell<bool>>,
     adam7_accumulator: Rc<RefCell<Option<Adam7Accumulator>>>,
-    palette: Rc<RefCell<Palette>>,
+    settings: Rc<RefCell<ColorSettings>>,
     colorizer: Rc<RefCell<ColorizerKind>>,
 ) {
     log::info!("Scheduling Adam7 pass {}", pass.step());
@@ -467,7 +571,7 @@ fn schedule_adam7_pass(
     let tiles_spawn = tiles.clone();
     let orbit_data_spawn = Rc::clone(&orbit_data);
     let adam7_accumulator_spawn = Rc::clone(&adam7_accumulator);
-    let palette_spawn = Rc::clone(&palette);
+    let settings_spawn = Rc::clone(&settings);
     let colorizer_spawn = Rc::clone(&colorizer);
 
     wasm_bindgen_futures::spawn_local(async move {
@@ -544,12 +648,31 @@ fn schedule_adam7_pass(
 
                     // Colorize and draw
                     let xray = xray_enabled_spawn.get();
-                    let pal = palette_spawn.borrow();
+                    let s = settings_spawn.borrow();
                     let col = colorizer_spawn.borrow();
-                    let pixels: Vec<u8> = display_data
-                        .iter()
-                        .flat_map(|d| colorize_with_palette(d, &pal, &col, xray))
-                        .collect();
+
+                    // On final pass with shading enabled, use full pipeline for postprocessing
+                    let pixels: Vec<u8> = if pass.is_final() && s.shading.enabled {
+                        let reference_width = config
+                            .default_viewport(viewport_spawn.precision_bits())
+                            .width;
+                        let zoom_level = reference_width.to_f64() / viewport_spawn.width.to_f64();
+                        col.run_pipeline(
+                            &display_data,
+                            &s,
+                            width as usize,
+                            height as usize,
+                            zoom_level,
+                        )
+                        .into_iter()
+                        .flatten()
+                        .collect()
+                    } else {
+                        display_data
+                            .iter()
+                            .flat_map(|d| colorize_with_palette(d, &s, &col, xray))
+                            .collect()
+                    };
 
                     if let Ok(ctx) = get_2d_context(&canvas_element_spawn) {
                         match draw_full_frame(&ctx, &pixels, width, height) {
@@ -598,7 +721,7 @@ fn schedule_adam7_pass(
                                     render_start_time,
                                     gpu_in_use_spawn,
                                     adam7_accumulator_spawn,
-                                    palette_spawn,
+                                    settings_spawn,
                                     colorizer_spawn,
                                 );
                             });
