@@ -52,6 +52,8 @@ pub struct ColorSettings {
     pub cycle_count: f64,
     /// Slope shading settings.
     pub shading: ShadingSettings,
+    /// Whether histogram equalization is enabled.
+    pub histogram_enabled: bool,
 }
 
 impl Default for ColorSettings {
@@ -60,6 +62,7 @@ impl Default for ColorSettings {
             palette: Palette::ultra_fractal(),
             cycle_count: 32.0, // Cycle palette for better contrast at deep zooms
             shading: ShadingSettings::default(),
+            histogram_enabled: false,
         }
     }
 }
@@ -71,6 +74,7 @@ impl ColorSettings {
             palette,
             cycle_count: 32.0,
             shading: ShadingSettings::default(),
+            histogram_enabled: false,
         }
     }
 
@@ -80,6 +84,7 @@ impl ColorSettings {
             palette,
             cycle_count: 32.0,
             shading: ShadingSettings::enabled(),
+            histogram_enabled: false,
         }
     }
 }
@@ -94,6 +99,8 @@ pub struct ColorOptions {
     pub shading_enabled: bool,
     /// Whether smooth iteration coloring is enabled.
     pub smooth_enabled: bool,
+    /// Whether histogram equalization is enabled.
+    pub histogram_enabled: bool,
     /// Number of palette cycles (power of 2: 1, 2, 4, ..., 128).
     pub cycle_count: u32,
 }
@@ -104,6 +111,7 @@ impl Default for ColorOptions {
             palette_id: "classic".to_string(),
             shading_enabled: false,
             smooth_enabled: true,
+            histogram_enabled: false,
             cycle_count: 32,
         }
     }
@@ -145,6 +153,7 @@ impl ColorOptions {
             } else {
                 ShadingSettings::disabled()
             },
+            histogram_enabled: self.histogram_enabled,
         }
     }
 }
@@ -222,5 +231,21 @@ mod tests {
         assert!(!ColorOptions::is_valid_cycle_count(3));
         assert!(!ColorOptions::is_valid_cycle_count(0));
         assert!(!ColorOptions::is_valid_cycle_count(2048));
+    }
+
+    #[test]
+    fn color_options_default_histogram_disabled() {
+        let options = ColorOptions::default();
+        assert!(!options.histogram_enabled);
+    }
+
+    #[test]
+    fn color_options_to_color_settings_histogram() {
+        let options = ColorOptions {
+            histogram_enabled: true,
+            ..Default::default()
+        };
+        let settings = options.to_color_settings();
+        assert!(settings.histogram_enabled);
     }
 }
