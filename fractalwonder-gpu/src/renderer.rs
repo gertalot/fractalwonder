@@ -33,8 +33,8 @@ impl GpuRenderResult {
     }
 }
 
-/// GPU renderer for Mandelbrot perturbation.
-pub struct GpuRenderer {
+/// GPU renderer for Mandelbrot perturbation with f32 deltas.
+pub struct GpuPerturbationRenderer {
     context: GpuContext,
     pipeline: GpuPipeline,
     buffers: Option<GpuBuffers>,
@@ -42,7 +42,7 @@ pub struct GpuRenderer {
     current_dimensions: Option<(u32, u32)>,
 }
 
-impl GpuRenderer {
+impl GpuPerturbationRenderer {
     pub fn new(context: GpuContext) -> Self {
         let pipeline = GpuPipeline::new(&context.device);
         Self {

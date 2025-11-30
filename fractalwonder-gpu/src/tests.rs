@@ -1,6 +1,6 @@
 //! Tests for GPU renderer - verifies GPU output matches CPU perturbation.
 
-use crate::{Adam7Pass, DirectFloatExpRenderer, GpuAvailability, GpuContext, GpuRenderer};
+use crate::{Adam7Pass, GpuDirectFloatExpRenderer, GpuAvailability, GpuContext, GpuPerturbationRenderer};
 use fractalwonder_compute::{compute_pixel_perturbation, ReferenceOrbit};
 use fractalwonder_core::{BigFloat, ComputeData, FloatExp, MandelbrotData};
 
@@ -47,7 +47,7 @@ fn gpu_matches_cpu_iteration_counts() {
             return;
         };
 
-        let mut renderer = GpuRenderer::new(ctx);
+        let mut renderer = GpuPerturbationRenderer::new(ctx);
 
         let center_re = -0.5;
         let center_im = 0.0;
@@ -143,7 +143,7 @@ fn gpu_glitch_detection_works() {
             return;
         };
 
-        let mut renderer = GpuRenderer::new(ctx);
+        let mut renderer = GpuPerturbationRenderer::new(ctx);
 
         let max_iter = 500;
         let orbit = create_reference_orbit(-0.5, 0.0, max_iter);
@@ -193,7 +193,7 @@ fn gpu_in_set_points_reach_max_iter() {
             return;
         };
 
-        let mut renderer = GpuRenderer::new(ctx);
+        let mut renderer = GpuPerturbationRenderer::new(ctx);
 
         let max_iter = 100;
         let orbit = create_reference_orbit(0.0, 0.0, max_iter);
@@ -243,7 +243,7 @@ fn gpu_escaping_points_escape_quickly() {
             return;
         };
 
-        let mut renderer = GpuRenderer::new(ctx);
+        let mut renderer = GpuPerturbationRenderer::new(ctx);
 
         let max_iter = 100;
         let orbit = create_reference_orbit(0.0, 0.0, max_iter);
@@ -305,8 +305,8 @@ fn direct_floatexp_init_does_not_panic() {
             println!("Skipping test: no GPU available");
             return;
         };
-        let _renderer = DirectFloatExpRenderer::new(ctx);
-        println!("DirectFloatExpRenderer initialized successfully");
+        let _renderer = GpuDirectFloatExpRenderer::new(ctx);
+        println!("GpuDirectFloatExpRenderer initialized successfully");
     });
 }
 
@@ -319,7 +319,7 @@ fn direct_floatexp_known_points() {
             return;
         };
 
-        let mut renderer = DirectFloatExpRenderer::new(ctx);
+        let mut renderer = GpuDirectFloatExpRenderer::new(ctx);
 
         let width = 3u32;
         let height = 1u32;
@@ -369,7 +369,7 @@ fn direct_floatexp_moderate_zoom() {
             return;
         };
 
-        let mut renderer = DirectFloatExpRenderer::new(ctx);
+        let mut renderer = GpuDirectFloatExpRenderer::new(ctx);
 
         let width = 64u32;
         let height = 64u32;

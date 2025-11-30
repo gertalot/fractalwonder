@@ -9,8 +9,8 @@ pub struct GpuPipeline {
 impl GpuPipeline {
     pub fn new(device: &wgpu::Device) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("delta_iteration"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/delta_iteration.wgsl").into()),
+            label: Some("perturbation"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/perturbation.wgsl").into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

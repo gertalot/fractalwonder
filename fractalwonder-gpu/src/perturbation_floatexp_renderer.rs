@@ -1,76 +1,124 @@
-//! GPU renderer for direct Mandelbrot iteration with FloatExp.
+//! GPU renderer for perturbation with FloatExp deltas.
+//! Uses extended-range arithmetic to avoid precision loss at moderate zoom.
 
-use crate::buffers::{DirectFloatExpBuffers, DirectFloatExpUniforms};
+use crate::buffers::{PerturbationFloatExpBuffers, PerturbationFloatExpUniforms};
 use crate::device::GpuContext;
-use crate::direct_pipeline::DirectFloatExpPipeline;
 use crate::error::GpuError;
+use crate::perturbation_floatexp_pipeline::PerturbationFloatExpPipeline;
 use crate::stretch::SENTINEL_NOT_COMPUTED;
 use crate::Adam7Pass;
 use fractalwonder_core::{ComputeData, MandelbrotData};
 
-/// Result of a direct FloatExp render.
-pub struct DirectFloatExpResult {
+/// Result of a GPU perturbation FloatExp render operation.
+pub struct GpuPerturbationFloatExpResult {
     pub data: Vec<ComputeData>,
     pub compute_time_ms: f64,
 }
 
-/// GPU renderer for direct Mandelbrot iteration (z²+c) with FloatExp arithmetic.
-/// No perturbation - each pixel computed independently.
-pub struct GpuDirectFloatExpRenderer {
+impl GpuPerturbationFloatExpResult {
+    pub fn has_glitches(&self) -> bool {
+        self.data.iter().any(|d| match d {
+            ComputeData::Mandelbrot(m) => m.glitched && m.iterations != SENTINEL_NOT_COMPUTED,
+            _ => false,
+        })
+    }
+
+    pub fn glitched_pixel_count(&self) -> usize {
+        self.data
+            .iter()
+            .filter(|d| match d {
+                ComputeData::Mandelbrot(m) => m.glitched && m.iterations != SENTINEL_NOT_COMPUTED,
+                _ => false,
+            })
+            .count()
+    }
+}
+
+/// GPU renderer for Mandelbrot perturbation with FloatExp deltas.
+/// Provides extended range arithmetic to fix artifacts at moderate zoom (10^4 to 10^15).
+pub struct GpuPerturbationFloatExpRenderer {
     context: GpuContext,
-    pipeline: DirectFloatExpPipeline,
-    buffers: Option<DirectFloatExpBuffers>,
+    pipeline: PerturbationFloatExpPipeline,
+    buffers: Option<PerturbationFloatExpBuffers>,
+    cached_orbit_id: Option<u32>,
     current_dimensions: Option<(u32, u32)>,
 }
 
-impl GpuDirectFloatExpRenderer {
+impl GpuPerturbationFloatExpRenderer {
     pub fn new(context: GpuContext) -> Self {
-        let pipeline = DirectFloatExpPipeline::new(&context.device);
+        let pipeline = PerturbationFloatExpPipeline::new(&context.device);
         Self {
             context,
             pipeline,
             buffers: None,
+            cached_orbit_id: None,
             current_dimensions: None,
         }
     }
 
-    /// Render using direct Mandelbrot iteration with FloatExp.
+    /// Render a single Adam7 pass using FloatExp perturbation.
     ///
     /// # Arguments
-    /// * `c_origin` - Top-left corner as (re_mantissa, re_exp, im_mantissa, im_exp)
-    /// * `c_step` - Per-pixel step as (re_mantissa, re_exp, im_mantissa, im_exp)
+    /// * `orbit` - Reference orbit as (re, im) pairs
+    /// * `orbit_id` - ID for orbit caching
+    /// * `dc_origin` - Top-left δc as (re_mantissa, re_exp, im_mantissa, im_exp)
+    /// * `dc_step` - Per-pixel δc step as (re_mantissa, re_exp, im_mantissa, im_exp)
     #[allow(clippy::too_many_arguments)]
     pub async fn render(
         &mut self,
-        c_origin: (f32, i32, f32, i32),
-        c_step: (f32, i32, f32, i32),
+        orbit: &[(f64, f64)],
+        orbit_id: u32,
+        dc_origin: (f32, i32, f32, i32),
+        dc_step: (f32, i32, f32, i32),
         width: u32,
         height: u32,
         max_iterations: u32,
+        tau_sq: f32,
+        reference_escaped: bool,
         pass: Adam7Pass,
-    ) -> Result<DirectFloatExpResult, GpuError> {
+    ) -> Result<GpuPerturbationFloatExpResult, GpuError> {
         let start = Self::now();
 
         // Recreate buffers if dimensions changed
-        if self.current_dimensions != Some((width, height)) {
-            self.buffers = Some(DirectFloatExpBuffers::new(
+        if self.current_dimensions != Some((width, height))
+            || self.buffers.as_ref().map(|b| b.orbit_capacity).unwrap_or(0) < orbit.len() as u32
+        {
+            self.buffers = Some(PerturbationFloatExpBuffers::new(
                 &self.context.device,
+                orbit.len() as u32,
                 width,
                 height,
             ));
             self.current_dimensions = Some((width, height));
+            self.cached_orbit_id = None;
         }
 
         let buffers = self.buffers.as_ref().unwrap();
 
-        // Write uniforms
-        let uniforms = DirectFloatExpUniforms::new(
+        // Upload orbit if changed
+        if self.cached_orbit_id != Some(orbit_id) {
+            let orbit_data: Vec<[f32; 2]> = orbit
+                .iter()
+                .map(|&(re, im)| [re as f32, im as f32])
+                .collect();
+            self.context.queue.write_buffer(
+                &buffers.reference_orbit,
+                0,
+                bytemuck::cast_slice(&orbit_data),
+            );
+            self.cached_orbit_id = Some(orbit_id);
+        }
+
+        // Write uniforms with FloatExp dc values
+        let uniforms = PerturbationFloatExpUniforms::new(
             width,
             height,
             max_iterations,
-            c_origin,
-            c_step,
+            tau_sq,
+            dc_origin,
+            dc_step,
             pass.step() as u32,
+            reference_escaped,
         );
         self.context
             .queue
@@ -81,7 +129,7 @@ impl GpuDirectFloatExpRenderer {
             .context
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("direct_floatexp_bind_group"),
+                label: Some("perturbation_floatexp_bind_group"),
                 layout: &self.pipeline.bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
@@ -90,10 +138,18 @@ impl GpuDirectFloatExpRenderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: buffers.results.as_entire_binding(),
+                        resource: buffers.reference_orbit.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
+                        resource: buffers.results.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: buffers.glitch_flags.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
                         resource: buffers.z_norm_sq.as_entire_binding(),
                     },
                 ],
@@ -104,12 +160,12 @@ impl GpuDirectFloatExpRenderer {
             self.context
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("direct_floatexp_encoder"),
+                    label: Some("perturbation_floatexp_encoder"),
                 });
 
         {
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("direct_floatexp_pass"),
+                label: Some("perturbation_floatexp_pass"),
                 timestamp_writes: None,
             });
             compute_pass.set_pipeline(&self.pipeline.compute_pipeline);
@@ -119,13 +175,15 @@ impl GpuDirectFloatExpRenderer {
 
         // Copy results to staging buffers
         let pixel_count = (width * height) as usize;
+        let byte_size = (pixel_count * std::mem::size_of::<u32>()) as u64;
 
+        encoder.copy_buffer_to_buffer(&buffers.results, 0, &buffers.staging_results, 0, byte_size);
         encoder.copy_buffer_to_buffer(
-            &buffers.results,
+            &buffers.glitch_flags,
             0,
-            &buffers.staging_results,
+            &buffers.staging_glitches,
             0,
-            (pixel_count * std::mem::size_of::<u32>()) as u64,
+            byte_size,
         );
         encoder.copy_buffer_to_buffer(
             &buffers.z_norm_sq,
@@ -139,7 +197,10 @@ impl GpuDirectFloatExpRenderer {
 
         // Read back results
         let iterations = self
-            .read_buffer_u32(&buffers.staging_results, pixel_count)
+            .read_buffer(&buffers.staging_results, pixel_count)
+            .await?;
+        let glitch_data = self
+            .read_buffer(&buffers.staging_glitches, pixel_count)
             .await?;
         let z_norm_sq_data = self
             .read_buffer_f32(&buffers.staging_z_norm_sq, pixel_count)
@@ -148,13 +209,14 @@ impl GpuDirectFloatExpRenderer {
         // Convert to ComputeData
         let data: Vec<ComputeData> = iterations
             .iter()
+            .zip(glitch_data.iter())
             .zip(z_norm_sq_data.iter())
-            .map(|(&iter, &z_sq)| {
+            .map(|((&iter, &glitch_flag), &z_sq)| {
                 ComputeData::Mandelbrot(MandelbrotData {
                     iterations: iter,
                     max_iterations,
                     escaped: iter < max_iterations && iter != SENTINEL_NOT_COMPUTED,
-                    glitched: false, // Direct iteration never glitches
+                    glitched: glitch_flag != 0,
                     final_z_norm_sq: z_sq,
                 })
             })
@@ -162,13 +224,13 @@ impl GpuDirectFloatExpRenderer {
 
         let end = Self::now();
 
-        Ok(DirectFloatExpResult {
+        Ok(GpuPerturbationFloatExpResult {
             data,
             compute_time_ms: end - start,
         })
     }
 
-    async fn read_buffer_u32(
+    async fn read_buffer(
         &self,
         buffer: &wgpu::Buffer,
         _count: usize,

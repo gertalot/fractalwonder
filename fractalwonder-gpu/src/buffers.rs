@@ -179,7 +179,9 @@ pub struct PerturbationFloatExpUniforms {
 
     pub adam7_step: u32,
     pub reference_escaped: u32,
-    pub _padding: [u32; 2],
+    // WGSL vec2<u32> has 8-byte alignment, creating implicit padding before it.
+    // Total WGSL struct size is 72 bytes, so we need 3 u32s of padding (not 2).
+    pub _padding: [u32; 3],
 }
 
 impl PerturbationFloatExpUniforms {
@@ -210,7 +212,96 @@ impl PerturbationFloatExpUniforms {
             dc_step_im_e: dc_step.3,
             adam7_step,
             reference_escaped: if reference_escaped { 1 } else { 0 },
-            _padding: [0; 2],
+            _padding: [0; 3],
+        }
+    }
+}
+
+/// GPU buffers for perturbation FloatExp rendering.
+pub struct PerturbationFloatExpBuffers {
+    pub uniforms: wgpu::Buffer,
+    pub reference_orbit: wgpu::Buffer,
+    pub results: wgpu::Buffer,
+    pub glitch_flags: wgpu::Buffer,
+    pub staging_results: wgpu::Buffer,
+    pub staging_glitches: wgpu::Buffer,
+    pub z_norm_sq: wgpu::Buffer,
+    pub staging_z_norm_sq: wgpu::Buffer,
+    pub orbit_capacity: u32,
+    pub pixel_count: u32,
+}
+
+impl PerturbationFloatExpBuffers {
+    pub fn new(device: &wgpu::Device, orbit_len: u32, width: u32, height: u32) -> Self {
+        let pixel_count = width * height;
+
+        let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perturbation_floatexp_uniforms"),
+            size: std::mem::size_of::<PerturbationFloatExpUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let reference_orbit = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perturbation_floatexp_reference_orbit"),
+            size: (orbit_len as usize * std::mem::size_of::<[f32; 2]>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let results = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perturbation_floatexp_results"),
+            size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let glitch_flags = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perturbation_floatexp_glitch_flags"),
+            size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let staging_results = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perturbation_floatexp_staging_results"),
+            size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let staging_glitches = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perturbation_floatexp_staging_glitches"),
+            size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perturbation_floatexp_z_norm_sq"),
+            size: (pixel_count as usize * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let staging_z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perturbation_floatexp_staging_z_norm_sq"),
+            size: (pixel_count as usize * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        Self {
+            uniforms,
+            reference_orbit,
+            results,
+            glitch_flags,
+            staging_results,
+            staging_glitches,
+            z_norm_sq,
+            staging_z_norm_sq,
+            orbit_capacity: orbit_len,
+            pixel_count,
         }
     }
 }
