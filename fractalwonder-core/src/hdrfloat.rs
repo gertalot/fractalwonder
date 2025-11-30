@@ -324,6 +324,66 @@ impl HDRComplex {
         re: HDRFloat::ZERO,
         im: HDRFloat::ZERO,
     };
+
+    /// Add two complex numbers.
+    #[inline]
+    pub fn add(&self, other: &Self) -> Self {
+        Self {
+            re: self.re.add(&other.re),
+            im: self.im.add(&other.im),
+        }
+    }
+
+    /// Subtract other from self.
+    #[inline]
+    pub fn sub(&self, other: &Self) -> Self {
+        Self {
+            re: self.re.sub(&other.re),
+            im: self.im.sub(&other.im),
+        }
+    }
+
+    /// Multiply two complex numbers: (a + bi)(c + di) = (ac - bd) + (ad + bc)i
+    #[inline]
+    pub fn mul(&self, other: &Self) -> Self {
+        Self {
+            re: self.re.mul(&other.re).sub(&self.im.mul(&other.im)),
+            im: self.re.mul(&other.im).add(&self.im.mul(&other.re)),
+        }
+    }
+
+    /// Square: (a + bi)² = (a² - b²) + 2abi
+    #[inline]
+    pub fn square(&self) -> Self {
+        let re_sq = self.re.square();
+        let im_sq = self.im.square();
+        let re_im = self.re.mul(&self.im);
+        // Multiply by 2 exactly by incrementing exponent (no rounding error)
+        let two_re_im = HDRFloat {
+            head: re_im.head,
+            tail: re_im.tail,
+            exp: re_im.exp + 1,
+        };
+        Self {
+            re: re_sq.sub(&im_sq),
+            im: two_re_im,
+        }
+    }
+
+    /// Squared magnitude: |z|² = re² + im²
+    /// Returns f64 since result is bounded for escape testing.
+    #[inline]
+    pub fn norm_sq(&self) -> f64 {
+        let re_sq = self.re.square();
+        let im_sq = self.im.square();
+        re_sq.add(&im_sq).to_f64()
+    }
+
+    /// Check if zero.
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        self.re.is_zero() && self.im.is_zero()
+    }
 }
 
 /// Compute 2^n for integer n within f32 exponent range.
@@ -590,5 +650,102 @@ mod tests {
         // Exponent should be approximately -100 * log2(10) ≈ -332
         assert!(h.exp < -300, "Exponent {} should be < -300", h.exp);
         assert!(h.exp > -400, "Exponent {} should be > -400", h.exp);
+    }
+
+    #[test]
+    fn complex_add() {
+        let a = HDRComplex {
+            re: HDRFloat::from_f64(1.0),
+            im: HDRFloat::from_f64(2.0),
+        };
+        let b = HDRComplex {
+            re: HDRFloat::from_f64(3.0),
+            im: HDRFloat::from_f64(4.0),
+        };
+        let c = a.add(&b);
+        assert!((c.re.to_f64() - 4.0).abs() < 1e-14);
+        assert!((c.im.to_f64() - 6.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn complex_mul() {
+        // (1 + 2i) * (3 + 4i) = (1*3 - 2*4) + (1*4 + 2*3)i = -5 + 10i
+        let a = HDRComplex {
+            re: HDRFloat::from_f64(1.0),
+            im: HDRFloat::from_f64(2.0),
+        };
+        let b = HDRComplex {
+            re: HDRFloat::from_f64(3.0),
+            im: HDRFloat::from_f64(4.0),
+        };
+        let c = a.mul(&b);
+        assert!((c.re.to_f64() - (-5.0)).abs() < 1e-14);
+        assert!((c.im.to_f64() - 10.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn complex_norm_sq() {
+        // |3 + 4i|² = 9 + 16 = 25
+        let c = HDRComplex {
+            re: HDRFloat::from_f64(3.0),
+            im: HDRFloat::from_f64(4.0),
+        };
+        assert!((c.norm_sq() - 25.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn complex_square() {
+        // (3 + 4i)² = 9 - 16 + 24i = -7 + 24i
+        let c = HDRComplex {
+            re: HDRFloat::from_f64(3.0),
+            im: HDRFloat::from_f64(4.0),
+        };
+        let sq = c.square();
+        assert!((sq.re.to_f64() - (-7.0)).abs() < 1e-14);
+        assert!((sq.im.to_f64() - 24.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn complex_square_zero() {
+        let c = HDRComplex::ZERO;
+        let sq = c.square();
+        assert!(sq.is_zero());
+    }
+
+    #[test]
+    fn complex_mul_zero() {
+        let a = HDRComplex {
+            re: HDRFloat::from_f64(3.0),
+            im: HDRFloat::from_f64(4.0),
+        };
+        let z = HDRComplex::ZERO;
+        assert!(a.mul(&z).is_zero());
+        assert!(z.mul(&a).is_zero());
+    }
+
+    #[test]
+    fn complex_sub() {
+        let a = HDRComplex {
+            re: HDRFloat::from_f64(5.0),
+            im: HDRFloat::from_f64(7.0),
+        };
+        let b = HDRComplex {
+            re: HDRFloat::from_f64(3.0),
+            im: HDRFloat::from_f64(2.0),
+        };
+        let c = a.sub(&b);
+        assert!((c.re.to_f64() - 2.0).abs() < 1e-14);
+        assert!((c.im.to_f64() - 5.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn complex_is_zero() {
+        assert!(HDRComplex::ZERO.is_zero());
+
+        let non_zero = HDRComplex {
+            re: HDRFloat::from_f64(1.0),
+            im: HDRFloat::ZERO,
+        };
+        assert!(!non_zero.is_zero());
     }
 }
