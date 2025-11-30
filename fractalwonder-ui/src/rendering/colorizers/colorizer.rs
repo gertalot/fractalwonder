@@ -1,7 +1,7 @@
 //! Colorizer trait for mapping compute data to colors.
 
 use super::smooth_iteration::SmoothIterationContext;
-use super::{ColorSettings, SmoothIterationColorizer};
+use super::{ColorOptions, Palette, SmoothIterationColorizer};
 use fractalwonder_core::ComputeData;
 
 /// A colorizer algorithm with optional pre/post-processing stages.
@@ -16,16 +16,18 @@ pub trait Colorizer {
 
     /// Analyze all pixels, build context.
     /// Default: no-op, returns `Default::default()`.
-    fn preprocess(&self, _data: &[ComputeData], _settings: &ColorSettings) -> Self::Context {
+    fn preprocess(&self, _data: &[ComputeData], _options: &ColorOptions) -> Self::Context {
         Self::Context::default()
     }
 
     /// Map a single pixel to a color.
+    /// Palette is passed separately so callers can cache it.
     fn colorize(
         &self,
         data: &ComputeData,
         context: &Self::Context,
-        settings: &ColorSettings,
+        options: &ColorOptions,
+        palette: &Palette,
         index: usize,
     ) -> [u8; 4];
 
@@ -37,7 +39,7 @@ pub trait Colorizer {
         _pixels: &mut [[u8; 4]],
         _data: &[ComputeData],
         _context: &Self::Context,
-        _settings: &ColorSettings,
+        _options: &ColorOptions,
         _width: usize,
         _height: usize,
         _zoom_level: f64,
@@ -63,31 +65,41 @@ impl ColorizerKind {
     pub fn run_pipeline(
         &self,
         data: &[ComputeData],
-        settings: &ColorSettings,
+        options: &ColorOptions,
+        palette: &Palette,
         width: usize,
         height: usize,
         zoom_level: f64,
     ) -> Vec<[u8; 4]> {
         match self {
             Self::SmoothIteration(c) => {
-                let ctx = c.preprocess(data, settings);
+                let ctx = c.preprocess(data, options);
                 let mut pixels: Vec<[u8; 4]> = data
                     .iter()
                     .enumerate()
-                    .map(|(i, d)| c.colorize(d, &ctx, settings, i))
+                    .map(|(i, d)| c.colorize(d, &ctx, options, palette, i))
                     .collect();
-                c.postprocess(&mut pixels, data, &ctx, settings, width, height, zoom_level);
+                c.postprocess(&mut pixels, data, &ctx, options, width, height, zoom_level);
                 pixels
             }
         }
     }
 
-    /// Quick colorization for progressive rendering (no pre/post processing).
-    pub fn colorize_quick(&self, data: &ComputeData, settings: &ColorSettings) -> [u8; 4] {
+    /// Colorize a single pixel. For progressive rendering, pass default context.
+    pub fn colorize(
+        &self,
+        data: &ComputeData,
+        options: &ColorOptions,
+        palette: &Palette,
+    ) -> [u8; 4] {
         match self {
-            Self::SmoothIteration(c) => {
-                c.colorize(data, &SmoothIterationContext::default(), settings, 0)
-            }
+            Self::SmoothIteration(c) => c.colorize(
+                data,
+                &SmoothIterationContext::default(),
+                options,
+                palette,
+                0,
+            ),
         }
     }
 }
@@ -95,13 +107,14 @@ impl ColorizerKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rendering::colorizers::{ColorSettings, Palette, SmoothIterationColorizer};
+    use crate::rendering::colorizers::SmoothIterationColorizer;
     use fractalwonder_core::MandelbrotData;
 
     #[test]
     fn colorizer_kind_runs_pipeline() {
         let colorizer = ColorizerKind::SmoothIteration(SmoothIterationColorizer);
-        let settings = ColorSettings::with_palette(Palette::grayscale());
+        let options = ColorOptions::default();
+        let palette = options.palette();
 
         let data = vec![
             ComputeData::Mandelbrot(MandelbrotData {
@@ -120,7 +133,7 @@ mod tests {
             }),
         ];
 
-        let pixels = colorizer.run_pipeline(&data, &settings, 2, 1, 1.0);
+        let pixels = colorizer.run_pipeline(&data, &options, &palette, 2, 1, 1.0);
 
         assert_eq!(pixels.len(), 2);
         // First pixel: escaped, should have some color (with cycling, not necessarily mid-gray)

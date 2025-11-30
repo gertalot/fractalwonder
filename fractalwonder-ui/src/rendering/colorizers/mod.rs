@@ -9,7 +9,7 @@ use fractalwonder_core::ComputeData;
 
 pub use colorizer::{Colorizer, ColorizerKind};
 pub use palette::Palette;
-pub use settings::{ColorOptions, ColorSettings, ShadingSettings};
+pub use settings::{ColorOptions, ShadingSettings};
 pub use shading::apply_slope_shading;
 pub use smooth_iteration::{SmoothIterationColorizer, SmoothIterationContext};
 
@@ -82,11 +82,12 @@ pub fn palettes() -> Vec<PaletteEntry> {
     ]
 }
 
-/// Colorize a single pixel using the provided settings and colorizer.
-/// For progressive rendering (quick path, no pre/post processing).
+/// Colorize a single pixel.
+/// Palette should be pre-cached by calling `options.palette()` once before iterating.
 pub fn colorize_with_palette(
     data: &ComputeData,
-    settings: &ColorSettings,
+    options: &ColorOptions,
+    palette: &Palette,
     colorizer: &ColorizerKind,
     xray_enabled: bool,
 ) -> [u8; 4] {
@@ -104,44 +105,7 @@ pub fn colorize_with_palette(
         }
     }
 
-    colorizer.colorize_quick(data, settings)
-}
-
-/// Colorize using discrete iteration count (no smooth interpolation).
-pub fn colorize_discrete(
-    data: &ComputeData,
-    settings: &ColorSettings,
-    xray_enabled: bool,
-) -> [u8; 4] {
-    // Handle xray mode for glitched pixels
-    if xray_enabled {
-        if let ComputeData::Mandelbrot(m) = data {
-            if m.glitched {
-                if m.max_iterations == 0 {
-                    return [0, 255, 255, 255];
-                }
-                let normalized = m.iterations as f64 / m.max_iterations as f64;
-                let brightness = (64.0 + normalized * 191.0) as u8;
-                return [0, brightness, brightness, 255];
-            }
-        }
-    }
-
-    match data {
-        ComputeData::Mandelbrot(m) => {
-            if !m.escaped {
-                return [0, 0, 0, 255];
-            }
-            if m.max_iterations == 0 {
-                return [0, 0, 0, 255];
-            }
-            let normalized = m.iterations as f64 / m.max_iterations as f64;
-            let t = (normalized * settings.cycle_count).fract();
-            let [r, g, b] = settings.palette.sample(t);
-            [r, g, b, 255]
-        }
-        ComputeData::TestImage(_) => [128, 128, 128, 255],
-    }
+    colorizer.colorize(data, options, palette)
 }
 
 #[cfg(test)]

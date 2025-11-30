@@ -43,54 +43,7 @@ impl ShadingSettings {
     }
 }
 
-/// All settings that affect colorization (not compute).
-#[derive(Clone, Debug)]
-pub struct ColorSettings {
-    /// Color palette for mapping iteration values to colors.
-    pub palette: Palette,
-    /// Number of times to cycle through the palette.
-    pub cycle_count: f64,
-    /// Slope shading settings.
-    pub shading: ShadingSettings,
-    /// Whether histogram equalization is enabled.
-    pub histogram_enabled: bool,
-}
-
-impl Default for ColorSettings {
-    fn default() -> Self {
-        Self {
-            palette: Palette::ultra_fractal(),
-            cycle_count: 32.0, // Cycle palette for better contrast at deep zooms
-            shading: ShadingSettings::default(),
-            histogram_enabled: false,
-        }
-    }
-}
-
-impl ColorSettings {
-    /// Create settings with the given palette and default shading.
-    pub fn with_palette(palette: Palette) -> Self {
-        Self {
-            palette,
-            cycle_count: 32.0,
-            shading: ShadingSettings::default(),
-            histogram_enabled: false,
-        }
-    }
-
-    /// Create settings with shading enabled.
-    pub fn with_shading(palette: Palette) -> Self {
-        Self {
-            palette,
-            cycle_count: 32.0,
-            shading: ShadingSettings::enabled(),
-            histogram_enabled: false,
-        }
-    }
-}
-
-/// User-configurable color options for the UI.
-/// Converted to ColorSettings for rendering.
+/// User-configurable color options. Used directly by the colorizer.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ColorOptions {
     /// Palette ID (e.g., "classic", "fire").
@@ -137,23 +90,21 @@ impl ColorOptions {
         }
     }
 
-    /// Convert to ColorSettings for rendering.
-    pub fn to_color_settings(&self) -> ColorSettings {
-        let palette = palettes()
+    /// Get the palette for this options.
+    pub fn palette(&self) -> Palette {
+        palettes()
             .into_iter()
             .find(|p| p.id == self.palette_id)
             .map(|p| p.palette)
-            .unwrap_or_else(Palette::ultra_fractal);
+            .unwrap_or_else(Palette::ultra_fractal)
+    }
 
-        ColorSettings {
-            palette,
-            cycle_count: self.cycle_count as f64,
-            shading: if self.shading_enabled {
-                ShadingSettings::enabled()
-            } else {
-                ShadingSettings::disabled()
-            },
-            histogram_enabled: self.histogram_enabled,
+    /// Get shading settings.
+    pub fn shading(&self) -> ShadingSettings {
+        if self.shading_enabled {
+            ShadingSettings::enabled()
+        } else {
+            ShadingSettings::disabled()
         }
     }
 }
@@ -178,47 +129,33 @@ mod tests {
     }
 
     #[test]
-    fn color_settings_default_has_palette() {
-        let settings = ColorSettings::default();
-        assert_eq!(settings.cycle_count, 32.0);
-        assert!(!settings.shading.enabled);
-    }
-
-    #[test]
-    fn with_shading_enables_shading() {
-        let settings = ColorSettings::with_shading(Palette::grayscale());
-        assert!(settings.shading.enabled);
-    }
-
-    #[test]
     fn color_options_default_values() {
         let options = ColorOptions::default();
         assert_eq!(options.palette_id, "classic");
         assert!(!options.shading_enabled);
         assert!(options.smooth_enabled);
+        assert!(!options.histogram_enabled);
         assert_eq!(options.cycle_count, 32);
     }
 
     #[test]
-    fn color_options_to_color_settings_uses_palette() {
+    fn color_options_palette_lookup() {
         let options = ColorOptions {
             palette_id: "fire".to_string(),
             ..Default::default()
         };
-        let settings = options.to_color_settings();
         // Fire palette starts dark, sample at 0 should be near black
-        let sample = settings.palette.sample(0.0);
+        let sample = options.palette().sample(0.0);
         assert_eq!(sample, [0, 0, 0]);
     }
 
     #[test]
-    fn color_options_to_color_settings_shading() {
+    fn color_options_shading() {
         let options = ColorOptions {
             shading_enabled: true,
             ..Default::default()
         };
-        let settings = options.to_color_settings();
-        assert!(settings.shading.enabled);
+        assert!(options.shading().enabled);
     }
 
     #[test]
@@ -231,21 +168,5 @@ mod tests {
         assert!(!ColorOptions::is_valid_cycle_count(3));
         assert!(!ColorOptions::is_valid_cycle_count(0));
         assert!(!ColorOptions::is_valid_cycle_count(2048));
-    }
-
-    #[test]
-    fn color_options_default_histogram_disabled() {
-        let options = ColorOptions::default();
-        assert!(!options.histogram_enabled);
-    }
-
-    #[test]
-    fn color_options_to_color_settings_histogram() {
-        let options = ColorOptions {
-            histogram_enabled: true,
-            ..Default::default()
-        };
-        let settings = options.to_color_settings();
-        assert!(settings.histogram_enabled);
     }
 }
