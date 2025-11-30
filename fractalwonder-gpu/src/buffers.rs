@@ -45,6 +45,57 @@ impl Uniforms {
     }
 }
 
+/// Uniform data for direct FloatExp compute shader.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct DirectFloatExpUniforms {
+    pub width: u32,
+    pub height: u32,
+    pub max_iterations: u32,
+    pub escape_radius_sq: f32,
+
+    pub c_origin_re_m: f32,
+    pub c_origin_re_e: i32,
+    pub c_origin_im_m: f32,
+    pub c_origin_im_e: i32,
+
+    pub c_step_re_m: f32,
+    pub c_step_re_e: i32,
+    pub c_step_im_m: f32,
+    pub c_step_im_e: i32,
+
+    pub adam7_step: u32,
+    pub _padding: u32,
+}
+
+impl DirectFloatExpUniforms {
+    pub fn new(
+        width: u32,
+        height: u32,
+        max_iterations: u32,
+        c_origin: (f32, i32, f32, i32),  // (re_m, re_e, im_m, im_e)
+        c_step: (f32, i32, f32, i32),    // (re_m, re_e, im_m, im_e)
+        adam7_step: u32,
+    ) -> Self {
+        Self {
+            width,
+            height,
+            max_iterations,
+            escape_radius_sq: 65536.0, // 256² for smooth coloring
+            c_origin_re_m: c_origin.0,
+            c_origin_re_e: c_origin.1,
+            c_origin_im_m: c_origin.2,
+            c_origin_im_e: c_origin.3,
+            c_step_re_m: c_step.0,
+            c_step_re_e: c_step.1,
+            c_step_im_m: c_step.2,
+            c_step_im_e: c_step.3,
+            adam7_step,
+            _padding: 0,
+        }
+    }
+}
+
 /// Manages GPU buffers for rendering.
 pub struct GpuBuffers {
     pub uniforms: wgpu::Buffer,
