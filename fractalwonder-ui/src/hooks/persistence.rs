@@ -10,6 +10,7 @@ use flate2::{read::DeflateDecoder, write::DeflateEncoder, Compression};
 use fractalwonder_core::Viewport;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
+use crate::rendering::colorizers::ColorOptions;
 
 const STORAGE_KEY: &str = "fractalwonder_state";
 const URL_HASH_PREFIX: &str = "v1:";
@@ -21,19 +22,28 @@ pub struct PersistedState {
     pub viewport: Viewport,
     /// Selected fractal configuration ID
     pub config_id: String,
+    /// Color options (palette, shading, smooth, cycles)
+    #[serde(default)]
+    pub color_options: ColorOptions,
     /// Schema version for future migrations
     version: u32,
 }
 
 impl PersistedState {
-    const CURRENT_VERSION: u32 = 1;
+    const CURRENT_VERSION: u32 = 3;
 
-    pub fn new(viewport: Viewport, config_id: String) -> Self {
+    pub fn new(viewport: Viewport, config_id: String, color_options: ColorOptions) -> Self {
         Self {
             viewport,
             config_id,
+            color_options,
             version: Self::CURRENT_VERSION,
         }
+    }
+
+    /// Create state with default color options.
+    pub fn with_defaults(viewport: Viewport, config_id: String) -> Self {
+        Self::new(viewport, config_id, ColorOptions::default())
     }
 }
 
@@ -57,11 +67,12 @@ fn load_from_local_storage() -> Option<PersistedState> {
 
     match serde_json::from_str::<PersistedState>(&json) {
         Ok(state) => {
-            // Only accept current version (future: add migration logic)
-            if state.version == PersistedState::CURRENT_VERSION {
+            // Accept v1, v2, v3 (migration handled by serde default)
+            if state.version >= 1 && state.version <= PersistedState::CURRENT_VERSION {
                 log::info!(
-                    "Loaded persisted state from localStorage: config={}",
-                    state.config_id
+                    "Loaded persisted state from localStorage: config={}, palette={}",
+                    state.config_id,
+                    state.color_options.palette_id
                 );
                 Some(state)
             } else {
@@ -168,8 +179,8 @@ fn decode_state(encoded: &str) -> Option<PersistedState> {
     // Deserialize
     let state: PersistedState = serde_json::from_str(&json).ok()?;
 
-    // Validate version
-    if state.version == PersistedState::CURRENT_VERSION {
+    // Accept v1, v2, v3 (migration handled by serde default)
+    if state.version >= 1 && state.version <= PersistedState::CURRENT_VERSION {
         Some(state)
     } else {
         log::warn!(
@@ -283,6 +294,46 @@ where
 }
 
 #[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persisted_state_with_color_options_roundtrips() {
+        use crate::rendering::colorizers::ColorOptions;
+
+        let viewport = fractalwonder_core::Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64);
+        let mut options = ColorOptions::default();
+        options.palette_id = "fire".to_string();
+        options.shading_enabled = true;
+        options.cycle_count = 64;
+
+        let state = PersistedState::new(viewport.clone(), "mandelbrot".to_string(), options.clone());
+
+        let encoded = encode_state(&state).expect("encoding should succeed");
+        let decoded = decode_state(&encoded).expect("decoding should succeed");
+
+        assert_eq!(decoded.color_options.palette_id, "fire");
+        assert!(decoded.color_options.shading_enabled);
+        assert_eq!(decoded.color_options.cycle_count, 64);
+    }
+
+    #[test]
+    fn color_options_persist_through_encode_decode() {
+        use crate::rendering::colorizers::ColorOptions;
+
+        let viewport = fractalwonder_core::Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64);
+        let mut options = ColorOptions::default();
+        options.palette_id = "fire".to_string();
+        let state = PersistedState::new(viewport, "mandelbrot".to_string(), options);
+
+        let encoded = encode_state(&state).expect("encoding should succeed");
+        let decoded = decode_state(&encoded).expect("decoding should succeed");
+
+        assert_eq!(decoded.color_options.palette_id, "fire");
+    }
+}
+
+#[cfg(test)]
 mod browser_tests {
     use super::*;
     use std::cell::Cell;
@@ -313,7 +364,7 @@ mod browser_tests {
 
         // Create a valid encoded state to use as hash
         let test_viewport = fractalwonder_core::Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64);
-        let test_state = PersistedState::new(test_viewport, "mandelbrot".to_string());
+        let test_state = PersistedState::with_defaults(test_viewport, "mandelbrot".to_string());
 
         // Encode and set the hash, then dispatch event
         if let Some(encoded) = encode_state(&test_state) {

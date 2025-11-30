@@ -9,6 +9,7 @@ use crate::hooks::{
     load_state, save_state, use_hashchange_listener, use_ui_visibility, PersistedState,
 };
 use crate::rendering::RenderProgress;
+use crate::rendering::colorizers::ColorOptions;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -20,6 +21,10 @@ pub fn App() -> impl IntoView {
         .as_ref()
         .map(|s| s.config_id.clone())
         .unwrap_or_else(|| "mandelbrot".to_string());
+    let initial_color_scheme_id = persisted
+        .as_ref()
+        .map(|s| s.color_options.palette_id.clone())
+        .unwrap_or_else(|| "classic".to_string());
     let persisted_viewport = persisted.map(|s| s.viewport);
 
     // Store persisted viewport for use in effect (consumed on first use)
@@ -42,7 +47,7 @@ pub fn App() -> impl IntoView {
     // Colorizer options - populated by InteractiveCanvas on mount
     let (colorizer_options, set_colorizer_options) =
         create_signal(vec![("Classic".to_string(), "Classic".to_string())]);
-    let (selected_colorizer_id, set_selected_colorizer_id) = create_signal("Classic".to_string());
+    let (selected_colorizer_id, set_selected_colorizer_id) = create_signal(initial_color_scheme_id);
 
     // Viewport signal - now writable for interaction updates
     let (viewport, set_viewport) = create_signal(Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64));
@@ -124,17 +129,24 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    // Persist state to localStorage when viewport or config changes
+    // Persist state to localStorage when viewport, config, or color scheme changes
     create_effect(move |_| {
         let vp = viewport.get();
         let config_id = selected_config_id.get();
+        let color_scheme_id = selected_colorizer_id.get();
 
         // Skip saving if viewport hasn't been initialized yet
         if vp.width.to_f64() == 4.0 && vp.height.to_f64() == 3.0 {
             return;
         }
 
-        let state = PersistedState::new(vp, config_id);
+        // Create color options with the selected palette
+        let color_options = ColorOptions {
+            palette_id: color_scheme_id,
+            ..ColorOptions::default()
+        };
+
+        let state = PersistedState::new(vp, config_id, color_options);
         save_state(&state);
     });
 
@@ -146,7 +158,9 @@ pub fn App() -> impl IntoView {
             // Fit the persisted viewport to the current canvas size
             let fitted = fit_viewport_to_canvas(&state.viewport, size);
             set_viewport.set(fitted);
-            log::info!("Restored viewport from URL hash change");
+            // Restore color scheme from color options
+            set_selected_colorizer_id.set(state.color_options.palette_id.clone());
+            log::info!("Restored viewport and color scheme from URL hash change");
         }
     });
 
