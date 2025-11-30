@@ -3,6 +3,7 @@
 mod buffers;
 mod device;
 mod direct_pipeline;
+mod direct_renderer;
 mod error;
 mod pass;
 mod pipeline;
@@ -11,9 +12,10 @@ mod stretch;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 
-pub use buffers::{GpuBuffers, Uniforms};
+pub use buffers::{DirectFloatExpBuffers, DirectFloatExpUniforms, GpuBuffers, Uniforms};
 pub use device::{GpuAvailability, GpuContext};
 pub use direct_pipeline::DirectFloatExpPipeline;
+pub use direct_renderer::{DirectFloatExpRenderer, DirectFloatExpResult};
 pub use error::GpuError;
 pub use pass::Adam7Pass;
 pub use pipeline::GpuPipeline;
