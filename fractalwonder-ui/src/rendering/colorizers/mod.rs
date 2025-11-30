@@ -11,7 +11,7 @@ pub use colorizer::{Colorizer, ColorizerKind};
 pub use palette::Palette;
 pub use settings::{ColorOptions, ColorSettings, ShadingSettings};
 pub use shading::apply_slope_shading;
-pub use smooth_iteration::SmoothIterationColorizer;
+pub use smooth_iteration::{SmoothIterationColorizer, SmoothIterationContext};
 
 /// A palette entry with ID, display name, and palette instance.
 #[derive(Clone, Debug)]
