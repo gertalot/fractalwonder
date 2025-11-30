@@ -123,8 +123,8 @@ impl ParallelRenderer {
         let current_viewport_complete = Rc::clone(&current_viewport);
         worker_pool.borrow().set_render_complete_callback(move || {
             let settings = settings_complete.borrow();
-            // Only apply postprocessing if shading is enabled
-            if !settings.shading.enabled {
+            // Only apply postprocessing if shading or histogram is enabled
+            if !settings.shading.enabled && !settings.histogram_enabled {
                 return;
             }
 
@@ -646,8 +646,8 @@ fn schedule_adam7_pass(
                     let s = settings_spawn.borrow();
                     let col = colorizer_spawn.borrow();
 
-                    // On final pass with shading enabled, use full pipeline for postprocessing
-                    let pixels: Vec<u8> = if pass.is_final() && s.shading.enabled {
+                    // On final pass with shading or histogram enabled, use full pipeline
+                    let pixels: Vec<u8> = if pass.is_final() && (s.shading.enabled || s.histogram_enabled) {
                         let reference_width = config
                             .default_viewport(viewport_spawn.precision_bits())
                             .width;
