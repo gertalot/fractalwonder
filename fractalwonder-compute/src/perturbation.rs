@@ -3,7 +3,7 @@
 //! Computes reference orbits at high precision, then uses fast f64
 //! delta iterations for individual pixels.
 
-use fractalwonder_core::{BigFloat, FloatExp, MandelbrotData};
+use fractalwonder_core::{BigFloat, HDRComplex, HDRFloat, MandelbrotData};
 
 /// A pre-computed reference orbit for perturbation rendering.
 #[derive(Clone)]
@@ -180,17 +180,15 @@ pub fn compute_pixel_perturbation_bigfloat(
     }
 }
 
-/// Compute pixel using perturbation with FloatExp deltas.
+/// Compute pixel using perturbation with HDRFloat deltas.
 /// 10-20x faster than BigFloat, same correctness for deep zoom.
-pub fn compute_pixel_perturbation_floatexp(
+pub fn compute_pixel_perturbation_hdr(
     orbit: &ReferenceOrbit,
-    delta_c: (FloatExp, FloatExp),
+    delta_c: HDRComplex,
     max_iterations: u32,
     tau_sq: f64,
 ) -> MandelbrotData {
-    let (dc_re, dc_im) = delta_c;
-    let mut dz_re = FloatExp::zero();
-    let mut dz_im = FloatExp::zero();
+    let mut dz = HDRComplex::ZERO;
     let mut m: usize = 0;
     let mut glitched = false;
 
@@ -217,13 +215,13 @@ pub fn compute_pixel_perturbation_floatexp(
         let (z_m_re, z_m_im) = orbit.orbit[m % orbit_len];
 
         // z = Z_m + δz
-        let z_re = FloatExp::from_f64(z_m_re).add(&dz_re);
-        let z_im = FloatExp::from_f64(z_m_im).add(&dz_im);
+        let z_re = HDRFloat::from_f64(z_m_re).add(&dz.re);
+        let z_im = HDRFloat::from_f64(z_m_im).add(&dz.im);
 
         // Magnitudes (f64 - bounded values)
-        let z_mag_sq = FloatExp::norm_sq(&z_re, &z_im);
+        let z_mag_sq = z_re.square().add(&z_im.square()).to_f64();
         let z_m_mag_sq = z_m_re * z_m_re + z_m_im * z_m_im;
-        let dz_mag_sq = FloatExp::norm_sq(&dz_re, &dz_im);
+        let dz_mag_sq = dz.norm_sq();
 
         // 1. Escape check
         if z_mag_sq > 65536.0 {
@@ -243,30 +241,32 @@ pub fn compute_pixel_perturbation_floatexp(
 
         // 3. Rebase check
         if z_mag_sq < dz_mag_sq {
-            dz_re = z_re;
-            dz_im = z_im;
+            dz = HDRComplex { re: z_re, im: z_im };
             m = 0;
             continue;
         }
 
         // 4. Delta iteration: δz' = 2·Z·δz + δz² + δc
         // 2·Z·δz = 2·(Z_re·δz_re - Z_im·δz_im, Z_re·δz_im + Z_im·δz_re)
-        let two_z_dz_re = dz_re
+        let two_z_dz_re = dz
+            .re
             .mul_f64(z_m_re)
-            .sub(&dz_im.mul_f64(z_m_im))
+            .sub(&dz.im.mul_f64(z_m_im))
             .mul_f64(2.0);
-        let two_z_dz_im = dz_re
+        let two_z_dz_im = dz
+            .re
             .mul_f64(z_m_im)
-            .add(&dz_im.mul_f64(z_m_re))
+            .add(&dz.im.mul_f64(z_m_re))
             .mul_f64(2.0);
 
         // δz² = (δz_re² - δz_im², 2·δz_re·δz_im)
-        let dz_sq_re = dz_re.mul(&dz_re).sub(&dz_im.mul(&dz_im));
-        let dz_sq_im = dz_re.mul(&dz_im).mul_f64(2.0);
+        let dz_sq = dz.square();
 
         // δz' = 2·Z·δz + δz² + δc
-        dz_re = two_z_dz_re.add(&dz_sq_re).add(&dc_re);
-        dz_im = two_z_dz_im.add(&dz_sq_im).add(&dc_im);
+        dz = HDRComplex {
+            re: two_z_dz_re.add(&dz_sq.re).add(&delta_c.re),
+            im: two_z_dz_im.add(&dz_sq.im).add(&delta_c.im),
+        };
 
         m += 1;
     }
@@ -280,17 +280,15 @@ pub fn compute_pixel_perturbation_floatexp(
     }
 }
 
-/// Compute pixel using perturbation with FloatExp deltas and BLA acceleration.
-pub fn compute_pixel_perturbation_floatexp_bla(
+/// Compute pixel using perturbation with HDRFloat deltas and BLA acceleration.
+pub fn compute_pixel_perturbation_hdr_bla(
     orbit: &ReferenceOrbit,
     bla_table: &BlaTable,
-    delta_c: (FloatExp, FloatExp),
+    delta_c: HDRComplex,
     max_iterations: u32,
     tau_sq: f64,
 ) -> MandelbrotData {
-    let (dc_re, dc_im) = delta_c;
-    let mut dz_re = FloatExp::zero();
-    let mut dz_im = FloatExp::zero();
+    let mut dz = HDRComplex::ZERO;
     let mut m: usize = 0;
     let mut glitched = false;
 
@@ -319,12 +317,12 @@ pub fn compute_pixel_perturbation_floatexp_bla(
         let (z_m_re, z_m_im) = orbit.orbit[m % orbit_len];
 
         // z = Z_m + δz
-        let z_re = FloatExp::from_f64(z_m_re).add(&dz_re);
-        let z_im = FloatExp::from_f64(z_m_im).add(&dz_im);
+        let z_re = HDRFloat::from_f64(z_m_re).add(&dz.re);
+        let z_im = HDRFloat::from_f64(z_m_im).add(&dz.im);
 
-        let z_mag_sq = FloatExp::norm_sq(&z_re, &z_im);
+        let z_mag_sq = z_re.square().add(&z_im.square()).to_f64();
         let z_m_mag_sq = z_m_re * z_m_re + z_m_im * z_m_im;
-        let dz_mag_sq = FloatExp::norm_sq(&dz_re, &dz_im);
+        let dz_mag_sq = dz.norm_sq();
 
         // 1. Escape check
         if z_mag_sq > 65536.0 {
@@ -344,8 +342,7 @@ pub fn compute_pixel_perturbation_floatexp_bla(
 
         // 3. Rebase check
         if z_mag_sq < dz_mag_sq {
-            dz_re = z_re;
-            dz_im = z_im;
+            dz = HDRComplex { re: z_re, im: z_im };
             m = 0;
             n += 1;
             continue;
@@ -354,37 +351,44 @@ pub fn compute_pixel_perturbation_floatexp_bla(
         // 4. Try BLA acceleration
         if let Some(bla) = bla_table.find_valid(m, dz_mag_sq) {
             // Apply BLA: δz_new = A·δz + B·δc
-            let new_dz_re = dz_re
+            let new_dz_re = dz
+                .re
                 .mul_f64(bla.a_re)
-                .sub(&dz_im.mul_f64(bla.a_im))
-                .add(&dc_re.mul_f64(bla.b_re))
-                .sub(&dc_im.mul_f64(bla.b_im));
-            let new_dz_im = dz_re
+                .sub(&dz.im.mul_f64(bla.a_im))
+                .add(&delta_c.re.mul_f64(bla.b_re))
+                .sub(&delta_c.im.mul_f64(bla.b_im));
+            let new_dz_im = dz
+                .re
                 .mul_f64(bla.a_im)
-                .add(&dz_im.mul_f64(bla.a_re))
-                .add(&dc_re.mul_f64(bla.b_im))
-                .add(&dc_im.mul_f64(bla.b_re));
+                .add(&dz.im.mul_f64(bla.a_re))
+                .add(&delta_c.re.mul_f64(bla.b_im))
+                .add(&delta_c.im.mul_f64(bla.b_re));
 
-            dz_re = new_dz_re;
-            dz_im = new_dz_im;
+            dz = HDRComplex {
+                re: new_dz_re,
+                im: new_dz_im,
+            };
             m += bla.l as usize;
             n += bla.l;
         } else {
             // 5. Standard delta iteration (no valid BLA)
-            let two_z_dz_re = dz_re
+            let two_z_dz_re = dz
+                .re
                 .mul_f64(z_m_re)
-                .sub(&dz_im.mul_f64(z_m_im))
+                .sub(&dz.im.mul_f64(z_m_im))
                 .mul_f64(2.0);
-            let two_z_dz_im = dz_re
+            let two_z_dz_im = dz
+                .re
                 .mul_f64(z_m_im)
-                .add(&dz_im.mul_f64(z_m_re))
+                .add(&dz.im.mul_f64(z_m_re))
                 .mul_f64(2.0);
 
-            let dz_sq_re = dz_re.mul(&dz_re).sub(&dz_im.mul(&dz_im));
-            let dz_sq_im = dz_re.mul(&dz_im).mul_f64(2.0);
+            let dz_sq = dz.square();
 
-            dz_re = two_z_dz_re.add(&dz_sq_re).add(&dc_re);
-            dz_im = two_z_dz_im.add(&dz_sq_im).add(&dc_im);
+            dz = HDRComplex {
+                re: two_z_dz_re.add(&dz_sq.re).add(&delta_c.re),
+                im: two_z_dz_im.add(&dz_sq.im).add(&delta_c.im),
+            };
             m += 1;
             n += 1;
         }
@@ -1180,7 +1184,7 @@ mod tests {
     }
 
     #[test]
-    fn floatexp_matches_f64_at_shallow_zoom() {
+    fn hdr_matches_f64_at_shallow_zoom() {
         // Reference in set
         let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
         let orbit = ReferenceOrbit::compute(&c_ref, 500);
@@ -1192,18 +1196,20 @@ mod tests {
             // f64 version
             let f64_result = compute_pixel_perturbation(&orbit, (dx, dy), 500, TEST_TAU_SQ);
 
-            // FloatExp version
-            let delta_c = (FloatExp::from_f64(dx), FloatExp::from_f64(dy));
-            let floatexp_result =
-                compute_pixel_perturbation_floatexp(&orbit, delta_c, 500, TEST_TAU_SQ);
+            // HDRFloat version
+            let delta_c = HDRComplex {
+                re: HDRFloat::from_f64(dx),
+                im: HDRFloat::from_f64(dy),
+            };
+            let hdr_result = compute_pixel_perturbation_hdr(&orbit, delta_c, 500, TEST_TAU_SQ);
 
             assert_eq!(
-                f64_result.escaped, floatexp_result.escaped,
+                f64_result.escaped, hdr_result.escaped,
                 "Escape mismatch for delta ({}, {})",
                 dx, dy
             );
             assert_eq!(
-                f64_result.iterations, floatexp_result.iterations,
+                f64_result.iterations, hdr_result.iterations,
                 "Iteration mismatch for delta ({}, {})",
                 dx, dy
             );
@@ -1211,7 +1217,7 @@ mod tests {
     }
 
     #[test]
-    fn floatexp_matches_bigfloat_at_deep_zoom() {
+    fn hdr_matches_bigfloat_at_deep_zoom() {
         let precision = 2048;
 
         // Reference at origin
@@ -1224,25 +1230,25 @@ mod tests {
             BigFloat::from_string("2e-500", precision).unwrap(),
         );
 
-        // Convert to FloatExp
-        let delta_fe = (
-            FloatExp::from_bigfloat(&delta_bf.0),
-            FloatExp::from_bigfloat(&delta_bf.1),
-        );
+        // Convert to HDRFloat
+        let delta_hdr = HDRComplex {
+            re: HDRFloat::from_bigfloat(&delta_bf.0),
+            im: HDRFloat::from_bigfloat(&delta_bf.1),
+        };
 
         // BigFloat version (reference implementation)
         let bf_result =
             compute_pixel_perturbation_bigfloat(&orbit, &delta_bf.0, &delta_bf.1, 500, TEST_TAU_SQ);
 
-        // FloatExp version (optimized)
-        let fe_result = compute_pixel_perturbation_floatexp(&orbit, delta_fe, 500, TEST_TAU_SQ);
+        // HDRFloat version (optimized)
+        let hdr_result = compute_pixel_perturbation_hdr(&orbit, delta_hdr, 500, TEST_TAU_SQ);
 
         assert_eq!(
-            bf_result.escaped, fe_result.escaped,
+            bf_result.escaped, hdr_result.escaped,
             "Escape status should match at deep zoom"
         );
         assert_eq!(
-            bf_result.iterations, fe_result.iterations,
+            bf_result.iterations, hdr_result.iterations,
             "Iteration count should match at deep zoom"
         );
     }
@@ -1253,16 +1259,19 @@ mod tests {
         let orbit = ReferenceOrbit::compute(&c_ref, 500);
 
         // Small delta that escapes
-        let delta_c = (FloatExp::from_f64(0.1), FloatExp::from_f64(0.1));
+        let delta_c = HDRComplex {
+            re: HDRFloat::from_f64(0.1),
+            im: HDRFloat::from_f64(0.1),
+        };
         let dc_max = 0.15;
         let bla_table = BlaTable::compute(&orbit, dc_max);
 
         // Non-BLA version
-        let result_no_bla = compute_pixel_perturbation_floatexp(&orbit, delta_c, 500, TEST_TAU_SQ);
+        let result_no_bla = compute_pixel_perturbation_hdr(&orbit, delta_c, 500, TEST_TAU_SQ);
 
         // BLA version
         let result_bla =
-            compute_pixel_perturbation_floatexp_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
+            compute_pixel_perturbation_hdr_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
 
         assert_eq!(result_no_bla.escaped, result_bla.escaped);
         assert_eq!(result_no_bla.iterations, result_bla.iterations);
@@ -1273,13 +1282,16 @@ mod tests {
         let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
         let orbit = ReferenceOrbit::compute(&c_ref, 500);
 
-        let delta_c = (FloatExp::from_f64(0.01), FloatExp::from_f64(0.01));
+        let delta_c = HDRComplex {
+            re: HDRFloat::from_f64(0.01),
+            im: HDRFloat::from_f64(0.01),
+        };
         let dc_max = 0.02;
         let bla_table = BlaTable::compute(&orbit, dc_max);
 
-        let result_no_bla = compute_pixel_perturbation_floatexp(&orbit, delta_c, 500, TEST_TAU_SQ);
+        let result_no_bla = compute_pixel_perturbation_hdr(&orbit, delta_c, 500, TEST_TAU_SQ);
         let result_bla =
-            compute_pixel_perturbation_floatexp_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
+            compute_pixel_perturbation_hdr_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
 
         assert_eq!(result_no_bla.escaped, result_bla.escaped);
         assert_eq!(result_no_bla.iterations, result_bla.iterations);
@@ -1300,19 +1312,16 @@ mod tests {
         ];
 
         for (dx, dy) in test_deltas {
-            let delta_c = (FloatExp::from_f64(dx), FloatExp::from_f64(dy));
+            let delta_c = HDRComplex {
+                re: HDRFloat::from_f64(dx),
+                im: HDRFloat::from_f64(dy),
+            };
             let dc_max = (dx.abs() + dy.abs()).max(0.001);
             let bla_table = BlaTable::compute(&orbit, dc_max);
 
-            let result_no_bla =
-                compute_pixel_perturbation_floatexp(&orbit, delta_c, 1000, TEST_TAU_SQ);
-            let result_bla = compute_pixel_perturbation_floatexp_bla(
-                &orbit,
-                &bla_table,
-                delta_c,
-                1000,
-                TEST_TAU_SQ,
-            );
+            let result_no_bla = compute_pixel_perturbation_hdr(&orbit, delta_c, 1000, TEST_TAU_SQ);
+            let result_bla =
+                compute_pixel_perturbation_hdr_bla(&orbit, &bla_table, delta_c, 1000, TEST_TAU_SQ);
 
             assert_eq!(
                 result_no_bla.escaped, result_bla.escaped,
@@ -1335,12 +1344,15 @@ mod tests {
         let orbit = ReferenceOrbit::compute(&c_ref, 500);
 
         // Small delta values that will stay within BLA validity
-        let delta_c = (FloatExp::from_f64(0.005), FloatExp::from_f64(0.003));
+        let delta_c = HDRComplex {
+            re: HDRFloat::from_f64(0.005),
+            im: HDRFloat::from_f64(0.003),
+        };
         let bla_table = BlaTable::compute(&orbit, 0.01);
 
-        let result_no_bla = compute_pixel_perturbation_floatexp(&orbit, delta_c, 500, TEST_TAU_SQ);
+        let result_no_bla = compute_pixel_perturbation_hdr(&orbit, delta_c, 500, TEST_TAU_SQ);
         let result_bla =
-            compute_pixel_perturbation_floatexp_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
+            compute_pixel_perturbation_hdr_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
 
         assert_eq!(
             result_no_bla.escaped,

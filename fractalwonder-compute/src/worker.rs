@@ -1,10 +1,10 @@
 // fractalwonder-compute/src/worker.rs
 use crate::{
-    compute_pixel_perturbation, compute_pixel_perturbation_bigfloat,
-    compute_pixel_perturbation_floatexp, compute_pixel_perturbation_floatexp_bla, BlaTable,
-    MandelbrotRenderer, ReferenceOrbit, Renderer, TestImageRenderer,
+    compute_pixel_perturbation, compute_pixel_perturbation_bigfloat, compute_pixel_perturbation_hdr,
+    compute_pixel_perturbation_hdr_bla, BlaTable, MandelbrotRenderer, ReferenceOrbit, Renderer,
+    TestImageRenderer,
 };
-use fractalwonder_core::{BigFloat, ComputeData, FloatExp, MainToWorker, Viewport, WorkerToMain};
+use fractalwonder_core::{BigFloat, ComputeData, HDRComplex, HDRFloat, MainToWorker, Viewport, WorkerToMain};
 use js_sys::Date;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -262,10 +262,10 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             dc_max,
             bla_enabled,
         } => {
-            // BLA only helps when dc_max is very small (deep zoom, FloatExp path).
+            // BLA only helps when dc_max is very small (deep zoom, HDRFloat path).
             // At f64-compatible zoom levels (dc_max > ~1e-300), the BLA validity
             // radius shrinks too fast during merging to skip iterations effectively.
-            // Threshold: dc_max < 1e-300 means we're in FloatExp territory.
+            // Threshold: dc_max < 1e-300 means we're in HDRFloat territory.
             let dc_max_log2 = dc_max.log2();
             let bla_useful = dc_max_log2 < -900.0; // Roughly 10^-270
 
@@ -372,7 +372,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
             // Three-tier dispatch based on delta magnitude (not precision):
             // 1. Deltas fit in f64 range: Use fast f64 path (most common case)
-            // 2. Deltas exceed f64 but precision <= threshold: Use FloatExp
+            // 2. Deltas exceed f64 but precision <= threshold: Use HDRFloat
             // 3. Precision > threshold: Use BigFloat (highest precision)
 
             if deltas_fit_f64 {
@@ -399,15 +399,15 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     delta_c_row.1 += delta_step.1;
                 }
             } else if delta_log2 > -1000.0 || precision <= bigfloat_threshold_bits {
-                // Medium path: FloatExp (with optional BLA acceleration)
-                let delta_origin = (
-                    FloatExp::from_bigfloat(&delta_c_origin.0),
-                    FloatExp::from_bigfloat(&delta_c_origin.1),
-                );
-                let delta_step = (
-                    FloatExp::from_bigfloat(&delta_c_step.0),
-                    FloatExp::from_bigfloat(&delta_c_step.1),
-                );
+                // Medium path: HDRFloat (with optional BLA acceleration)
+                let delta_origin = HDRComplex {
+                    re: HDRFloat::from_bigfloat(&delta_c_origin.0),
+                    im: HDRFloat::from_bigfloat(&delta_c_origin.1),
+                };
+                let delta_step = HDRComplex {
+                    re: HDRFloat::from_bigfloat(&delta_c_step.0),
+                    im: HDRFloat::from_bigfloat(&delta_c_step.1),
+                };
 
                 let mut delta_c_row = delta_origin;
 
@@ -417,7 +417,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     for _px in 0..tile.width {
                         let result = if bla_enabled {
                             if let Some(ref bla_table) = cached.bla_table {
-                                compute_pixel_perturbation_floatexp_bla(
+                                compute_pixel_perturbation_hdr_bla(
                                     &orbit,
                                     bla_table,
                                     delta_c,
@@ -426,7 +426,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                                 )
                             } else {
                                 // Fallback if table wasn't built
-                                compute_pixel_perturbation_floatexp(
+                                compute_pixel_perturbation_hdr(
                                     &orbit,
                                     delta_c,
                                     max_iterations,
@@ -434,7 +434,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                                 )
                             }
                         } else {
-                            compute_pixel_perturbation_floatexp(
+                            compute_pixel_perturbation_hdr(
                                 &orbit,
                                 delta_c,
                                 max_iterations,
@@ -443,10 +443,10 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                         };
                         data.push(ComputeData::Mandelbrot(result));
 
-                        delta_c.0 = delta_c.0.add(&delta_step.0);
+                        delta_c.re = delta_c.re.add(&delta_step.re);
                     }
 
-                    delta_c_row.1 = delta_c_row.1.add(&delta_step.1);
+                    delta_c_row.im = delta_c_row.im.add(&delta_step.im);
                 }
             } else {
                 // Deep zoom path: BigFloat arithmetic (full precision)
