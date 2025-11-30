@@ -19,7 +19,7 @@ const HDR_COMPLEX_ZERO: HDRComplex = HDRComplex(HDRFloat(0.0, 0.0, 0), HDRFloat(
 // Compute 2^n for integer n
 fn hdr_exp2(n: i32) -> f32 {
     if n < -149 { return 0.0; }
-    if n > 127 { return 3.4028235e38; } // max f32
+    if n > 127 { return 1.0e38; } // saturate to large value
     if n >= -126 {
         return bitcast<f32>(u32(n + 127) << 23u);
     }
