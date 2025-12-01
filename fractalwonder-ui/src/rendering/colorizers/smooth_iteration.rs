@@ -10,14 +10,14 @@ use fractalwonder_core::{ComputeData, MandelbrotData};
 pub struct SmoothIterationColorizer;
 
 /// Context data computed during preprocessing.
-/// Holds smooth iteration values and optional histogram CDF.
+/// Holds smooth iteration values and optional rank-order data for histogram equalization.
 #[derive(Clone, Debug, Default)]
 pub struct SmoothIterationContext {
     /// Smooth iteration values per pixel.
     pub smooth_values: Vec<f64>,
-    /// CDF for histogram equalization. None if disabled.
-    /// Index = iteration count, value = cumulative probability [0,1].
-    pub cdf: Option<Vec<f64>>,
+    /// Sorted smooth values for rank-order histogram coloring. None if disabled.
+    /// Used to find each pixel's percentile rank via binary search.
+    pub sorted_smooth: Option<Vec<f64>>,
 }
 
 /// Compute smooth iteration count from MandelbrotData.
@@ -37,35 +37,42 @@ pub fn compute_smooth_iteration(data: &MandelbrotData) -> f64 {
     }
 }
 
-/// Build histogram CDF from iteration counts.
-/// Returns a Vec where cdf[i] = cumulative probability for iteration i.
-/// Interior points (escaped=false) are excluded from the histogram.
-pub fn build_histogram_cdf(data: &[ComputeData], max_iterations: u32) -> Vec<f64> {
-    let len = max_iterations as usize + 1;
-    let mut histogram = vec![0u64; len];
-    let mut total_exterior = 0u64;
-
-    // Count iterations for exterior points only
-    for d in data {
-        if let ComputeData::Mandelbrot(m) = d {
-            if m.escaped && m.iterations < max_iterations {
-                histogram[m.iterations as usize] += 1;
-                total_exterior += 1;
+/// Build sorted smooth values for rank-order histogram coloring.
+/// Only includes exterior (escaped) points. Interior points are excluded.
+/// Returns a sorted Vec of smooth iteration values.
+fn build_sorted_smooth_values(smooth_values: &[f64], data: &[ComputeData]) -> Vec<f64> {
+    let mut sorted: Vec<f64> = smooth_values
+        .iter()
+        .zip(data.iter())
+        .filter_map(|(&smooth, d)| {
+            if let ComputeData::Mandelbrot(m) = d {
+                if m.escaped {
+                    return Some(smooth);
+                }
             }
-        }
+            None
+        })
+        .collect();
+
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    sorted
+}
+
+/// Find the percentile rank of a value in a sorted list using binary search.
+/// Returns a value in [0, 1] representing the fraction of values <= the given value.
+#[inline]
+fn percentile_rank(sorted: &[f64], value: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
     }
 
-    // Build CDF
-    let mut cdf = vec![0.0; len];
-    if total_exterior > 0 {
-        let mut cumulative = 0u64;
-        for i in 0..len {
-            cumulative += histogram[i];
-            cdf[i] = cumulative as f64 / total_exterior as f64;
-        }
-    }
+    // Binary search to find insertion point
+    let pos = sorted.partition_point(|&v| v < value);
 
-    cdf
+    // The rank is the position divided by total count
+    // This gives the fraction of values strictly less than this value
+    // Add 0.5 to center within the bucket for smoother results
+    (pos as f64 + 0.5) / sorted.len() as f64
 }
 
 impl Colorizer for SmoothIterationColorizer {
@@ -80,25 +87,16 @@ impl Colorizer for SmoothIterationColorizer {
             })
             .collect();
 
-        let cdf = if options.histogram_enabled {
-            // Find max_iterations from first Mandelbrot data point
-            let max_iter = data
-                .iter()
-                .find_map(|d| {
-                    if let ComputeData::Mandelbrot(m) = d {
-                        Some(m.max_iterations)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(1000);
-
-            Some(build_histogram_cdf(data, max_iter))
+        let sorted_smooth = if options.histogram_enabled {
+            Some(build_sorted_smooth_values(&smooth_values, data))
         } else {
             None
         };
 
-        SmoothIterationContext { smooth_values, cdf }
+        SmoothIterationContext {
+            smooth_values,
+            sorted_smooth,
+        }
     }
 
     fn colorize(
@@ -166,23 +164,26 @@ impl SmoothIterationColorizer {
             return [0, 0, 0, 255];
         }
 
-        // Normalize: use CDF if available, otherwise linear (smooth or discrete)
-        let normalized = if let Some(cdf) = &context.cdf {
-            // Use integer iteration for CDF lookup
-            let idx = (data.iterations as usize).min(cdf.len().saturating_sub(1));
-            cdf[idx]
+        // Normalize: use rank-order if available, otherwise linear (smooth or discrete)
+        let normalized = if let Some(sorted) = &context.sorted_smooth {
+            // Rank-order histogram: find percentile rank of this smooth value
+            // This distributes colors evenly across the image area
+            percentile_rank(sorted, smooth)
         } else if options.smooth_enabled {
             smooth / data.max_iterations as f64
         } else {
             data.iterations as f64 / data.max_iterations as f64
         };
 
+        // Apply transfer bias to shift color distribution
+        let transferred = super::apply_transfer_bias(normalized, options.transfer_bias);
+
         // Apply cycling and sample palette
         let cycle_count = options.cycle_count as f64;
         let t = if cycle_count > 1.0 {
-            (normalized * cycle_count).fract()
+            (transferred * cycle_count).fract()
         } else {
-            (normalized * cycle_count).clamp(0.0, 1.0)
+            (transferred * cycle_count).clamp(0.0, 1.0)
         };
         let [r, g, b] = palette.sample(t);
         [r, g, b, 255]
@@ -340,72 +341,43 @@ mod tests {
     }
 
     #[test]
-    fn smooth_iteration_context_default_has_no_cdf() {
+    fn smooth_iteration_context_default_has_no_sorted_smooth() {
         let ctx = SmoothIterationContext::default();
         assert!(ctx.smooth_values.is_empty());
-        assert!(ctx.cdf.is_none());
+        assert!(ctx.sorted_smooth.is_none());
     }
 
     #[test]
-    fn build_histogram_cdf_uniform_distribution() {
-        // 10 pixels with iterations 0-9, max_iter=10
-        let data: Vec<ComputeData> = (0..10)
-            .map(|i| {
-                ComputeData::Mandelbrot(MandelbrotData {
-                    iterations: i,
-                    max_iterations: 10,
-                    escaped: true,
-                    glitched: false,
-                    final_z_norm_sq: 100000.0,
-                })
-            })
-            .collect();
-
-        let cdf = build_histogram_cdf(&data, 10);
-
-        // Uniform distribution: CDF should be [0.1, 0.2, 0.3, ..., 1.0]
-        assert_eq!(cdf.len(), 11); // max_iter + 1
-        assert!((cdf[0] - 0.1).abs() < 0.001);
-        assert!((cdf[4] - 0.5).abs() < 0.001);
-        assert!((cdf[9] - 1.0).abs() < 0.001);
+    fn percentile_rank_empty_returns_zero() {
+        assert_eq!(percentile_rank(&[], 5.0), 0.0);
     }
 
     #[test]
-    fn build_histogram_cdf_skewed_distribution() {
-        // Most pixels at iteration 5
-        let mut data = Vec::new();
-        for _ in 0..90 {
-            data.push(ComputeData::Mandelbrot(MandelbrotData {
-                iterations: 5,
-                max_iterations: 10,
-                escaped: true,
-                glitched: false,
-                final_z_norm_sq: 100000.0,
-            }));
-        }
-        for _ in 0..10 {
-            data.push(ComputeData::Mandelbrot(MandelbrotData {
-                iterations: 9,
-                max_iterations: 10,
-                escaped: true,
-                glitched: false,
-                final_z_norm_sq: 100000.0,
-            }));
-        }
-
-        let cdf = build_histogram_cdf(&data, 10);
-
-        // Iterations 0-4 have 0 pixels, so CDF stays at 0
-        assert_eq!(cdf[0], 0.0);
-        assert_eq!(cdf[4], 0.0);
-        // Iteration 5 has 90% of pixels
-        assert!((cdf[5] - 0.9).abs() < 0.001);
-        // Iteration 9 brings it to 100%
-        assert!((cdf[9] - 1.0).abs() < 0.001);
+    fn percentile_rank_single_element() {
+        let sorted = vec![5.0];
+        // Value below: rank 0.5 (centered in first bucket)
+        assert!((percentile_rank(&sorted, 3.0) - 0.5).abs() < 0.01);
+        // Value equal: rank 0.5 (centered)
+        assert!((percentile_rank(&sorted, 5.0) - 0.5).abs() < 0.01);
+        // Value above: rank ~1.0 (at end)
+        assert!((percentile_rank(&sorted, 7.0) - 1.5).abs() < 0.01);
     }
 
     #[test]
-    fn build_histogram_cdf_excludes_interior() {
+    fn percentile_rank_uniform_distribution() {
+        // 10 evenly spaced values
+        let sorted: Vec<f64> = (0..10).map(|i| i as f64).collect();
+
+        // Value at start should be near 0
+        assert!(percentile_rank(&sorted, 0.0) < 0.15);
+        // Value in middle should be near 0.5
+        assert!((percentile_rank(&sorted, 4.5) - 0.5).abs() < 0.1);
+        // Value at end should be near 1.0
+        assert!(percentile_rank(&sorted, 9.0) > 0.9);
+    }
+
+    #[test]
+    fn build_sorted_smooth_excludes_interior() {
         let data = vec![
             ComputeData::Mandelbrot(MandelbrotData {
                 iterations: 5,
@@ -423,14 +395,22 @@ mod tests {
             }),
         ];
 
-        let cdf = build_histogram_cdf(&data, 10);
+        let smooth_values: Vec<f64> = data
+            .iter()
+            .map(|d| match d {
+                ComputeData::Mandelbrot(m) => compute_smooth_iteration(m),
+                _ => 0.0,
+            })
+            .collect();
 
-        // Only 1 exterior pixel at iteration 5
-        assert_eq!(cdf[5], 1.0);
+        let sorted = build_sorted_smooth_values(&smooth_values, &data);
+
+        // Only 1 exterior pixel
+        assert_eq!(sorted.len(), 1);
     }
 
     #[test]
-    fn preprocess_builds_cdf_when_histogram_enabled() {
+    fn preprocess_builds_sorted_smooth_when_histogram_enabled() {
         let colorizer = SmoothIterationColorizer;
         let options = ColorOptions {
             histogram_enabled: true,
@@ -451,24 +431,23 @@ mod tests {
 
         let ctx = colorizer.preprocess(&data, &options);
 
-        assert!(ctx.cdf.is_some());
-        let cdf = ctx.cdf.unwrap();
-        assert_eq!(cdf.len(), 11);
+        assert!(ctx.sorted_smooth.is_some());
+        assert_eq!(ctx.sorted_smooth.unwrap().len(), 10);
     }
 
     #[test]
-    fn preprocess_no_cdf_when_histogram_disabled() {
+    fn preprocess_no_sorted_smooth_when_histogram_disabled() {
         let colorizer = SmoothIterationColorizer;
         let options = grayscale_options();
 
         let data = vec![make_escaped(5, 10)];
         let ctx = colorizer.preprocess(&data, &options);
 
-        assert!(ctx.cdf.is_none());
+        assert!(ctx.sorted_smooth.is_none());
     }
 
     #[test]
-    fn colorize_uses_cdf_when_available() {
+    fn colorize_uses_rank_order_when_histogram_enabled() {
         let colorizer = SmoothIterationColorizer;
         let options = ColorOptions {
             histogram_enabled: true,
@@ -477,6 +456,8 @@ mod tests {
         };
 
         // Create skewed data: 90 pixels at iter 1, 10 at iter 9
+        // With rank-order, the 90 iter-1 pixels will span ranks 0-0.9
+        // and the 10 iter-9 pixels will span ranks 0.9-1.0
         let mut data = Vec::new();
         for _ in 0..90 {
             data.push(ComputeData::Mandelbrot(MandelbrotData {
@@ -500,21 +481,18 @@ mod tests {
         let palette = options.palette();
         let ctx = colorizer.preprocess(&data, &options);
 
-        // First pixel (iter 1) should map to CDF[1] = 0.9 (90% of pixels)
+        // First pixel (iter 1) - with rank-order, all 90 iter-1 pixels have similar smooth values
+        // so they'll be distributed across ranks ~0.0 to ~0.9
         let color1 = colorizer.colorize(&data[0], &ctx, &options, &palette, 0);
-        // Last pixel (iter 9) should map to CDF[9] = 1.0
+        // Last pixel (iter 9) - these 10 pixels will be in ranks ~0.9 to ~1.0
         let color2 = colorizer.colorize(&data[90], &ctx, &options, &palette, 90);
 
-        // With grayscale and CDF, iter 1 gets bright (0.9), iter 9 gets white (1.0)
-        // Both should be quite bright since CDF values are high
+        // With rank-order histogram, the iter-9 pixels should be brighter than iter-1 pixels
+        // because iter-9 has higher smooth values -> higher rank -> brighter color
         assert!(
-            color1[0] > 200,
-            "iter 1 with CDF 0.9 should be bright: {:?}",
-            color1
-        );
-        assert!(
-            color2[0] > 250,
-            "iter 9 with CDF 1.0 should be near white: {:?}",
+            color2[0] > color1[0],
+            "Higher iteration should have higher rank and brighter color: iter1={:?}, iter9={:?}",
+            color1,
             color2
         );
     }

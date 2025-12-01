@@ -15,14 +15,12 @@ const LUT_SIZE: usize = 4096;
 pub struct Palette {
     /// Pre-computed lookup table with OKLAB-interpolated colors
     lut: Vec<[u8; 3]>,
-    /// How many times to cycle through the palette (1.0 = no cycling)
-    cycle_count: f64,
 }
 
 impl Palette {
     /// Create a new palette from control points.
     /// Pre-computes a lookup table using OKLAB interpolation.
-    pub fn new(colors: Vec<[u8; 3]>, cycle_count: f64) -> Self {
+    pub fn new(colors: Vec<[u8; 3]>) -> Self {
         assert!(!colors.is_empty(), "Palette must have at least one color");
 
         // Convert control points to OKLAB
@@ -44,7 +42,7 @@ impl Palette {
             })
             .collect();
 
-        Self { lut, cycle_count }
+        Self { lut }
     }
 
     /// Interpolate in OKLAB space and convert back to sRGB.
@@ -89,79 +87,60 @@ impl Palette {
     /// Fast lookup into pre-computed table.
     #[inline]
     pub fn sample(&self, t: f64) -> [u8; 3] {
-        // Apply cycling and clamp
-        let t = if self.cycle_count > 1.0 {
-            (t * self.cycle_count).fract()
-        } else {
-            t.clamp(0.0, 1.0)
-        };
-
-        // Direct lookup into pre-computed LUT
+        let t = t.clamp(0.0, 1.0);
         let index = ((t * (LUT_SIZE - 1) as f64) as usize).min(LUT_SIZE - 1);
         self.lut[index]
     }
 
     /// Black to white gradient.
     pub fn grayscale() -> Self {
-        Self::new(vec![[0, 0, 0], [255, 255, 255]], 1.0)
+        Self::new(vec![[0, 0, 0], [255, 255, 255]])
     }
 
     /// Classic Ultra Fractal palette: blue → white → orange → black.
     pub fn ultra_fractal() -> Self {
-        Self::new(
-            vec![
-                [0, 7, 100],     // Deep blue
-                [32, 107, 203],  // Blue
-                [237, 255, 255], // White
-                [255, 170, 0],   // Orange
-                [0, 2, 0],       // Near black
-            ],
-            1.0,
-        )
+        Self::new(vec![
+            [0, 7, 100],     // Deep blue
+            [32, 107, 203],  // Blue
+            [237, 255, 255], // White
+            [255, 170, 0],   // Orange
+            [0, 2, 0],       // Near black
+        ])
     }
 
     /// Fire palette: black → red → orange → yellow → white.
     pub fn fire() -> Self {
-        Self::new(
-            vec![
-                [0, 0, 0],       // Black
-                [128, 0, 0],     // Dark red
-                [255, 0, 0],     // Red
-                [255, 128, 0],   // Orange
-                [255, 255, 0],   // Yellow
-                [255, 255, 255], // White
-            ],
-            1.0,
-        )
+        Self::new(vec![
+            [0, 0, 0],       // Black
+            [128, 0, 0],     // Dark red
+            [255, 0, 0],     // Red
+            [255, 128, 0],   // Orange
+            [255, 255, 0],   // Yellow
+            [255, 255, 255], // White
+        ])
     }
 
     /// Ocean palette: deep blue → cyan → white.
     pub fn ocean() -> Self {
-        Self::new(
-            vec![
-                [0, 0, 64],      // Deep blue
-                [0, 64, 128],    // Blue
-                [0, 128, 192],   // Cyan-blue
-                [64, 192, 255],  // Cyan
-                [255, 255, 255], // White
-            ],
-            1.0,
-        )
+        Self::new(vec![
+            [0, 0, 64],      // Deep blue
+            [0, 64, 128],    // Blue
+            [0, 128, 192],   // Cyan-blue
+            [64, 192, 255],  // Cyan
+            [255, 255, 255], // White
+        ])
     }
 
     /// Electric palette: purple → blue → cyan → green → yellow.
     pub fn electric() -> Self {
-        Self::new(
-            vec![
-                [32, 0, 64],   // Dark purple
-                [64, 0, 128],  // Purple
-                [0, 0, 255],   // Blue
-                [0, 255, 255], // Cyan
-                [0, 255, 0],   // Green
-                [255, 255, 0], // Yellow
-            ],
-            1.0,
-        )
+        Self::new(vec![
+            [32, 0, 64],   // Dark purple
+            [64, 0, 128],  // Purple
+            [0, 0, 255],   // Blue
+            [0, 255, 255], // Cyan
+            [0, 255, 0],   // Green
+            [255, 255, 0], // Yellow
+        ])
     }
 
     // ============================================================
@@ -171,7 +150,7 @@ impl Palette {
     /// Create a hue-cycling palette using OKLCH color space.
     /// Generates `steps` colors around the hue wheel at constant lightness and chroma.
     /// Seamlessly cyclical - first and last colors are adjacent on the wheel.
-    fn hue_cycle(lightness: f64, chroma: f64, steps: usize, cycle_count: f64) -> Self {
+    fn hue_cycle(lightness: f64, chroma: f64, steps: usize) -> Self {
         let colors: Vec<[u8; 3]> = (0..steps)
             .map(|i| {
                 let hue = (i as f64 / steps as f64) * std::f64::consts::TAU;
@@ -179,101 +158,87 @@ impl Palette {
             })
             .collect();
 
-        Self::new(colors, cycle_count)
+        Self::new(colors)
     }
 
     /// Rainbow: Full spectrum hue cycle at vibrant saturation.
-    /// Cycles 3x for more color variation across iteration range.
     pub fn rainbow() -> Self {
-        Self::hue_cycle(0.75, 0.15, 64, 3.0)
+        Self::hue_cycle(0.75, 0.15, 64)
     }
 
     /// Neon: Bright, saturated hue cycle.
     /// High lightness and chroma for electric, glowing appearance.
-    /// Cycles 5x for dense color bands.
     pub fn neon() -> Self {
-        Self::hue_cycle(0.85, 0.18, 48, 5.0)
+        Self::hue_cycle(0.85, 0.18, 48)
     }
 
     /// Twilight: Warm to cool cycling palette.
     /// Orange → magenta → purple → blue → cyan → back to orange.
-    /// Designed for seamless cycling with 4 repeats.
+    /// Designed for seamless cycling.
     pub fn twilight() -> Self {
-        Self::new(
-            vec![
-                [255, 100, 50],  // Warm orange
-                [255, 50, 100],  // Coral
-                [200, 50, 150],  // Magenta
-                [150, 50, 200],  // Purple
-                [80, 80, 220],   // Blue-violet
-                [50, 150, 255],  // Sky blue
-                [80, 200, 200],  // Cyan
-                [150, 200, 150], // Soft green
-                [200, 180, 100], // Gold
-                [255, 100, 50],  // Back to warm orange (seamless)
-            ],
-            4.0,
-        )
+        Self::new(vec![
+            [255, 100, 50],  // Warm orange
+            [255, 50, 100],  // Coral
+            [200, 50, 150],  // Magenta
+            [150, 50, 200],  // Purple
+            [80, 80, 220],   // Blue-violet
+            [50, 150, 255],  // Sky blue
+            [80, 200, 200],  // Cyan
+            [150, 200, 150], // Soft green
+            [200, 180, 100], // Gold
+            [255, 100, 50],  // Back to warm orange (seamless)
+        ])
     }
 
     /// Candy: Pastel cycling palette.
     /// Soft, desaturated colors that cycle smoothly.
     /// Great for high-iteration deep zooms.
     pub fn candy() -> Self {
-        Self::new(
-            vec![
-                [255, 180, 200], // Pink
-                [200, 180, 255], // Lavender
-                [180, 220, 255], // Baby blue
-                [180, 255, 220], // Mint
-                [220, 255, 180], // Lime
-                [255, 240, 180], // Cream
-                [255, 200, 180], // Peach
-                [255, 180, 200], // Back to pink (seamless)
-            ],
-            6.0,
-        )
+        Self::new(vec![
+            [255, 180, 200], // Pink
+            [200, 180, 255], // Lavender
+            [180, 220, 255], // Baby blue
+            [180, 255, 220], // Mint
+            [220, 255, 180], // Lime
+            [255, 240, 180], // Cream
+            [255, 200, 180], // Peach
+            [255, 180, 200], // Back to pink (seamless)
+        ])
     }
 
     /// Inferno: Dark cycling palette with hot accents.
     /// Black → deep red → orange → gold → black.
-    /// Dramatic contrast, cycles 3x.
+    /// Dramatic contrast.
     pub fn inferno() -> Self {
-        Self::new(
-            vec![
-                [5, 0, 10],      // Near black (purple tint)
-                [40, 0, 20],     // Dark burgundy
-                [100, 10, 10],   // Dark red
-                [180, 40, 0],    // Red-orange
-                [255, 100, 0],   // Orange
-                [255, 180, 50],  // Gold
-                [200, 150, 100], // Muted tan
-                [80, 50, 40],    // Brown
-                [20, 10, 20],    // Dark purple
-                [5, 0, 10],      // Back to near black (seamless)
-            ],
-            3.0,
-        )
+        Self::new(vec![
+            [5, 0, 10],      // Near black (purple tint)
+            [40, 0, 20],     // Dark burgundy
+            [100, 10, 10],   // Dark red
+            [180, 40, 0],    // Red-orange
+            [255, 100, 0],   // Orange
+            [255, 180, 50],  // Gold
+            [200, 150, 100], // Muted tan
+            [80, 50, 40],    // Brown
+            [20, 10, 20],    // Dark purple
+            [5, 0, 10],      // Back to near black (seamless)
+        ])
     }
 
     /// Aurora: Northern lights inspired palette.
     /// Green → cyan → blue → purple → green.
-    /// Ethereal, glowing appearance with 4 cycles.
+    /// Ethereal, glowing appearance.
     pub fn aurora() -> Self {
-        Self::new(
-            vec![
-                [50, 255, 100],  // Bright green
-                [50, 255, 180],  // Cyan-green
-                [50, 200, 255],  // Cyan
-                [80, 120, 255],  // Blue
-                [150, 80, 255],  // Purple
-                [200, 100, 200], // Magenta
-                [150, 150, 150], // Gray (dimmer band)
-                [100, 200, 100], // Soft green
-                [50, 255, 100],  // Back to bright green (seamless)
-            ],
-            4.0,
-        )
+        Self::new(vec![
+            [50, 255, 100],  // Bright green
+            [50, 255, 180],  // Cyan-green
+            [50, 200, 255],  // Cyan
+            [80, 120, 255],  // Blue
+            [150, 80, 255],  // Purple
+            [200, 100, 200], // Magenta
+            [150, 150, 150], // Gray (dimmer band)
+            [100, 200, 100], // Soft green
+            [50, 255, 100],  // Back to bright green (seamless)
+        ])
     }
 }
 
@@ -283,19 +248,19 @@ mod tests {
 
     #[test]
     fn sample_two_color_palette_at_zero() {
-        let palette = Palette::new(vec![[0, 0, 0], [255, 255, 255]], 1.0);
+        let palette = Palette::new(vec![[0, 0, 0], [255, 255, 255]]);
         assert_eq!(palette.sample(0.0), [0, 0, 0]);
     }
 
     #[test]
     fn sample_two_color_palette_at_one() {
-        let palette = Palette::new(vec![[0, 0, 0], [255, 255, 255]], 1.0);
+        let palette = Palette::new(vec![[0, 0, 0], [255, 255, 255]]);
         assert_eq!(palette.sample(1.0), [255, 255, 255]);
     }
 
     #[test]
     fn sample_two_color_palette_at_midpoint() {
-        let palette = Palette::new(vec![[0, 0, 0], [255, 255, 255]], 1.0);
+        let palette = Palette::new(vec![[0, 0, 0], [255, 255, 255]]);
         let mid = palette.sample(0.5);
         // OKLAB interpolation of black-white at 0.5 should be ~middle gray
         // Not exactly 127 due to perceptual uniformity
@@ -310,30 +275,14 @@ mod tests {
 
     #[test]
     fn sample_clamps_below_zero() {
-        let palette = Palette::new(vec![[100, 100, 100], [200, 200, 200]], 1.0);
+        let palette = Palette::new(vec![[100, 100, 100], [200, 200, 200]]);
         assert_eq!(palette.sample(-0.5), [100, 100, 100]);
     }
 
     #[test]
     fn sample_clamps_above_one() {
-        let palette = Palette::new(vec![[100, 100, 100], [200, 200, 200]], 1.0);
+        let palette = Palette::new(vec![[100, 100, 100], [200, 200, 200]]);
         assert_eq!(palette.sample(1.5), [200, 200, 200]);
-    }
-
-    #[test]
-    fn cycling_wraps_around() {
-        let palette = Palette::new(vec![[0, 0, 0], [255, 255, 255]], 2.0);
-        // At t=0.25 with 2 cycles: 0.25 * 2 = 0.5, which is halfway through first cycle (mid-gray)
-        let at_quarter = palette.sample(0.25);
-        assert!(
-            at_quarter[0] > 90 && at_quarter[0] < 110,
-            "Expected mid gray at t=0.25 with 2 cycles, got {:?}",
-            at_quarter
-        );
-
-        // At t=0.5 with 2 cycles: 0.5 * 2 = 1.0, which wraps back to 0.0 (black)
-        let at_half = palette.sample(0.5);
-        assert_eq!(at_half, [0, 0, 0]);
     }
 
     #[test]
@@ -341,23 +290,6 @@ mod tests {
         let palette = Palette::grayscale();
         assert_eq!(palette.sample(0.0), [0, 0, 0]);
         assert_eq!(palette.sample(1.0), [255, 255, 255]);
-    }
-
-    #[test]
-    fn rainbow_is_cyclical() {
-        let palette = Palette::rainbow();
-        // Rainbow uses hue cycling - colors at 0 and 1 should be similar
-        // (wraps around the hue wheel)
-        let at_start = palette.sample(0.0);
-        let at_end = palette.sample(0.999);
-        // With 3 cycles, 0.999 wraps close to 0, colors should be close
-        let diff_r = (at_start[0] as i32 - at_end[0] as i32).abs();
-        let diff_g = (at_start[1] as i32 - at_end[1] as i32).abs();
-        let diff_b = (at_start[2] as i32 - at_end[2] as i32).abs();
-        assert!(
-            diff_r < 30 && diff_g < 30 && diff_b < 30,
-            "Rainbow should be nearly seamless, got diff ({diff_r}, {diff_g}, {diff_b})"
-        );
     }
 
     #[test]
@@ -376,20 +308,5 @@ mod tests {
             let all_same = samples.windows(2).all(|w| w[0] == w[1]);
             assert!(!all_same, "Palette should have color variation");
         }
-    }
-
-    #[test]
-    fn twilight_is_seamless() {
-        let palette = Palette::twilight();
-        // Twilight's first and last control points are identical
-        // At cycle boundaries, it should wrap seamlessly
-        let at_zero = palette.sample(0.0);
-        let near_cycle = palette.sample(0.2499); // Just before 0.25 (one full cycle with 4x)
-        let at_cycle = palette.sample(0.25); // Exactly one full cycle
-                                             // at_cycle should equal at_zero (wrapped)
-        assert_eq!(at_zero, at_cycle, "Should wrap at cycle boundary");
-        // near_cycle should be close to at_zero
-        let diff_r = (at_zero[0] as i32 - near_cycle[0] as i32).abs();
-        assert!(diff_r < 40, "Should be close to wrap point");
     }
 }

@@ -5,6 +5,7 @@
 
 #![allow(unused_parens)]
 
+use crate::rendering::colorizers::settings::{MAX_TRANSFER_BIAS, MIN_TRANSFER_BIAS};
 use leptos::*;
 
 #[component]
@@ -27,6 +28,12 @@ pub fn OptionsMenu(
     on_cycle_up: Callback<()>,
     /// Callback to decrease cycles
     on_cycle_down: Callback<()>,
+    /// Current transfer bias
+    transfer_bias: Signal<f32>,
+    /// Callback to increase bias
+    on_bias_up: Callback<()>,
+    /// Callback to decrease bias
+    on_bias_down: Callback<()>,
 ) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
 
@@ -112,6 +119,31 @@ pub fn OptionsMenu(
                             </button>
                         </div>
                         <span class="text-xs text-gray-500">"[↑↓ / ⇧±50]"</span>
+                    </div>
+
+                    // Transfer bias section
+                    <div class="px-3 py-2 text-xs text-gray-400 uppercase tracking-wider border-t border-b border-gray-800">
+                        "Bias"
+                    </div>
+                    <div class="px-4 py-2 text-sm text-gray-300 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <button
+                                class="text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                                on:click=move |_| on_bias_down.call(())
+                                prop:disabled=move || (transfer_bias.get() <= MIN_TRANSFER_BIAS)
+                            >
+                                "◀"
+                            </button>
+                            <span class="min-w-12 text-center font-mono">{move || format!("{:.1}", transfer_bias.get())}</span>
+                            <button
+                                class="text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                                on:click=move |_| on_bias_up.call(())
+                                prop:disabled=move || (transfer_bias.get() >= MAX_TRANSFER_BIAS)
+                            >
+                                "▶"
+                            </button>
+                        </div>
+                        <span class="text-xs text-gray-500">"[[ ]]"</span>
                     </div>
                 </div>
             })}

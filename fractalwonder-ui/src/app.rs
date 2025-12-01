@@ -335,6 +335,20 @@ pub fn App() -> impl IntoView {
                         set_toast_message.set(Some(format!("Cycles: {}", opts.cycle_count)));
                     });
                 }
+                "[" | "BracketLeft" => {
+                    // Decrease transfer bias (more glow)
+                    set_color_options.update(|opts| {
+                        opts.bias_down();
+                        set_toast_message.set(Some(format!("Bias: {:.1}", opts.transfer_bias)));
+                    });
+                }
+                "]" | "BracketRight" => {
+                    // Increase transfer bias (less glow)
+                    set_color_options.update(|opts| {
+                        opts.bias_up();
+                        set_toast_message.set(Some(format!("Bias: {:.1}", opts.transfer_bias)));
+                    });
+                }
                 _ => {}
             }
         }) as Box<dyn FnMut(web_sys::KeyboardEvent)>);
@@ -432,6 +446,19 @@ pub fn App() -> impl IntoView {
                 set_color_options.update(|opts| {
                     opts.cycle_down();
                     set_toast_message.set(Some(format!("Cycles: {}", opts.cycle_count)));
+                });
+            })
+            transfer_bias=Signal::derive(move || color_options.get().transfer_bias)
+            on_bias_up=Callback::new(move |_| {
+                set_color_options.update(|opts| {
+                    opts.bias_up();
+                    set_toast_message.set(Some(format!("Bias: {:.1}", opts.transfer_bias)));
+                });
+            })
+            on_bias_down=Callback::new(move |_| {
+                set_color_options.update(|opts| {
+                    opts.bias_down();
+                    set_toast_message.set(Some(format!("Bias: {:.1}", opts.transfer_bias)));
                 });
             })
             render_progress=render_progress.into()

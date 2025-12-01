@@ -9,7 +9,7 @@ use fractalwonder_core::ComputeData;
 
 pub use colorizer::{Colorizer, ColorizerKind};
 pub use palette::Palette;
-pub use settings::{ColorOptions, ShadingSettings};
+pub use settings::{apply_transfer_bias, ColorOptions, ShadingSettings};
 pub use shading::apply_slope_shading;
 pub use smooth_iteration::{SmoothIterationColorizer, SmoothIterationContext};
 

@@ -4,6 +4,27 @@ use super::palettes;
 use super::Palette;
 use serde::{Deserialize, Serialize};
 
+/// Default transfer bias (1.0 = linear, no bias).
+pub const DEFAULT_TRANSFER_BIAS: f32 = 1.0;
+
+/// Minimum transfer bias value.
+pub const MIN_TRANSFER_BIAS: f32 = 0.1;
+
+/// Maximum transfer bias value.
+pub const MAX_TRANSFER_BIAS: f32 = 20.0;
+
+/// Step size for transfer bias adjustment.
+pub const TRANSFER_BIAS_STEP: f32 = 1.0;
+
+/// Apply transfer bias to a normalized value in [0, 1].
+/// - bias < 1.0: More colors near the set boundary (glow effect)
+/// - bias = 1.0: Linear (no bias)
+/// - bias > 1.0: More colors in outer regions
+#[inline]
+pub fn apply_transfer_bias(t: f64, bias: f32) -> f64 {
+    t.clamp(0.0, 1.0).powf(bias as f64)
+}
+
 /// Settings for slope shading effect.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShadingSettings {
@@ -56,6 +77,16 @@ pub struct ColorOptions {
     pub histogram_enabled: bool,
     /// Number of palette cycles (1 to 1024).
     pub cycle_count: u32,
+    /// Transfer bias for color distribution (0.1 to 10.0).
+    /// < 1.0: More colors near set boundary (glow)
+    /// = 1.0: Linear (no bias)
+    /// > 1.0: More colors in outer regions
+    #[serde(default = "default_transfer_bias")]
+    pub transfer_bias: f32,
+}
+
+fn default_transfer_bias() -> f32 {
+    DEFAULT_TRANSFER_BIAS
 }
 
 impl Default for ColorOptions {
@@ -66,6 +97,7 @@ impl Default for ColorOptions {
             smooth_enabled: true,
             histogram_enabled: false,
             cycle_count: 32,
+            transfer_bias: DEFAULT_TRANSFER_BIAS,
         }
     }
 }
@@ -111,6 +143,21 @@ impl ColorOptions {
             ShadingSettings::enabled()
         } else {
             ShadingSettings::disabled()
+        }
+    }
+
+    /// Increase transfer bias (more colors in outer regions).
+    pub fn bias_up(&mut self) {
+        self.transfer_bias = (self.transfer_bias + TRANSFER_BIAS_STEP).min(MAX_TRANSFER_BIAS);
+        self.transfer_bias = self.transfer_bias.round();
+    }
+
+    /// Decrease transfer bias (more colors near set boundary / glow).
+    pub fn bias_down(&mut self) {
+        self.transfer_bias = (self.transfer_bias - TRANSFER_BIAS_STEP).max(MIN_TRANSFER_BIAS);
+        // Round to integer, but preserve MIN if we're at the minimum
+        if self.transfer_bias > MIN_TRANSFER_BIAS {
+            self.transfer_bias = self.transfer_bias.round().max(MIN_TRANSFER_BIAS);
         }
     }
 }
@@ -223,5 +270,76 @@ mod tests {
 
         options.cycle_down();
         assert_eq!(options.cycle_count, 1); // Still at min
+    }
+
+    #[test]
+    fn transfer_bias_default_is_one() {
+        let options = ColorOptions::default();
+        assert!((options.transfer_bias - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn transfer_bias_up_down() {
+        let mut options = ColorOptions::default();
+        assert!((options.transfer_bias - 1.0).abs() < 0.001);
+
+        options.bias_up();
+        assert!((options.transfer_bias - 2.0).abs() < 0.001);
+
+        options.bias_down();
+        assert!((options.transfer_bias - 1.0).abs() < 0.001);
+
+        // Going below 1.0 clamps to MIN (0.1)
+        options.bias_down();
+        assert!((options.transfer_bias - MIN_TRANSFER_BIAS).abs() < 0.001);
+    }
+
+    #[test]
+    fn transfer_bias_respects_bounds() {
+        let mut options = ColorOptions {
+            transfer_bias: MIN_TRANSFER_BIAS,
+            ..Default::default()
+        };
+        options.bias_down();
+        assert!((options.transfer_bias - MIN_TRANSFER_BIAS).abs() < 0.001);
+
+        options.transfer_bias = MAX_TRANSFER_BIAS;
+        options.bias_up();
+        assert!((options.transfer_bias - MAX_TRANSFER_BIAS).abs() < 0.001);
+    }
+
+    #[test]
+    fn apply_transfer_bias_at_boundaries() {
+        // All bias values should map 0 -> 0 and 1 -> 1
+        for bias in [0.1, 0.5, 1.0, 2.0, 5.0, 10.0] {
+            assert!(
+                (apply_transfer_bias(0.0, bias) - 0.0).abs() < 0.001,
+                "bias {} should map 0 to 0",
+                bias
+            );
+            assert!(
+                (apply_transfer_bias(1.0, bias) - 1.0).abs() < 0.001,
+                "bias {} should map 1 to 1",
+                bias
+            );
+        }
+    }
+
+    #[test]
+    fn apply_transfer_bias_ordering() {
+        // At t=0.5:
+        // - bias < 1: result > 0.5 (more colors near boundary)
+        // - bias = 1: result = 0.5 (linear)
+        // - bias > 1: result < 0.5 (more colors in outer regions)
+        let low_bias = apply_transfer_bias(0.5, 0.5);
+        let linear = apply_transfer_bias(0.5, 1.0);
+        let high_bias = apply_transfer_bias(0.5, 2.0);
+
+        assert!(low_bias > linear, "Low bias should expand low values");
+        assert!(
+            (linear - 0.5).abs() < 0.001,
+            "Linear bias should be identity"
+        );
+        assert!(high_bias < linear, "High bias should compress low values");
     }
 }
