@@ -1,11 +1,11 @@
 //! High-level GPU renderer API.
 
 use crate::buffers::{GpuBuffers, Uniforms};
+use crate::constants::SENTINEL_NOT_COMPUTED;
 use crate::device::GpuContext;
 use crate::error::GpuError;
+use crate::pass::Adam7Pass;
 use crate::pipeline::GpuPipeline;
-use crate::stretch::SENTINEL_NOT_COMPUTED;
-use crate::Adam7Pass;
 use fractalwonder_core::{ComputeData, MandelbrotData};
 
 /// Result of a GPU render operation.

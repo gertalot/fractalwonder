@@ -6,10 +6,8 @@ use crate::rendering::colorizers::{colorize_with_palette, ColorOptions, Colorize
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
 use crate::workers::{OrbitCompleteData, TileResult, WorkerPool};
-use fractalwonder_core::{HDRFloat, PixelRect, Viewport};
-use fractalwonder_gpu::{
-    Adam7Accumulator, Adam7Pass, GpuAvailability, GpuContext, GpuPerturbationHDRRenderer,
-};
+use fractalwonder_core::{ComputeData, HDRFloat, MandelbrotData, PixelRect, Viewport};
+use fractalwonder_gpu::{GpuAvailability, GpuContext, GpuPerturbationHDRRenderer, GPU_TILE_SIZE};
 use leptos::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -36,8 +34,8 @@ pub struct ParallelRenderer {
     canvas_size: Rc<Cell<(u32, u32)>>,
     /// Render generation counter for interruption handling
     render_generation: Rc<Cell<u32>>,
-    /// Adam7 accumulator for progressive rendering
-    adam7_accumulator: Rc<RefCell<Option<Adam7Accumulator>>>,
+    /// Full-image ComputeData buffer for GPU tile accumulation
+    gpu_result_buffer: Rc<RefCell<Vec<ComputeData>>>,
     /// Current color options for colorization
     options: Rc<RefCell<ColorOptions>>,
     /// Cached palette (expensive to create, so cached when options change)
@@ -60,7 +58,7 @@ impl ParallelRenderer {
         let gpu_in_use: Rc<Cell<bool>> = Rc::new(Cell::new(false));
         let canvas_size: Rc<Cell<(u32, u32)>> = Rc::new(Cell::new((0, 0)));
         let render_generation: Rc<Cell<u32>> = Rc::new(Cell::new(0));
-        let adam7_accumulator: Rc<RefCell<Option<Adam7Accumulator>>> = Rc::new(RefCell::new(None));
+        let gpu_result_buffer: Rc<RefCell<Vec<ComputeData>>> = Rc::new(RefCell::new(Vec::new()));
         // Initialize with default color options and palette
         let default_options = ColorOptions::default();
         let palette: Rc<RefCell<Palette>> = Rc::new(RefCell::new(default_options.palette()));
@@ -161,7 +159,7 @@ impl ParallelRenderer {
             gpu_in_use,
             canvas_size,
             render_generation,
-            adam7_accumulator,
+            gpu_result_buffer,
             options,
             palette,
             colorizer,
@@ -281,10 +279,10 @@ impl ParallelRenderer {
         }
     }
 
-    /// Start GPU-accelerated perturbation render with progressive passes.
+    /// Start GPU-accelerated perturbation render with progressive tile rendering.
     ///
-    /// Uses callback-based setTimeout to create macrotask boundaries between passes,
-    /// allowing the browser to repaint between each progressive resolution level.
+    /// Uses callback-based requestAnimationFrame to create macrotask boundaries between tiles,
+    /// allowing the browser to repaint after each tile completes.
     fn start_gpu_render(&self, viewport: &Viewport, canvas: &HtmlCanvasElement) {
         let width = canvas.width();
         let height = canvas.height();
@@ -293,12 +291,24 @@ impl ParallelRenderer {
         let gen = self.render_generation.get() + 1;
         self.render_generation.set(gen);
 
-        // Initialize progress for GPU passes (7 Adam7 passes)
-        let total_passes = Adam7Pass::all().len() as u32;
-        self.progress.set(RenderProgress::new(total_passes));
+        // Generate tiles (64×64, center-out)
+        let tiles = generate_tiles(width, height, GPU_TILE_SIZE);
+        let total_tiles = tiles.len() as u32;
 
-        // Initialize accumulator for this render
-        *self.adam7_accumulator.borrow_mut() = Some(Adam7Accumulator::new(width, height));
+        // Initialize progress
+        self.progress.set(RenderProgress::new(total_tiles));
+
+        // Initialize full-image result buffer
+        *self.gpu_result_buffer.borrow_mut() = vec![
+            ComputeData::Mandelbrot(MandelbrotData {
+                iterations: 0,
+                max_iterations: 0,
+                escaped: false,
+                glitched: false,
+                final_z_norm_sq: 0.0,
+            });
+            (width * height) as usize
+        ];
 
         self.canvas_size.set((width, height));
 
@@ -309,48 +319,48 @@ impl ParallelRenderer {
         let gpu_in_use = Rc::clone(&self.gpu_in_use);
         let canvas_element = canvas.clone();
         let xray_enabled = Rc::clone(&self.xray_enabled);
+        let gpu_result_buffer = Rc::clone(&self.gpu_result_buffer);
         let tile_results = Rc::clone(&self.tile_results);
-        let worker_pool = Rc::clone(&self.worker_pool);
-        let adam7_accumulator = Rc::clone(&self.adam7_accumulator);
         let options = Rc::clone(&self.options);
         let palette = Rc::clone(&self.palette);
         let colorizer = Rc::clone(&self.colorizer);
         let progress = self.progress;
         let config = self.config;
         let viewport_clone = viewport.clone();
-        let tiles = generate_tiles(width, height, calculate_tile_size(1.0));
 
         // Set up callback for when orbit is ready
         self.worker_pool.borrow().set_orbit_complete_callback(
             move |orbit_data: OrbitCompleteData| {
+                // Generate tiles (must be done inside callback to avoid move issues)
+                let tiles = generate_tiles(width, height, GPU_TILE_SIZE);
+
                 log::info!(
-                    "Orbit ready: {} points, starting progressive GPU render",
-                    orbit_data.orbit.len()
+                    "Orbit ready: {} points, starting tiled GPU render ({} tiles)",
+                    orbit_data.orbit.len(),
+                    tiles.len()
                 );
 
-                // Wrap orbit data in Rc for sharing across pass callbacks
                 let orbit_data = Rc::new(orbit_data);
+                let tiles = Rc::new(tiles);
 
-                // Clone for GPU init
+                // Start GPU init then first tile
                 let generation = Rc::clone(&generation);
                 let gpu_renderer = Rc::clone(&gpu_renderer);
                 let gpu_init_attempted = Rc::clone(&gpu_init_attempted);
                 let gpu_in_use = Rc::clone(&gpu_in_use);
                 let canvas_element = canvas_element.clone();
                 let xray_enabled = Rc::clone(&xray_enabled);
+                let gpu_result_buffer = Rc::clone(&gpu_result_buffer);
                 let tile_results = Rc::clone(&tile_results);
-                let worker_pool = Rc::clone(&worker_pool);
-                let adam7_accumulator = Rc::clone(&adam7_accumulator);
                 let options = Rc::clone(&options);
                 let palette = Rc::clone(&palette);
                 let colorizer = Rc::clone(&colorizer);
                 let viewport = viewport_clone.clone();
-                let tiles = tiles.clone();
-                let orbit_data_init = Rc::clone(&orbit_data);
+                let tiles_clone = Rc::clone(&tiles);
+                let orbit_data_clone = Rc::clone(&orbit_data);
 
-                // First spawn_local: GPU init, then schedule first pass via macrotask
                 wasm_bindgen_futures::spawn_local(async move {
-                    // Try GPU init if not attempted
+                    // GPU init
                     if !gpu_init_attempted.get() {
                         gpu_init_attempted.set(true);
                         match GpuContext::try_init().await {
@@ -361,117 +371,34 @@ impl ParallelRenderer {
                             }
                             GpuAvailability::Unavailable(reason) => {
                                 log::warn!("GPU unavailable: {reason}");
+                                return;
                             }
                         }
                     }
 
-                    // Check if we have GPU available
-                    // If GPU is temporarily in use by a stale render, wait for it
-                    let gpu_available = gpu_renderer.borrow().is_some();
-                    let gpu_busy = gpu_in_use.get();
-
-                    if !gpu_available && !gpu_busy {
-                        // GPU truly unavailable (init failed or not supported)
-                        log::info!("No GPU available, using CPU");
-                        worker_pool.borrow_mut().start_perturbation_render(
-                            viewport,
-                            (width, height),
-                            tiles,
-                        );
-                        return;
-                    }
-
-                    if !gpu_available && gpu_busy {
-                        // GPU is temporarily taken out by a stale render pass
-                        // The stale pass will abort via generation check and return it shortly
-                        // Schedule a retry after a short delay
-                        log::info!("GPU temporarily busy, waiting...");
-                        let gpu_renderer = Rc::clone(&gpu_renderer);
-                        let gpu_in_use = Rc::clone(&gpu_in_use);
-                        let generation = Rc::clone(&generation);
-                        let canvas_element = canvas_element.clone();
-                        let xray_enabled = Rc::clone(&xray_enabled);
-                        let tile_results = Rc::clone(&tile_results);
-                        let worker_pool = Rc::clone(&worker_pool);
-                        let adam7_accumulator = Rc::clone(&adam7_accumulator);
-                        let orbit_data = Rc::clone(&orbit_data_init);
-                        let options = Rc::clone(&options);
-                        let palette = Rc::clone(&palette);
-                        let colorizer = Rc::clone(&colorizer);
-
-                        // Use requestAnimationFrame to retry
-                        request_animation_frame_then(move || {
-                            // Check generation - might have been superseded
-                            if generation.get() != gen {
-                                return;
-                            }
-                            // Check if GPU is now available
-                            if gpu_renderer.borrow().is_some() {
-                                let render_start_time = performance_now();
-                                schedule_adam7_pass(
-                                    Adam7Pass::all()[0],
-                                    0,
-                                    gen,
-                                    width,
-                                    height,
-                                    config,
-                                    generation,
-                                    gpu_renderer,
-                                    canvas_element,
-                                    xray_enabled,
-                                    tile_results,
-                                    worker_pool,
-                                    progress,
-                                    viewport,
-                                    tiles,
-                                    orbit_data,
-                                    render_start_time,
-                                    gpu_in_use,
-                                    adam7_accumulator,
-                                    options,
-                                    palette,
-                                    colorizer,
-                                );
-                            } else {
-                                // Still not available, fall back to CPU
-                                log::warn!("GPU still unavailable after wait, using CPU");
-                                worker_pool.borrow_mut().start_perturbation_render(
-                                    viewport,
-                                    (width, height),
-                                    tiles,
-                                );
-                            }
-                        });
-                        return;
-                    }
-
-                    // Schedule first pass via setTimeout (macrotask boundary)
-                    // This ends the current spawn_local, allowing browser to repaint
-                    let passes = Adam7Pass::all();
+                    // Schedule first tile
                     let render_start_time = performance_now();
-                    schedule_adam7_pass(
-                        passes[0],
+                    schedule_tile(
                         0,
                         gen,
                         width,
                         height,
                         config,
-                        Rc::clone(&generation),
-                        Rc::clone(&gpu_renderer),
-                        canvas_element.clone(),
-                        Rc::clone(&xray_enabled),
-                        Rc::clone(&tile_results),
-                        Rc::clone(&worker_pool),
+                        generation,
+                        gpu_renderer,
+                        gpu_in_use,
+                        canvas_element,
+                        xray_enabled,
+                        gpu_result_buffer,
+                        tile_results,
                         progress,
-                        viewport.clone(),
-                        tiles.clone(),
-                        Rc::clone(&orbit_data_init),
+                        viewport,
+                        tiles_clone,
+                        orbit_data_clone,
                         render_start_time,
-                        Rc::clone(&gpu_in_use),
-                        Rc::clone(&adam7_accumulator),
-                        Rc::clone(&options),
-                        Rc::clone(&palette),
-                        Rc::clone(&colorizer),
+                        options,
+                        palette,
+                        colorizer,
                     );
                 });
             },
@@ -490,39 +417,38 @@ impl ParallelRenderer {
     }
 }
 
-/// Schedule an Adam7 pass with proper browser repaint between passes.
+/// Schedule a GPU tile render with proper browser repaint between tiles.
 #[allow(clippy::too_many_arguments)]
-fn schedule_adam7_pass(
-    pass: Adam7Pass,
-    pass_index: usize,
+fn schedule_tile(
+    tile_index: usize,
     expected_gen: u32,
     width: u32,
     height: u32,
     config: &'static FractalConfig,
     generation: Rc<Cell<u32>>,
     gpu_renderer: Rc<RefCell<Option<GpuPerturbationHDRRenderer>>>,
+    gpu_in_use: Rc<Cell<bool>>,
     canvas_element: HtmlCanvasElement,
     xray_enabled: Rc<Cell<bool>>,
+    gpu_result_buffer: Rc<RefCell<Vec<ComputeData>>>,
     tile_results: Rc<RefCell<Vec<TileResult>>>,
-    worker_pool: Rc<RefCell<WorkerPool>>,
     progress: RwSignal<RenderProgress>,
     viewport: Viewport,
-    tiles: Vec<PixelRect>,
+    tiles: Rc<Vec<PixelRect>>,
     orbit_data: Rc<OrbitCompleteData>,
     render_start_time: f64,
-    gpu_in_use: Rc<Cell<bool>>,
-    adam7_accumulator: Rc<RefCell<Option<Adam7Accumulator>>>,
     options: Rc<RefCell<ColorOptions>>,
     palette: Rc<RefCell<Palette>>,
     colorizer: Rc<RefCell<ColorizerKind>>,
 ) {
-    log::info!("Scheduling Adam7 pass {}", pass.step());
-
     // Check generation - abort if stale
     if generation.get() != expected_gen {
-        log::debug!("Render interrupted at Adam7 pass {}", pass.step());
+        log::debug!("Render interrupted at tile {}", tile_index);
         return;
     }
+
+    let tile = tiles[tile_index];
+    let is_final = tile_index == tiles.len() - 1;
 
     // Clone for spawn_local
     let generation_spawn = Rc::clone(&generation);
@@ -530,33 +456,29 @@ fn schedule_adam7_pass(
     let gpu_in_use_spawn = Rc::clone(&gpu_in_use);
     let canvas_element_spawn = canvas_element.clone();
     let xray_enabled_spawn = Rc::clone(&xray_enabled);
+    let gpu_result_buffer_spawn = Rc::clone(&gpu_result_buffer);
     let tile_results_spawn = Rc::clone(&tile_results);
-    let worker_pool_spawn = Rc::clone(&worker_pool);
     let viewport_spawn = viewport.clone();
-    let tiles_spawn = tiles.clone();
+    let tiles_spawn = Rc::clone(&tiles);
     let orbit_data_spawn = Rc::clone(&orbit_data);
-    let adam7_accumulator_spawn = Rc::clone(&adam7_accumulator);
     let options_spawn = Rc::clone(&options);
     let palette_spawn = Rc::clone(&palette);
     let colorizer_spawn = Rc::clone(&colorizer);
 
     wasm_bindgen_futures::spawn_local(async move {
-        // Convert viewport to HDRFloat format for GPU
+        // Convert viewport to HDRFloat format
         let vp_width = HDRFloat::from_bigfloat(&viewport_spawn.width);
         let vp_height = HDRFloat::from_bigfloat(&viewport_spawn.height);
 
-        // dc_origin = -half_size (top-left corner relative to reference)
         let half = HDRFloat::from_f64(0.5);
         let half_width = vp_width.mul(&half);
         let half_height = vp_height.mul(&half);
         let origin_re = half_width.neg();
         let origin_im = half_height.neg();
 
-        // dc_step = size / pixel_count
         let step_re = HDRFloat::from_f64(vp_width.to_f64() / width as f64);
         let step_im = HDRFloat::from_f64(vp_height.to_f64() / height as f64);
 
-        // Pack as ((head, tail, exp), (head, tail, exp)) tuples for GPU HDRFloat format
         let dc_origin = (
             (origin_re.head, origin_re.tail, origin_re.exp),
             (origin_im.head, origin_im.tail, origin_im.exp),
@@ -565,117 +487,88 @@ fn schedule_adam7_pass(
             (step_re.head, step_re.tail, step_re.exp),
             (step_im.head, step_im.tail, step_im.exp),
         );
+
         let tau_sq = config.tau_sq as f32;
         let reference_escaped =
             orbit_data_spawn.orbit.len() < orbit_data_spawn.max_iterations as usize;
 
-        // Mark GPU as in use
+        // Mark GPU in use, take renderer
         gpu_in_use_spawn.set(true);
-
-        // Take renderer temporarily
         let mut renderer = gpu_renderer_spawn.borrow_mut().take().unwrap();
-        let pass_result = renderer
-            .render(
+
+        let tile_result = renderer
+            .render_tile(
                 &orbit_data_spawn.orbit,
                 orbit_data_spawn.orbit_id,
                 dc_origin,
                 dc_step,
                 width,
                 height,
+                &tile,
                 orbit_data_spawn.max_iterations,
                 tau_sq,
                 reference_escaped,
-                pass,
             )
             .await;
 
-        // Put renderer back
+        // Return renderer
         *gpu_renderer_spawn.borrow_mut() = Some(renderer);
         gpu_in_use_spawn.set(false);
 
-        // Check generation after await - abort if render was superseded during GPU computation
+        // Check generation after await
         if generation_spawn.get() != expected_gen {
-            log::debug!(
-                "Render {} superseded after pass {} completed",
-                expected_gen,
-                pass.step()
-            );
             return;
         }
 
-        match pass_result {
+        match tile_result {
             Ok(result) => {
-                log::info!(
-                    "Adam7 pass {}: {:.1}ms",
-                    pass.step(),
+                log::debug!(
+                    "Tile {}/{}: ({},{}) {}×{} in {:.1}ms",
+                    tile_index + 1,
+                    tiles_spawn.len(),
+                    tile.x,
+                    tile.y,
+                    tile.width,
+                    tile.height,
                     result.compute_time_ms
                 );
 
-                // Merge into accumulator
-                if let Some(ref mut acc) = *adam7_accumulator_spawn.borrow_mut() {
-                    acc.merge(&result.data);
+                // Copy tile data into full-image buffer
+                {
+                    let mut buffer = gpu_result_buffer_spawn.borrow_mut();
+                    for ty in 0..tile.height {
+                        for tx in 0..tile.width {
+                            let tile_idx = (ty * tile.width + tx) as usize;
+                            let image_idx = ((tile.y + ty) * width + (tile.x + tx)) as usize;
+                            if tile_idx < result.data.len() && image_idx < buffer.len() {
+                                buffer[image_idx] = result.data[tile_idx].clone();
+                            }
+                        }
+                    }
+                }
 
-                    // Get display buffer (with gaps filled)
-                    let display_data = if pass.is_final() {
-                        acc.to_final_buffer()
-                    } else {
-                        acc.to_display_buffer()
-                    };
-
-                    // Store for recolorize (update with latest)
-                    tile_results_spawn.borrow_mut().clear();
-                    tile_results_spawn.borrow_mut().push(TileResult {
-                        tile: PixelRect {
-                            x: 0,
-                            y: 0,
-                            width,
-                            height,
-                        },
-                        data: display_data.clone(),
-                        compute_time_ms: result.compute_time_ms,
-                    });
-
-                    // Colorize and draw
-                    let xray = xray_enabled_spawn.get();
+                // Quick colorize tile and draw
+                let xray = xray_enabled_spawn.get();
+                let tile_pixels: Vec<u8> = {
                     let opts = options_spawn.borrow();
                     let pal = palette_spawn.borrow();
                     let col = colorizer_spawn.borrow();
 
-                    // On final pass, always use full pipeline for correct colorization
-                    // On non-final passes, use quick path (effects need full image anyway)
-                    let pixels: Vec<u8> = if pass.is_final() {
-                        let reference_width = config
-                            .default_viewport(viewport_spawn.precision_bits())
-                            .width;
-                        let zoom_level = reference_width.to_f64() / viewport_spawn.width.to_f64();
-                        col.run_pipeline(
-                            &display_data,
-                            &opts,
-                            &pal,
-                            width as usize,
-                            height as usize,
-                            zoom_level,
-                        )
-                        .into_iter()
-                        .flatten()
+                    result
+                        .data
+                        .iter()
+                        .flat_map(|d| colorize_with_palette(d, &opts, &pal, &col, xray))
                         .collect()
-                    } else {
-                        display_data
-                            .iter()
-                            .flat_map(|d| colorize_with_palette(d, &opts, &pal, &col, xray))
-                            .collect()
-                    };
+                };
 
-                    if let Ok(ctx) = get_2d_context(&canvas_element_spawn) {
-                        match draw_full_frame(&ctx, &pixels, width, height) {
-                            Ok(()) => {
-                                log::info!("Drew Adam7 pass {} to canvas", pass.step())
-                            }
-                            Err(e) => {
-                                log::error!("Draw failed for Adam7 pass {}: {:?}", pass.step(), e)
-                            }
-                        }
-                    }
+                if let Ok(ctx) = get_2d_context(&canvas_element_spawn) {
+                    let _ = draw_pixels_to_canvas(
+                        &ctx,
+                        &tile_pixels,
+                        tile.width,
+                        tile.x as f64,
+                        tile.y as f64,
+                    );
                 }
 
                 // Update progress
@@ -683,55 +576,84 @@ fn schedule_adam7_pass(
                 progress.update(|p| {
                     p.completed_steps += 1;
                     p.elapsed_ms = elapsed_ms;
-                    p.is_complete = pass.is_final();
+                    p.is_complete = is_final;
                 });
 
-                if !pass.is_final() {
-                    // Schedule next pass via double rAF
-                    let passes = Adam7Pass::all();
-                    let next_index = pass_index + 1;
-                    if next_index < passes.len() {
-                        request_animation_frame_then(move || {
-                            request_animation_frame_then(move || {
-                                schedule_adam7_pass(
-                                    passes[next_index],
-                                    next_index,
-                                    expected_gen,
-                                    width,
-                                    height,
-                                    config,
-                                    generation_spawn,
-                                    gpu_renderer_spawn,
-                                    canvas_element_spawn,
-                                    xray_enabled_spawn,
-                                    tile_results_spawn,
-                                    worker_pool_spawn,
-                                    progress,
-                                    viewport_spawn,
-                                    tiles_spawn,
-                                    orbit_data_spawn,
-                                    render_start_time,
-                                    gpu_in_use_spawn,
-                                    adam7_accumulator_spawn,
-                                    options_spawn,
-                                    palette_spawn,
-                                    colorizer_spawn,
-                                );
-                            });
-                        });
+                if is_final {
+                    // Run full colorizer pipeline on complete buffer
+                    let (final_pixels, full_buffer_clone) = {
+                        let opts = options_spawn.borrow();
+                        let pal = palette_spawn.borrow();
+                        let col = colorizer_spawn.borrow();
+                        let full_buffer = gpu_result_buffer_spawn.borrow();
+                        let reference_width = config
+                            .default_viewport(viewport_spawn.precision_bits())
+                            .width;
+                        let zoom_level = reference_width.to_f64() / viewport_spawn.width.to_f64();
+
+                        let final_pixels = col.run_pipeline(
+                            &full_buffer,
+                            &opts,
+                            &pal,
+                            width as usize,
+                            height as usize,
+                            zoom_level,
+                        );
+
+                        (final_pixels, full_buffer.clone())
+                    };
+
+                    // Store for recolorize
+                    tile_results_spawn.borrow_mut().clear();
+                    tile_results_spawn.borrow_mut().push(TileResult {
+                        tile: PixelRect::new(0, 0, width, height),
+                        data: full_buffer_clone,
+                        compute_time_ms: elapsed_ms,
+                    });
+
+                    // Draw final image
+                    if let Ok(ctx) = get_2d_context(&canvas_element_spawn) {
+                        let pixel_bytes: Vec<u8> = final_pixels.into_iter().flatten().collect();
+                        let _ = draw_full_frame(&ctx, &pixel_bytes, width, height);
                     }
+
+                    log::info!(
+                        "Tiled render complete: {} tiles in {:.1}ms",
+                        tiles_spawn.len(),
+                        elapsed_ms
+                    );
+                } else {
+                    // Schedule next tile via requestAnimationFrame
+                    let next_index = tile_index + 1;
+                    request_animation_frame_then(move || {
+                        schedule_tile(
+                            next_index,
+                            expected_gen,
+                            width,
+                            height,
+                            config,
+                            generation_spawn,
+                            gpu_renderer_spawn,
+                            gpu_in_use_spawn,
+                            canvas_element_spawn,
+                            xray_enabled_spawn,
+                            gpu_result_buffer_spawn,
+                            tile_results_spawn,
+                            progress,
+                            viewport_spawn,
+                            tiles_spawn,
+                            orbit_data_spawn,
+                            render_start_time,
+                            options_spawn,
+                            palette_spawn,
+                            colorizer_spawn,
+                        );
+                    });
                 }
             }
             Err(e) => {
-                log::warn!(
-                    "GPU Adam7 pass {} failed: {e}, falling back to CPU",
-                    pass.step()
-                );
-                worker_pool_spawn.borrow_mut().start_perturbation_render(
-                    viewport_spawn,
-                    (width, height),
-                    tiles_spawn,
-                );
+                log::error!("GPU tile {} failed: {e}", tile_index);
+                // Could fall back to CPU here
             }
         }
     });

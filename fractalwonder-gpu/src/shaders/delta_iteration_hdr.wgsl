@@ -196,8 +196,8 @@ fn hdr_from_parts(head: f32, tail: f32, exp: i32) -> HDRFloat {
 // ============================================================
 
 struct Uniforms {
-    width: u32,
-    height: u32,
+    image_width: u32,
+    image_height: u32,
     max_iterations: u32,
     escape_radius_sq: f32,
     tau_sq: f32,
@@ -220,10 +220,14 @@ struct Uniforms {
     dc_step_im_tail: f32,
     dc_step_im_exp: i32,
 
-    adam7_step: u32,
+    tile_offset_x: u32,
+    tile_offset_y: u32,
+    tile_width: u32,
+    tile_height: u32,
+
     reference_escaped: u32,
     orbit_len: u32,
-    _pad4: u32,
+    _pad4: vec2<u32>,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -234,73 +238,32 @@ struct Uniforms {
 
 const SENTINEL_NOT_COMPUTED: u32 = 0xFFFFFFFFu;
 
-// Adam7 interlacing pattern
-fn adam7_coords(pass_idx: u32) -> vec2<u32> {
-    switch pass_idx {
-        case 1u: { return vec2<u32>(0u, 0u); }
-        case 2u: { return vec2<u32>(4u, 0u); }
-        case 3u: { return vec2<u32>(0u, 4u); }
-        case 4u: { return vec2<u32>(2u, 0u); }
-        case 5u: { return vec2<u32>(0u, 2u); }
-        case 6u: { return vec2<u32>(1u, 0u); }
-        case 7u: { return vec2<u32>(0u, 1u); }
-        default: { return vec2<u32>(0u, 0u); }
-    }
-}
-
-fn adam7_step_size(pass_idx: u32) -> vec2<u32> {
-    switch pass_idx {
-        case 1u: { return vec2<u32>(8u, 8u); }
-        case 2u: { return vec2<u32>(8u, 8u); }
-        case 3u: { return vec2<u32>(4u, 8u); }
-        case 4u: { return vec2<u32>(4u, 4u); }
-        case 5u: { return vec2<u32>(2u, 4u); }
-        case 6u: { return vec2<u32>(2u, 2u); }
-        case 7u: { return vec2<u32>(1u, 2u); }
-        default: { return vec2<u32>(1u, 1u); }
-    }
-}
-
-// Marker to detect if shader thread started but didn't finish
-const MARKER_THREAD_STARTED: u32 = 0xDEADBEEFu;
-
 @compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let x = global_id.x;
-    let y = global_id.y;
+fn main(@builtin(global_invocation_id) local_id: vec3<u32>) {
+    let local_x = local_id.x;
+    let local_y = local_id.y;
 
-    if x >= uniforms.width || y >= uniforms.height {
+    // Bounds check against tile size
+    if local_x >= uniforms.tile_width || local_y >= uniforms.tile_height {
         return;
     }
 
-    let pixel_idx = y * uniforms.width + x;
+    // Global pixel position for δc calculation
+    let global_x = uniforms.tile_offset_x + local_x;
+    let global_y = uniforms.tile_offset_y + local_y;
 
-    // DIAGNOSTIC: Mark that this thread started execution.
-    // If we see this marker in results, the thread started but never finished the loop.
-    // If we see 0, the thread never even started (or buffer wasn't touched).
-    results[pixel_idx] = MARKER_THREAD_STARTED;
+    // Tile-local buffer index
+    let tile_idx = local_y * uniforms.tile_width + local_x;
 
-    // Adam7 filtering
-    if uniforms.adam7_step > 0u {
-        let offset = adam7_coords(uniforms.adam7_step);
-        let step = adam7_step_size(uniforms.adam7_step);
-        if (x % step.x) != offset.x || (y % step.y) != offset.y {
-            results[pixel_idx] = SENTINEL_NOT_COMPUTED;
-            glitch_flags[pixel_idx] = 0u;
-            z_norm_sq[pixel_idx] = 0.0;
-            return;
-        }
-    }
-
-    // Construct δc for this pixel
+    // Construct δc for this pixel using GLOBAL position
     let dc_origin_re = hdr_from_parts(uniforms.dc_origin_re_head, uniforms.dc_origin_re_tail, uniforms.dc_origin_re_exp);
     let dc_origin_im = hdr_from_parts(uniforms.dc_origin_im_head, uniforms.dc_origin_im_tail, uniforms.dc_origin_im_exp);
     let dc_step_re = hdr_from_parts(uniforms.dc_step_re_head, uniforms.dc_step_re_tail, uniforms.dc_step_re_exp);
     let dc_step_im = hdr_from_parts(uniforms.dc_step_im_head, uniforms.dc_step_im_tail, uniforms.dc_step_im_exp);
 
-    // δc = dc_origin + pixel_pos * dc_step
-    let x_hdr = HDRFloat(f32(x), 0.0, 0);
-    let y_hdr = HDRFloat(f32(y), 0.0, 0);
+    // δc = dc_origin + global_pixel_pos * dc_step
+    let x_hdr = HDRFloat(f32(global_x), 0.0, 0);
+    let y_hdr = HDRFloat(f32(global_y), 0.0, 0);
     let dc_re = hdr_add(dc_origin_re, hdr_mul(x_hdr, dc_step_re));
     let dc_im = hdr_add(dc_origin_im, hdr_mul(y_hdr, dc_step_im));
     let dc = HDRComplex(dc_re, dc_im);
@@ -361,11 +324,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
         // 1. Escape check
         if z_mag_sq > uniforms.escape_radius_sq {
-            // Guard against n equaling SENTINEL_NOT_COMPUTED (extremely unlikely but be safe)
-            let escape_iterations = select(n, n - 1u, n == SENTINEL_NOT_COMPUTED);
-            results[pixel_idx] = escape_iterations;
-            glitch_flags[pixel_idx] = select(0u, 1u, glitched);
-            z_norm_sq[pixel_idx] = z_mag_sq;
+            results[tile_idx] = n;
+            glitch_flags[tile_idx] = select(0u, 1u, glitched);
+            z_norm_sq[tile_idx] = z_mag_sq;
             return;
         }
 
@@ -403,11 +364,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         n = n + 1u; // Only increment iteration count after a real iteration
     }
 
-    // Reached max iterations (or safety limit)
-    // Guard against max_iterations equaling SENTINEL_NOT_COMPUTED to ensure pixel is counted
-    let final_iterations = select(uniforms.max_iterations, uniforms.max_iterations - 1u,
-                                   uniforms.max_iterations == SENTINEL_NOT_COMPUTED);
-    results[pixel_idx] = final_iterations;
-    glitch_flags[pixel_idx] = select(0u, 1u, glitched);
-    z_norm_sq[pixel_idx] = 0.0;
+    // Reached max iterations
+    results[tile_idx] = uniforms.max_iterations;
+    glitch_flags[tile_idx] = select(0u, 1u, glitched);
+    z_norm_sq[tile_idx] = 0.0;
 }

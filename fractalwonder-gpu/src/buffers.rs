@@ -119,8 +119,8 @@ impl DirectHDRUniforms {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct PerturbationHDRUniforms {
-    pub width: u32,
-    pub height: u32,
+    pub image_width: u32,  // Full image width (for δc calculation)
+    pub image_height: u32, // Full image height
     pub max_iterations: u32,
     pub escape_radius_sq: f32,
     pub tau_sq: f32,
@@ -145,28 +145,36 @@ pub struct PerturbationHDRUniforms {
     pub dc_step_im_tail: f32,
     pub dc_step_im_exp: i32,
 
-    pub adam7_step: u32,
+    // Tile bounds (replaces adam7_step)
+    pub tile_offset_x: u32,
+    pub tile_offset_y: u32,
+    pub tile_width: u32,
+    pub tile_height: u32,
+
     pub reference_escaped: u32,
     pub orbit_len: u32,
-    pub _pad4: u32,
+    pub _pad4: [u32; 2], // Pad to 16-byte alignment
 }
 
 impl PerturbationHDRUniforms {
     #[allow(dead_code, clippy::too_many_arguments)]
     pub fn new(
-        width: u32,
-        height: u32,
+        image_width: u32,
+        image_height: u32,
         max_iterations: u32,
         tau_sq: f32,
         dc_origin: ((f32, f32, i32), (f32, f32, i32)),
         dc_step: ((f32, f32, i32), (f32, f32, i32)),
-        adam7_step: u32,
+        tile_offset_x: u32,
+        tile_offset_y: u32,
+        tile_width: u32,
+        tile_height: u32,
         reference_escaped: bool,
         orbit_len: u32,
     ) -> Self {
         Self {
-            width,
-            height,
+            image_width,
+            image_height,
             max_iterations,
             escape_radius_sq: 65536.0,
             tau_sq,
@@ -186,15 +194,23 @@ impl PerturbationHDRUniforms {
             dc_step_im_head: dc_step.1 .0,
             dc_step_im_tail: dc_step.1 .1,
             dc_step_im_exp: dc_step.1 .2,
-            adam7_step,
+            tile_offset_x,
+            tile_offset_y,
+            tile_width,
+            tile_height,
             reference_escaped: if reference_escaped { 1 } else { 0 },
             orbit_len,
-            _pad4: 0,
+            _pad4: [0, 0],
         }
     }
 }
 
+/// Maximum tile size for GPU rendering (64×64 = 4096 pixels).
+pub const GPU_TILE_SIZE: u32 = 64;
+pub const GPU_TILE_PIXELS: u32 = GPU_TILE_SIZE * GPU_TILE_SIZE;
+
 /// GPU buffers for perturbation HDRFloat rendering.
+/// Buffers are sized for a single tile (64×64), reused across tile dispatches.
 pub struct PerturbationHDRBuffers {
     pub uniforms: wgpu::Buffer,
     pub reference_orbit: wgpu::Buffer,
@@ -205,12 +221,12 @@ pub struct PerturbationHDRBuffers {
     pub z_norm_sq: wgpu::Buffer,
     pub staging_z_norm_sq: wgpu::Buffer,
     pub orbit_capacity: u32,
-    pub pixel_count: u32,
 }
 
 impl PerturbationHDRBuffers {
-    pub fn new(device: &wgpu::Device, orbit_len: u32, width: u32, height: u32) -> Self {
-        let pixel_count = width * height;
+    /// Create tile-sized buffers. Orbit buffer sized for orbit_len.
+    pub fn new(device: &wgpu::Device, orbit_len: u32) -> Self {
+        let tile_pixels = GPU_TILE_PIXELS as usize;
 
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perturbation_hdr_uniforms"),
@@ -228,42 +244,42 @@ impl PerturbationHDRBuffers {
 
         let results = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perturbation_hdr_results"),
-            size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
+            size: (tile_pixels * std::mem::size_of::<u32>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
         let glitch_flags = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perturbation_hdr_glitch_flags"),
-            size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
+            size: (tile_pixels * std::mem::size_of::<u32>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
         let staging_results = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perturbation_hdr_staging_results"),
-            size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
+            size: (tile_pixels * std::mem::size_of::<u32>()) as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let staging_glitches = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perturbation_hdr_staging_glitches"),
-            size: (pixel_count as usize * std::mem::size_of::<u32>()) as u64,
+            size: (tile_pixels * std::mem::size_of::<u32>()) as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perturbation_hdr_z_norm_sq"),
-            size: (pixel_count as usize * std::mem::size_of::<f32>()) as u64,
+            size: (tile_pixels * std::mem::size_of::<f32>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
         let staging_z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perturbation_hdr_staging_z_norm_sq"),
-            size: (pixel_count as usize * std::mem::size_of::<f32>()) as u64,
+            size: (tile_pixels * std::mem::size_of::<f32>()) as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -278,7 +294,6 @@ impl PerturbationHDRBuffers {
             z_norm_sq,
             staging_z_norm_sq,
             orbit_capacity: orbit_len,
-            pixel_count,
         }
     }
 }

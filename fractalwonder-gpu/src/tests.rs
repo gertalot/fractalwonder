@@ -1,6 +1,7 @@
 //! Tests for GPU renderer - verifies GPU output matches CPU perturbation.
 
-use crate::{Adam7Pass, GpuAvailability, GpuContext, GpuPerturbationRenderer};
+use crate::pass::Adam7Pass;
+use crate::{GpuAvailability, GpuContext, GpuPerturbationRenderer};
 use fractalwonder_compute::{compute_pixel_perturbation, ReferenceOrbit};
 use fractalwonder_core::{BigFloat, ComputeData, MandelbrotData};
 

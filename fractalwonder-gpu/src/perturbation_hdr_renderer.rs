@@ -5,43 +5,21 @@ use crate::buffers::{PerturbationHDRBuffers, PerturbationHDRUniforms};
 use crate::device::GpuContext;
 use crate::error::GpuError;
 use crate::perturbation_hdr_pipeline::PerturbationHDRPipeline;
-use crate::stretch::SENTINEL_NOT_COMPUTED;
-use crate::Adam7Pass;
-use fractalwonder_core::{ComputeData, MandelbrotData};
+use fractalwonder_core::{ComputeData, MandelbrotData, PixelRect};
 
-/// Result of a GPU perturbation HDR render operation.
-pub struct GpuPerturbationHDRResult {
+/// Result of a GPU tile render operation.
+pub struct GpuTileResult {
     pub data: Vec<ComputeData>,
+    pub tile: PixelRect,
     pub compute_time_ms: f64,
 }
 
-impl GpuPerturbationHDRResult {
-    pub fn has_glitches(&self) -> bool {
-        self.data.iter().any(|d| match d {
-            ComputeData::Mandelbrot(m) => m.glitched && m.iterations != SENTINEL_NOT_COMPUTED,
-            _ => false,
-        })
-    }
-
-    pub fn glitched_pixel_count(&self) -> usize {
-        self.data
-            .iter()
-            .filter(|d| match d {
-                ComputeData::Mandelbrot(m) => m.glitched && m.iterations != SENTINEL_NOT_COMPUTED,
-                _ => false,
-            })
-            .count()
-    }
-}
-
 /// GPU renderer for Mandelbrot perturbation with HDRFloat deltas.
-/// Provides extended range arithmetic to fix artifacts at moderate zoom (10^4 to 10^15).
 pub struct GpuPerturbationHDRRenderer {
     context: GpuContext,
     pipeline: PerturbationHDRPipeline,
     buffers: Option<PerturbationHDRBuffers>,
     cached_orbit_id: Option<u32>,
-    current_dimensions: Option<(u32, u32)>,
 }
 
 impl GpuPerturbationHDRRenderer {
@@ -52,44 +30,44 @@ impl GpuPerturbationHDRRenderer {
             pipeline,
             buffers: None,
             cached_orbit_id: None,
-            current_dimensions: None,
         }
     }
 
-    /// Render a single Adam7 pass using HDRFloat perturbation.
+    /// Render a single tile.
     ///
     /// # Arguments
     /// * `orbit` - Reference orbit as (re, im) pairs
     /// * `orbit_id` - ID for orbit caching
-    /// * `dc_origin` - Top-left δc as ((re_head, re_tail, re_exp), (im_head, im_tail, im_exp))
-    /// * `dc_step` - Per-pixel δc step as ((re_head, re_tail, re_exp), (im_head, im_tail, im_exp))
+    /// * `dc_origin` - Top-left δc for full image as HDRFloat tuples
+    /// * `dc_step` - Per-pixel δc step as HDRFloat tuples
+    /// * `image_width` - Full image width
+    /// * `image_height` - Full image height
+    /// * `tile` - Tile bounds in pixel coordinates
+    /// * `max_iterations` - Maximum iteration count
+    /// * `tau_sq` - Glitch detection threshold
+    /// * `reference_escaped` - Whether reference orbit escaped
     #[allow(clippy::too_many_arguments)]
-    pub async fn render(
+    pub async fn render_tile(
         &mut self,
         orbit: &[(f64, f64)],
         orbit_id: u32,
         dc_origin: ((f32, f32, i32), (f32, f32, i32)),
         dc_step: ((f32, f32, i32), (f32, f32, i32)),
-        width: u32,
-        height: u32,
+        image_width: u32,
+        image_height: u32,
+        tile: &PixelRect,
         max_iterations: u32,
         tau_sq: f32,
         reference_escaped: bool,
-        pass: Adam7Pass,
-    ) -> Result<GpuPerturbationHDRResult, GpuError> {
+    ) -> Result<GpuTileResult, GpuError> {
         let start = Self::now();
 
-        // Recreate buffers if dimensions changed
-        if self.current_dimensions != Some((width, height))
-            || self.buffers.as_ref().map(|b| b.orbit_capacity).unwrap_or(0) < orbit.len() as u32
-        {
+        // Recreate buffers if orbit capacity changed
+        if self.buffers.as_ref().map(|b| b.orbit_capacity).unwrap_or(0) < orbit.len() as u32 {
             self.buffers = Some(PerturbationHDRBuffers::new(
                 &self.context.device,
                 orbit.len() as u32,
-                width,
-                height,
             ));
-            self.current_dimensions = Some((width, height));
             self.cached_orbit_id = None;
         }
 
@@ -109,26 +87,20 @@ impl GpuPerturbationHDRRenderer {
             self.cached_orbit_id = Some(orbit_id);
         }
 
-        // Write uniforms with HDRFloat dc values
+        // Write uniforms with tile bounds
         let uniforms = PerturbationHDRUniforms::new(
-            width,
-            height,
+            image_width,
+            image_height,
             max_iterations,
             tau_sq,
             dc_origin,
             dc_step,
-            pass.step() as u32,
+            tile.x,
+            tile.y,
+            tile.width,
+            tile.height,
             reference_escaped,
             orbit.len() as u32,
-        );
-
-        log::debug!(
-            "GPU uniforms: width={}, height={}, max_iter={}, adam7_step={}, orbit_len={}",
-            width,
-            height,
-            max_iterations,
-            pass.step(),
-            orbit.len()
         );
 
         self.context
@@ -166,7 +138,7 @@ impl GpuPerturbationHDRRenderer {
                 ],
             });
 
-        // Dispatch compute shader
+        // Dispatch compute shader for tile
         let mut encoder =
             self.context
                 .device
@@ -181,107 +153,49 @@ impl GpuPerturbationHDRRenderer {
             });
             compute_pass.set_pipeline(&self.pipeline.compute_pipeline);
             compute_pass.set_bind_group(0, &bind_group, &[]);
-            compute_pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
+            // Dispatch workgroups for tile size
+            compute_pass.dispatch_workgroups(tile.width.div_ceil(8), tile.height.div_ceil(8), 1);
         }
 
-        // Copy results to staging buffers
-        let pixel_count = (width * height) as usize;
-        let byte_size = (pixel_count * std::mem::size_of::<u32>()) as u64;
+        // Copy results to staging buffers (only tile pixels)
+        let tile_pixels = (tile.width * tile.height) as usize;
+        let u32_byte_size = (tile_pixels * std::mem::size_of::<u32>()) as u64;
+        let f32_byte_size = (tile_pixels * std::mem::size_of::<f32>()) as u64;
 
-        encoder.copy_buffer_to_buffer(&buffers.results, 0, &buffers.staging_results, 0, byte_size);
+        encoder.copy_buffer_to_buffer(
+            &buffers.results,
+            0,
+            &buffers.staging_results,
+            0,
+            u32_byte_size,
+        );
         encoder.copy_buffer_to_buffer(
             &buffers.glitch_flags,
             0,
             &buffers.staging_glitches,
             0,
-            byte_size,
+            u32_byte_size,
         );
         encoder.copy_buffer_to_buffer(
             &buffers.z_norm_sq,
             0,
             &buffers.staging_z_norm_sq,
             0,
-            (pixel_count * std::mem::size_of::<f32>()) as u64,
+            f32_byte_size,
         );
 
         self.context.queue.submit(std::iter::once(encoder.finish()));
 
         // Read back results
         let iterations = self
-            .read_buffer(&buffers.staging_results, pixel_count)
+            .read_buffer(&buffers.staging_results, tile_pixels)
             .await?;
         let glitch_data = self
-            .read_buffer(&buffers.staging_glitches, pixel_count)
+            .read_buffer(&buffers.staging_glitches, tile_pixels)
             .await?;
         let z_norm_sq_data = self
-            .read_buffer_f32(&buffers.staging_z_norm_sq, pixel_count)
+            .read_buffer_f32(&buffers.staging_z_norm_sq, tile_pixels)
             .await?;
-
-        // Diagnostic: Check for signs of GPU timeout/incomplete execution
-        // MARKER_THREAD_STARTED (0xDEADBEEF) = shader started but loop never finished
-        // Zero = shader thread never started (buffer untouched)
-        const MARKER_THREAD_STARTED: u32 = 0xDEADBEEF;
-
-        let sentinel_count = iterations.iter().filter(|&&v| v == SENTINEL_NOT_COMPUTED).count();
-        let zero_count = iterations.iter().filter(|&&v| v == 0).count();
-        let max_iter_count = iterations.iter().filter(|&&v| v == max_iterations).count();
-        let thread_started_count = iterations.iter().filter(|&&v| v == MARKER_THREAD_STARTED).count();
-        let valid_escape_count = iterations
-            .iter()
-            .filter(|&&v| v > 0 && v < max_iterations && v != SENTINEL_NOT_COMPUTED && v != MARKER_THREAD_STARTED)
-            .count();
-
-        log::info!(
-            "GPU pass {} raw results: {} sentinel, {} zero, {} max_iter, {} valid_escape, {} STUCK (0xDEADBEEF), {} total",
-            pass.step(),
-            sentinel_count,
-            zero_count,
-            max_iter_count,
-            valid_escape_count,
-            thread_started_count,
-            pixel_count
-        );
-
-        if thread_started_count > 0 {
-            log::error!(
-                "GPU TIMEOUT DETECTED: {} pixels ({:.1}%) started but never finished! \
-                 Iteration loop is stuck (too many iterations or infinite rebase loop).",
-                thread_started_count,
-                (thread_started_count as f64 / pixel_count as f64) * 100.0
-            );
-        }
-
-        if zero_count > 0 && pass.step() > 0 {
-            // At pass > 0, zeros mean the shader thread never touched the buffer
-            log::warn!(
-                "GPU WARNING: {} pixels ({:.1}%) have zero value - shader thread may not have executed.",
-                zero_count,
-                (zero_count as f64 / pixel_count as f64) * 100.0
-            );
-        }
-
-        // Warning: If very few sentinels on pass 1-6, something is wrong
-        // Pass 1 should have ~98.4% sentinels, Pass 7 should have ~50% sentinels
-        let expected_sentinel_pct = match pass.step() {
-            1 | 2 => 98.4,
-            3 => 93.75,
-            4 => 87.5,
-            5 => 75.0,
-            6 => 50.0,
-            7 => 0.0, // Pass 7 computes remaining 50%
-            _ => 0.0,
-        };
-        let actual_sentinel_pct = (sentinel_count as f64 / pixel_count as f64) * 100.0;
-
-        if pass.step() > 0 && pass.step() < 7 && actual_sentinel_pct < expected_sentinel_pct * 0.5 {
-            log::error!(
-                "GPU TIMEOUT SUSPECTED: Pass {} has {:.1}% sentinels, expected ~{:.1}%. \
-                 GPU may have timed out or returned incomplete results.",
-                pass.step(),
-                actual_sentinel_pct,
-                expected_sentinel_pct
-            );
-        }
 
         // Convert to ComputeData
         let data: Vec<ComputeData> = iterations
@@ -292,7 +206,7 @@ impl GpuPerturbationHDRRenderer {
                 ComputeData::Mandelbrot(MandelbrotData {
                     iterations: iter,
                     max_iterations,
-                    escaped: iter < max_iterations && iter != SENTINEL_NOT_COMPUTED,
+                    escaped: iter < max_iterations,
                     glitched: glitch_flag != 0,
                     final_z_norm_sq: z_sq,
                 })
@@ -301,32 +215,24 @@ impl GpuPerturbationHDRRenderer {
 
         let end = Self::now();
 
-        Ok(GpuPerturbationHDRResult {
+        Ok(GpuTileResult {
             data,
+            tile: *tile,
             compute_time_ms: end - start,
         })
     }
 
-    async fn read_buffer(
-        &self,
-        buffer: &wgpu::Buffer,
-        _count: usize,
-    ) -> Result<Vec<u32>, GpuError> {
-        let slice = buffer.slice(..);
+    async fn read_buffer(&self, buffer: &wgpu::Buffer, count: usize) -> Result<Vec<u32>, GpuError> {
+        let byte_size = (count * std::mem::size_of::<u32>()) as u64;
+        let slice = buffer.slice(..byte_size);
 
         let (tx, rx) = futures_channel::oneshot::channel();
         slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
         });
 
-        // In WASM, we need to poll to drive the GPU work to completion.
-        // The browser's WebGPU implementation handles this via requestAnimationFrame internally,
-        // but we can help by yielding and polling.
         #[cfg(target_arch = "wasm32")]
-        {
-            // Poll until the map_async callback fires
-            self.context.device.poll(wgpu::Maintain::Poll);
-        }
+        self.context.device.poll(wgpu::Maintain::Poll);
 
         #[cfg(not(target_arch = "wasm32"))]
         self.context.device.poll(wgpu::Maintain::Wait);
@@ -347,9 +253,10 @@ impl GpuPerturbationHDRRenderer {
     async fn read_buffer_f32(
         &self,
         buffer: &wgpu::Buffer,
-        _count: usize,
+        count: usize,
     ) -> Result<Vec<f32>, GpuError> {
-        let slice = buffer.slice(..);
+        let byte_size = (count * std::mem::size_of::<f32>()) as u64;
+        let slice = buffer.slice(..byte_size);
 
         let (tx, rx) = futures_channel::oneshot::channel();
         slice.map_async(wgpu::MapMode::Read, move |result| {
