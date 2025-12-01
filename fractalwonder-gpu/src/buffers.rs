@@ -153,7 +153,7 @@ pub struct PerturbationHDRUniforms {
 
     pub reference_escaped: u32,
     pub orbit_len: u32,
-    pub _pad4: [u32; 2], // Pad to 16-byte alignment
+    pub _pad4: [u32; 3], // Pad struct to 120 bytes (WGSL uniform buffer alignment)
 }
 
 impl PerturbationHDRUniforms {
@@ -200,7 +200,7 @@ impl PerturbationHDRUniforms {
             tile_height,
             reference_escaped: if reference_escaped { 1 } else { 0 },
             orbit_len,
-            _pad4: [0, 0],
+            _pad4: [0, 0, 0],
         }
     }
 }

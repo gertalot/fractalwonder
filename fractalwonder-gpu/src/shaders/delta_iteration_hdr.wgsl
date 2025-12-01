@@ -227,7 +227,9 @@ struct Uniforms {
 
     reference_escaped: u32,
     orbit_len: u32,
-    _pad4: vec2<u32>,
+    _pad4a: u32,
+    _pad4b: u32,
+    _pad4c: u32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
