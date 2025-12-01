@@ -69,6 +69,7 @@ impl GpuPerturbationRenderer {
         height: u32,
         max_iterations: u32,
         tau_sq: f32,
+        reference_escaped: bool,
         pass: Adam7Pass,
     ) -> Result<GpuRenderResult, GpuError> {
         let start = Self::now();
@@ -112,6 +113,7 @@ impl GpuPerturbationRenderer {
             dc_origin,
             dc_step,
             pass.step() as u32,
+            reference_escaped,
         );
         self.context
             .queue

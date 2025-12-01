@@ -15,11 +15,13 @@ pub struct Uniforms {
     pub dc_origin_im: f32,
     pub dc_step_re: f32,
     pub dc_step_im: f32,
-    pub adam7_step: u32, // 0 = compute all, 1-7 = Adam7 pass
-    pub _padding: [u32; 2],
+    pub adam7_step: u32,        // 0 = compute all, 1-7 = Adam7 pass
+    pub reference_escaped: u32, // 1 if reference orbit escaped (short orbit), 0 otherwise
+    pub _padding: u32,
 }
 
 impl Uniforms {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         width: u32,
         height: u32,
@@ -28,6 +30,7 @@ impl Uniforms {
         dc_origin: (f32, f32),
         dc_step: (f32, f32),
         adam7_step: u32,
+        reference_escaped: bool,
     ) -> Self {
         Self {
             width,
@@ -40,7 +43,8 @@ impl Uniforms {
             dc_step_re: dc_step.0,
             dc_step_im: dc_step.1,
             adam7_step,
-            _padding: [0; 2],
+            reference_escaped: if reference_escaped { 1 } else { 0 },
+            _padding: 0,
         }
     }
 }

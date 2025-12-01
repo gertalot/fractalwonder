@@ -73,7 +73,15 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let orbit_len = arrayLength(&reference_orbit);
     var glitched = false;
 
-    for (var n: u32 = 0u; n < uniforms.max_iterations; n++) {
+    // Use a while loop with explicit iteration counter to avoid counting rebase steps.
+    // The for loop would increment n even when continue is called after rebase,
+    // which incorrectly counts rebasing as a Mandelbrot iteration.
+    var n: u32 = 0u;
+    loop {
+        if n >= uniforms.max_iterations {
+            break;
+        }
+
         // Reference exhaustion detection: m exceeded orbit length
         // Only applies when reference escaped (short orbit), not when reference is in-set
         if uniforms.reference_escaped != 0u && m >= orbit_len {
@@ -101,9 +109,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
 
         // Rebase check: |z|^2 < |dz|^2
+        // NOTE: Rebasing is a precision technique, NOT a Mandelbrot iteration.
+        // The iteration count n should NOT increment during rebase.
         if z_sq < dz_sq {
             dz = z;
             m = 0u;
+            // Do NOT increment n - rebase is not a real iteration
             continue;
         }
 
@@ -119,6 +130,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         );
 
         m = m + 1u;
+        n = n + 1u; // Only increment iteration count after a real iteration
     }
 
     results[idx] = uniforms.max_iterations;
