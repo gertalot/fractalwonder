@@ -261,6 +261,9 @@ fn adam7_step_size(pass_idx: u32) -> vec2<u32> {
     }
 }
 
+// Marker to detect if shader thread started but didn't finish
+const MARKER_THREAD_STARTED: u32 = 0xDEADBEEFu;
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let x = global_id.x;
@@ -271,6 +274,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     let pixel_idx = y * uniforms.width + x;
+
+    // DIAGNOSTIC: Mark that this thread started execution.
+    // If we see this marker in results, the thread started but never finished the loop.
+    // If we see 0, the thread never even started (or buffer wasn't touched).
+    results[pixel_idx] = MARKER_THREAD_STARTED;
 
     // Adam7 filtering
     if uniforms.adam7_step > 0u {
@@ -309,8 +317,23 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // The for loop would increment n even when continue is called after rebase,
     // which incorrectly counts rebasing as a Mandelbrot iteration.
     var n: u32 = 0u;
+
+    // Safety: limit total loop iterations (including rebases) to prevent runaway execution.
+    // At extreme zoom levels, precision issues could cause repeated rebasing.
+    // Allow 4x max_iterations for rebases, which is generous but bounded.
+    var total_loops: u32 = 0u;
+    let max_total_loops = uniforms.max_iterations * 4u;
+
     loop {
         if n >= uniforms.max_iterations {
+            break;
+        }
+
+        // Safety check: prevent infinite loops from repeated rebasing
+        total_loops = total_loops + 1u;
+        if total_loops > max_total_loops {
+            // Mark as glitched since we couldn't complete normally
+            glitched = true;
             break;
         }
 
@@ -338,7 +361,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
         // 1. Escape check
         if z_mag_sq > uniforms.escape_radius_sq {
-            results[pixel_idx] = n;
+            // Guard against n equaling SENTINEL_NOT_COMPUTED (extremely unlikely but be safe)
+            let escape_iterations = select(n, n - 1u, n == SENTINEL_NOT_COMPUTED);
+            results[pixel_idx] = escape_iterations;
             glitch_flags[pixel_idx] = select(0u, 1u, glitched);
             z_norm_sq[pixel_idx] = z_mag_sq;
             return;
@@ -378,8 +403,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         n = n + 1u; // Only increment iteration count after a real iteration
     }
 
-    // Reached max iterations
-    results[pixel_idx] = uniforms.max_iterations;
+    // Reached max iterations (or safety limit)
+    // Guard against max_iterations equaling SENTINEL_NOT_COMPUTED to ensure pixel is counted
+    let final_iterations = select(uniforms.max_iterations, uniforms.max_iterations - 1u,
+                                   uniforms.max_iterations == SENTINEL_NOT_COMPUTED);
+    results[pixel_idx] = final_iterations;
     glitch_flags[pixel_idx] = select(0u, 1u, glitched);
     z_norm_sq[pixel_idx] = 0.0;
 }

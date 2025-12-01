@@ -121,6 +121,16 @@ impl GpuPerturbationHDRRenderer {
             reference_escaped,
             orbit.len() as u32,
         );
+
+        log::debug!(
+            "GPU uniforms: width={}, height={}, max_iter={}, adam7_step={}, orbit_len={}",
+            width,
+            height,
+            max_iterations,
+            pass.step(),
+            orbit.len()
+        );
+
         self.context
             .queue
             .write_buffer(&buffers.uniforms, 0, bytemuck::bytes_of(&uniforms));
@@ -207,6 +217,72 @@ impl GpuPerturbationHDRRenderer {
             .read_buffer_f32(&buffers.staging_z_norm_sq, pixel_count)
             .await?;
 
+        // Diagnostic: Check for signs of GPU timeout/incomplete execution
+        // MARKER_THREAD_STARTED (0xDEADBEEF) = shader started but loop never finished
+        // Zero = shader thread never started (buffer untouched)
+        const MARKER_THREAD_STARTED: u32 = 0xDEADBEEF;
+
+        let sentinel_count = iterations.iter().filter(|&&v| v == SENTINEL_NOT_COMPUTED).count();
+        let zero_count = iterations.iter().filter(|&&v| v == 0).count();
+        let max_iter_count = iterations.iter().filter(|&&v| v == max_iterations).count();
+        let thread_started_count = iterations.iter().filter(|&&v| v == MARKER_THREAD_STARTED).count();
+        let valid_escape_count = iterations
+            .iter()
+            .filter(|&&v| v > 0 && v < max_iterations && v != SENTINEL_NOT_COMPUTED && v != MARKER_THREAD_STARTED)
+            .count();
+
+        log::info!(
+            "GPU pass {} raw results: {} sentinel, {} zero, {} max_iter, {} valid_escape, {} STUCK (0xDEADBEEF), {} total",
+            pass.step(),
+            sentinel_count,
+            zero_count,
+            max_iter_count,
+            valid_escape_count,
+            thread_started_count,
+            pixel_count
+        );
+
+        if thread_started_count > 0 {
+            log::error!(
+                "GPU TIMEOUT DETECTED: {} pixels ({:.1}%) started but never finished! \
+                 Iteration loop is stuck (too many iterations or infinite rebase loop).",
+                thread_started_count,
+                (thread_started_count as f64 / pixel_count as f64) * 100.0
+            );
+        }
+
+        if zero_count > 0 && pass.step() > 0 {
+            // At pass > 0, zeros mean the shader thread never touched the buffer
+            log::warn!(
+                "GPU WARNING: {} pixels ({:.1}%) have zero value - shader thread may not have executed.",
+                zero_count,
+                (zero_count as f64 / pixel_count as f64) * 100.0
+            );
+        }
+
+        // Warning: If very few sentinels on pass 1-6, something is wrong
+        // Pass 1 should have ~98.4% sentinels, Pass 7 should have ~50% sentinels
+        let expected_sentinel_pct = match pass.step() {
+            1 | 2 => 98.4,
+            3 => 93.75,
+            4 => 87.5,
+            5 => 75.0,
+            6 => 50.0,
+            7 => 0.0, // Pass 7 computes remaining 50%
+            _ => 0.0,
+        };
+        let actual_sentinel_pct = (sentinel_count as f64 / pixel_count as f64) * 100.0;
+
+        if pass.step() > 0 && pass.step() < 7 && actual_sentinel_pct < expected_sentinel_pct * 0.5 {
+            log::error!(
+                "GPU TIMEOUT SUSPECTED: Pass {} has {:.1}% sentinels, expected ~{:.1}%. \
+                 GPU may have timed out or returned incomplete results.",
+                pass.step(),
+                actual_sentinel_pct,
+                expected_sentinel_pct
+            );
+        }
+
         // Convert to ComputeData
         let data: Vec<ComputeData> = iterations
             .iter()
@@ -242,6 +318,15 @@ impl GpuPerturbationHDRRenderer {
         slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
         });
+
+        // In WASM, we need to poll to drive the GPU work to completion.
+        // The browser's WebGPU implementation handles this via requestAnimationFrame internally,
+        // but we can help by yielding and polling.
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Poll until the map_async callback fires
+            self.context.device.poll(wgpu::Maintain::Poll);
+        }
 
         #[cfg(not(target_arch = "wasm32"))]
         self.context.device.poll(wgpu::Maintain::Wait);

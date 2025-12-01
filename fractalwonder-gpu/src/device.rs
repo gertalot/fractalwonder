@@ -57,6 +57,11 @@ impl GpuContext {
             )
             .await?;
 
+        // Set up error handler to catch GPU errors (shader timeouts, device lost, etc.)
+        device.on_uncaptured_error(Box::new(|error| {
+            log::error!("GPU UNCAPTURED ERROR: {:?}", error);
+        }));
+
         Ok(Self { device, queue })
     }
 }

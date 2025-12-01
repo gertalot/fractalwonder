@@ -30,13 +30,36 @@ impl Adam7Accumulator {
     ///
     /// Only updates pixels where GPU returned valid data (not sentinel).
     pub fn merge(&mut self, gpu_result: &[ComputeData]) {
+        let mut merged_count = 0u32;
+        let mut sentinel_count = 0u32;
+        let mut non_mandelbrot_count = 0u32;
+
         for (i, computed) in gpu_result.iter().enumerate() {
             if let ComputeData::Mandelbrot(m) = computed {
                 if m.iterations != SENTINEL_NOT_COMPUTED {
                     self.data[i] = Some(computed.clone());
+                    merged_count += 1;
+                } else {
+                    sentinel_count += 1;
                 }
+            } else {
+                non_mandelbrot_count += 1;
             }
         }
+
+        let filled = self.data.iter().filter(|opt| opt.is_some()).count();
+        let total = self.data.len();
+        let percent = (filled as f64 / total as f64) * 100.0;
+
+        log::debug!(
+            "Merge: {} pixels merged, {} sentinel, {} non-mandelbrot. Total filled: {}/{} ({:.1}%)",
+            merged_count,
+            sentinel_count,
+            non_mandelbrot_count,
+            filled,
+            total,
+            percent
+        );
     }
 
     /// Export to Vec<ComputeData> for colorization.
@@ -72,13 +95,78 @@ impl Adam7Accumulator {
     ///
     /// After pass 7, all pixels should be computed. Panics if any are missing.
     pub fn to_final_buffer(&self) -> Vec<ComputeData> {
-        self.data
+        // Collect missing pixel indices for diagnostic
+        let missing: Vec<usize> = self
+            .data
             .iter()
-            .map(|opt| {
-                opt.clone()
-                    .expect("All pixels should be computed after pass 7")
-            })
-            .collect()
+            .enumerate()
+            .filter_map(|(i, opt)| if opt.is_none() { Some(i) } else { None })
+            .collect();
+
+        if !missing.is_empty() {
+            let total = self.data.len();
+            let width = self.width as usize;
+
+            // Log first few missing pixels with their (x, y) coordinates
+            let sample: Vec<String> = missing
+                .iter()
+                .take(10)
+                .map(|&i| {
+                    let x = i % width;
+                    let y = i / width;
+                    format!("({x}, {y})")
+                })
+                .collect();
+
+            // Check Adam7 pass coverage for missing pixels
+            let pass_info: Vec<String> = missing
+                .iter()
+                .take(5)
+                .map(|&i| {
+                    let x = (i % width) as u32;
+                    let y = (i / width) as u32;
+                    let expected_pass = Self::expected_adam7_pass(x, y);
+                    format!("({x}, {y}) -> pass {expected_pass}")
+                })
+                .collect();
+
+            log::error!(
+                "Missing {} of {} pixels after pass 7. First 10: [{}]. Expected passes: [{}]",
+                missing.len(),
+                total,
+                sample.join(", "),
+                pass_info.join(", ")
+            );
+            panic!(
+                "All pixels should be computed after pass 7. Missing {} pixels, first: {:?}",
+                missing.len(),
+                sample
+            );
+        }
+
+        self.data.iter().map(|opt| opt.clone().unwrap()).collect()
+    }
+
+    /// Determine which Adam7 pass should compute a given pixel.
+    fn expected_adam7_pass(x: u32, y: u32) -> u8 {
+        // Adam7 interlacing pattern
+        if x.is_multiple_of(8) && y.is_multiple_of(8) {
+            1
+        } else if x % 8 == 4 && y.is_multiple_of(8) {
+            2
+        } else if x.is_multiple_of(4) && y % 8 == 4 {
+            3
+        } else if x % 4 == 2 && y.is_multiple_of(4) {
+            4
+        } else if x.is_multiple_of(2) && y % 4 == 2 {
+            5
+        } else if !x.is_multiple_of(2) && y.is_multiple_of(2) {
+            6
+        } else if !y.is_multiple_of(2) {
+            7
+        } else {
+            0 // Should never happen - indicates pattern bug
+        }
     }
 
     /// Check if all pixels have been computed.
