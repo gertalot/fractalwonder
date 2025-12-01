@@ -20,3 +20,7 @@ pollster = "0.4"
 
 [dev-dependencies]
 fractalwonder-compute = { path = "../fractalwonder-compute" }
+base64 = { workspace = true }
+flate2 = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }

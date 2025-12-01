@@ -266,11 +266,13 @@ impl ParallelRenderer {
         let tiles = generate_tiles(width, height, tile_size);
 
         // Start render with GPU perturbation or CPU fallback
-        if self.config.gpu_enabled {
+        // Check runtime use_gpu option (user-controllable) AND config gpu_enabled (fractal type)
+        let use_gpu = self.config.gpu_enabled && self.options.borrow().use_gpu;
+        if use_gpu {
             log::info!("Using perturbation GPU renderer (zoom={zoom:.2e})");
             self.start_gpu_render(viewport, canvas);
         } else {
-            // CPU fallback only when GPU disabled
+            log::info!("Using CPU renderer (zoom={zoom:.2e})");
             self.worker_pool.borrow_mut().start_perturbation_render(
                 viewport.clone(),
                 (width, height),
@@ -476,8 +478,11 @@ fn schedule_tile(
         let origin_re = half_width.neg();
         let origin_im = half_height.neg();
 
-        let step_re = HDRFloat::from_f64(vp_width.to_f64() / width as f64);
-        let step_im = HDRFloat::from_f64(vp_height.to_f64() / height as f64);
+        // Use HDRFloat division to preserve extended exponent range at deep zoom.
+        // Previous code used `HDRFloat::from_f64(vp_width.to_f64() / width)` which
+        // underflows to zero/subnormal at zoom levels beyond f64 range (~10^308).
+        let step_re = vp_width.div_f64(width as f64);
+        let step_im = vp_height.div_f64(height as f64);
 
         let dc_origin = (
             (origin_re.head, origin_re.tail, origin_re.exp),
@@ -488,13 +493,52 @@ fn schedule_tile(
             (step_im.head, step_im.tail, step_im.exp),
         );
 
+        // Debug: log dc values for first tile only
+        if tile_index == 0 {
+            log::info!(
+                "vp_width: ({}, {}, {}), vp_height: ({}, {}, {})",
+                vp_width.head,
+                vp_width.tail,
+                vp_width.exp,
+                vp_height.head,
+                vp_height.tail,
+                vp_height.exp
+            );
+            log::info!("image dimensions: {}x{}", width, height);
+            log::info!(
+                "step_re: ({}, {}, {}), step_im: ({}, {}, {})",
+                step_re.head,
+                step_re.tail,
+                step_re.exp,
+                step_im.head,
+                step_im.tail,
+                step_im.exp
+            );
+        }
+
         let tau_sq = config.tau_sq as f32;
         let reference_escaped =
             orbit_data_spawn.orbit.len() < orbit_data_spawn.max_iterations as usize;
 
-        // Mark GPU in use, take renderer
+        // Check if GPU is already in use by another render
+        if gpu_in_use_spawn.get() {
+            log::debug!(
+                "GPU busy, skipping tile {} (gen {})",
+                tile_index,
+                expected_gen
+            );
+            return;
+        }
+
+        // Take renderer - check it exists (may have been taken by racing render)
+        let renderer_opt = gpu_renderer_spawn.borrow_mut().take();
+        let Some(mut renderer) = renderer_opt else {
+            log::debug!("GPU renderer unavailable for tile {}", tile_index);
+            return;
+        };
+
+        // Mark GPU in use
         gpu_in_use_spawn.set(true);
-        let mut renderer = gpu_renderer_spawn.borrow_mut().take().unwrap();
 
         let tile_result = renderer
             .render_tile(
@@ -511,8 +555,17 @@ fn schedule_tile(
             )
             .await;
 
-        // Return renderer
-        *gpu_renderer_spawn.borrow_mut() = Some(renderer);
+        // Return renderer - use try_borrow_mut to handle racing returns gracefully
+        match gpu_renderer_spawn.try_borrow_mut() {
+            Ok(mut guard) => {
+                *guard = Some(renderer);
+            }
+            Err(_) => {
+                log::warn!("Could not return GPU renderer - RefCell busy");
+                // The renderer will be dropped here, but that's better than panicking.
+                // Next render will reinitialize it.
+            }
+        }
         gpu_in_use_spawn.set(false);
 
         // Check generation after await

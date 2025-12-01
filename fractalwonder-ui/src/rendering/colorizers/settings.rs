@@ -83,10 +83,17 @@ pub struct ColorOptions {
     /// > 1.0: More colors in outer regions
     #[serde(default = "default_transfer_bias")]
     pub transfer_bias: f32,
+    /// Whether GPU rendering is enabled.
+    #[serde(default = "default_use_gpu")]
+    pub use_gpu: bool,
 }
 
 fn default_transfer_bias() -> f32 {
     DEFAULT_TRANSFER_BIAS
+}
+
+fn default_use_gpu() -> bool {
+    true
 }
 
 impl Default for ColorOptions {
@@ -98,6 +105,7 @@ impl Default for ColorOptions {
             histogram_enabled: false,
             cycle_count: 32,
             transfer_bias: DEFAULT_TRANSFER_BIAS,
+            use_gpu: true,
         }
     }
 }

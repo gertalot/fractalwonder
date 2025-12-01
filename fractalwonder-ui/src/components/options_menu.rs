@@ -34,6 +34,10 @@ pub fn OptionsMenu(
     on_bias_up: Callback<()>,
     /// Callback to decrease bias
     on_bias_down: Callback<()>,
+    /// GPU rendering enabled state
+    use_gpu: Signal<bool>,
+    /// Callback when GPU toggle is clicked
+    on_gpu_toggle: Callback<()>,
 ) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
 
@@ -49,8 +53,27 @@ pub fn OptionsMenu(
 
             {move || is_open.get().then(|| view! {
                 <div class="absolute bottom-full mb-2 left-0 min-w-48 bg-black/70 backdrop-blur-sm border border-gray-800 rounded-lg overflow-hidden">
-                    // Effects section
+                    // Renderer section
                     <div class="px-3 py-2 text-xs text-gray-400 uppercase tracking-wider border-b border-gray-800">
+                        "Renderer"
+                    </div>
+                    <button
+                        class="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center justify-between"
+                        on:click=move |_| {
+                            on_gpu_toggle.call(());
+                        }
+                    >
+                        <span class="flex items-center gap-2">
+                            <span class=move || if use_gpu.get() { "opacity-100" } else { "opacity-30" }>
+                                {move || if use_gpu.get() { "☑" } else { "☐" }}
+                            </span>
+                            "Use GPU"
+                        </span>
+                        <span class="text-xs text-gray-500">"[G]"</span>
+                    </button>
+
+                    // Effects section
+                    <div class="px-3 py-2 text-xs text-gray-400 uppercase tracking-wider border-t border-b border-gray-800">
                         "Effects"
                     </div>
                     <button

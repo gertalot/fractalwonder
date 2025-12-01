@@ -664,12 +664,16 @@ dependencies = [
 name = "fractalwonder-gpu"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bytemuck",
+ "flate2",
  "fractalwonder-compute",
  "fractalwonder-core",
  "futures-channel",
  "log",
  "pollster",
+ "serde",
+ "serde_json",
  "thiserror",
  "wasm-bindgen-futures",
  "web-sys",

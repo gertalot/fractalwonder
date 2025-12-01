@@ -45,6 +45,10 @@ pub fn UIPanel(
     on_bias_up: Callback<()>,
     /// Callback to decrease bias
     on_bias_down: Callback<()>,
+    /// GPU rendering enabled
+    use_gpu: Signal<bool>,
+    /// Callback to toggle GPU
+    on_gpu_toggle: Callback<()>,
     /// Render progress signal
     render_progress: Signal<RwSignal<RenderProgress>>,
     /// UI visibility signal (from parent)
@@ -119,6 +123,8 @@ pub fn UIPanel(
                         transfer_bias=transfer_bias
                         on_bias_up=on_bias_up
                         on_bias_down=on_bias_down
+                        use_gpu=use_gpu
+                        on_gpu_toggle=on_gpu_toggle
                     />
                 </div>
 

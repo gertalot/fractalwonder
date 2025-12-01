@@ -112,16 +112,29 @@ pub fn InteractiveCanvas(
         });
     }
 
-    // Watch for color options changes - update renderer and recolorize
+    // Watch for color options changes - update renderer and recolorize (or re-render for GPU toggle)
     if let Some(options_signal) = color_options {
         create_effect(move |prev: Option<ColorOptions>| {
             let options = options_signal.get();
 
             renderer.with_value(|r| r.set_color_options(&options));
 
-            // Recolorize when options change (not on initial mount)
-            if prev.is_some() && prev.as_ref() != Some(&options) {
-                renderer.with_value(|r| r.recolorize());
+            // Check if this is not the initial mount
+            if let Some(prev_opts) = prev.as_ref() {
+                // If use_gpu changed, trigger a full re-render
+                if prev_opts.use_gpu != options.use_gpu {
+                    let vp = viewport.get_untracked();
+                    let size = canvas_size.get_untracked();
+                    if size.0 > 0 && size.1 > 0 {
+                        if let Some(canvas_el) = canvas_ref.get_untracked() {
+                            let canvas = canvas_el.unchecked_ref::<HtmlCanvasElement>();
+                            renderer.with_value(|r| r.render(&vp, canvas));
+                        }
+                    }
+                } else if prev_opts != &options {
+                    // Other options changed - just recolorize
+                    renderer.with_value(|r| r.recolorize());
+                }
             }
 
             options

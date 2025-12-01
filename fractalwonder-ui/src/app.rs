@@ -349,6 +349,14 @@ pub fn App() -> impl IntoView {
                         set_toast_message.set(Some(format!("Bias: {:.1}", opts.transfer_bias)));
                     });
                 }
+                "g" | "G" => {
+                    // Toggle GPU rendering
+                    set_color_options.update(|opts| {
+                        opts.use_gpu = !opts.use_gpu;
+                        let msg = if opts.use_gpu { "GPU: On" } else { "GPU: Off" };
+                        set_toast_message.set(Some(msg.to_string()));
+                    });
+                }
                 _ => {}
             }
         }) as Box<dyn FnMut(web_sys::KeyboardEvent)>);
@@ -459,6 +467,14 @@ pub fn App() -> impl IntoView {
                 set_color_options.update(|opts| {
                     opts.bias_down();
                     set_toast_message.set(Some(format!("Bias: {:.1}", opts.transfer_bias)));
+                });
+            })
+            use_gpu=Signal::derive(move || color_options.get().use_gpu)
+            on_gpu_toggle=Callback::new(move |_| {
+                set_color_options.update(|opts| {
+                    opts.use_gpu = !opts.use_gpu;
+                    let msg = if opts.use_gpu { "GPU: On" } else { "GPU: Off" };
+                    set_toast_message.set(Some(msg.to_string()));
                 });
             })
             render_progress=render_progress.into()

@@ -340,6 +340,46 @@ impl HDRFloat {
         }
         .normalize()
     }
+
+    /// Divide by f64 divisor (for computing pixel step = viewport_size / image_dimension).
+    /// This preserves extended exponent range, unlike `to_f64() / divisor`.
+    #[inline]
+    pub fn div_f64(&self, divisor: f64) -> Self {
+        if self.head == 0.0 {
+            return Self::ZERO;
+        }
+        if divisor == 0.0 {
+            // Division by zero: return infinity-like value
+            return Self {
+                head: if self.head > 0.0 {
+                    f32::INFINITY
+                } else {
+                    f32::NEG_INFINITY
+                },
+                tail: 0.0,
+                exp: 0,
+            };
+        }
+
+        // Extract mantissa and exponent from divisor: divisor = div_mantissa * 2^div_exp
+        let (div_mantissa, div_exp) = frexp_f64(divisor);
+
+        // Compute quotient in f64 for better precision, then split back
+        // mantissa = (head + tail) / div_mantissa
+        let self_mantissa = self.head as f64 + self.tail as f64;
+        let quotient = self_mantissa / div_mantissa;
+
+        // Split quotient into head + tail
+        let q_head = quotient as f32;
+        let q_tail = (quotient - q_head as f64) as f32;
+
+        Self {
+            head: q_head,
+            tail: q_tail,
+            exp: self.exp - div_exp,
+        }
+        .normalize()
+    }
 }
 
 impl HDRComplex {
@@ -793,5 +833,124 @@ mod tests {
             result.to_f64(),
             expected
         );
+    }
+
+    #[test]
+    fn div_f64_basic() {
+        let h = HDRFloat::from_f64(6.0);
+        let result = h.div_f64(2.0);
+        assert!(
+            (result.to_f64() - 3.0).abs() < 1e-14,
+            "div_f64: got {}, expected 3.0",
+            result.to_f64()
+        );
+    }
+
+    #[test]
+    fn div_f64_preserves_extended_exponent() {
+        // This is the critical test: dividing a very small value by an image dimension
+        // At 10^14 zoom, viewport width might be ~10^-14
+        // Dividing by image width (e.g., 1920) should preserve the extended exponent
+        use crate::BigFloat;
+        let bf = BigFloat::from_string("1e-50", 256).unwrap();
+        let h = HDRFloat::from_bigfloat(&bf);
+
+        // Simulate dividing viewport by image width
+        let image_width = 1920.0;
+        let result = h.div_f64(image_width);
+
+        // Expected: 1e-50 / 1920 ≈ 5.2e-54
+        let expected = 1e-50 / 1920.0;
+        let rel_error = (result.to_f64() - expected).abs() / expected.abs();
+        assert!(
+            rel_error < 1e-6,
+            "div_f64 with extended exponent: got {}, expected {}, rel_error={}",
+            result.to_f64(),
+            expected,
+            rel_error
+        );
+
+        // Most importantly: the exponent should be preserved (not underflowed)
+        assert!(
+            result.exp < -150,
+            "Exponent {} should be < -150 for 1e-50 / 1920",
+            result.exp
+        );
+    }
+
+    #[test]
+    fn div_f64_extreme_small_value() {
+        // Test with value beyond f64 range
+        use crate::BigFloat;
+        let bf = BigFloat::from_string("1e-100", 512).unwrap();
+        let h = HDRFloat::from_bigfloat(&bf);
+
+        // Dividing by image dimension should still work
+        let result = h.div_f64(1920.0);
+
+        // Result should not be zero (would happen if we used to_f64() / divisor)
+        assert!(
+            !result.is_zero(),
+            "div_f64 should not underflow to zero for 1e-100 / 1920"
+        );
+
+        // Exponent should be approximately -100*log2(10) - log2(1920) ≈ -332 - 11 = -343
+        assert!(
+            result.exp < -300,
+            "Exponent {} should be < -300 for 1e-100 / 1920",
+            result.exp
+        );
+    }
+
+    #[test]
+    fn div_f64_zero_dividend() {
+        let h = HDRFloat::ZERO;
+        let result = h.div_f64(5.0);
+        assert!(result.is_zero());
+    }
+
+    #[test]
+    fn div_f64_renderer_scenario() {
+        // Exact values from the renderer log at zoom ~10^14:
+        // vp_width: (0.59008217, 0.000000019070486, -43)
+        // vp_height: (0.5756648, 0.0000000035213406, -44)
+        // image dimensions: 1146x559
+        //
+        // At this zoom level, the pixel steps coincidentally round to the same
+        // f32 head value (0.52726364) due to f32's limited precision (~7 decimal digits).
+        // This is expected behavior - the perturbation algorithm still works because
+        // each pixel gets a unique dc value from (x * step_re, y * step_im).
+        let vp_width = HDRFloat {
+            head: 0.59008217,
+            tail: 0.000000019070486,
+            exp: -43,
+        };
+        let vp_height = HDRFloat {
+            head: 0.5756648,
+            tail: 0.0000000035213406,
+            exp: -44,
+        };
+
+        let step_re = vp_width.div_f64(1146.0);
+        let step_im = vp_height.div_f64(559.0);
+
+        // Verify the exponents are correctly computed
+        // vp_width has exp -43, 1146 ≈ 2^10.16, so result exp should be around -53 or -54
+        assert!(
+            step_re.exp == -53 || step_re.exp == -54,
+            "step_re.exp = {}",
+            step_re.exp
+        );
+        assert!(
+            step_im.exp == -53 || step_im.exp == -54,
+            "step_im.exp = {}",
+            step_im.exp
+        );
+
+        // The values should be non-zero and normalized
+        assert!(!step_re.is_zero());
+        assert!(!step_im.is_zero());
+        assert!(step_re.head.abs() >= 0.5 && step_re.head.abs() < 1.0);
+        assert!(step_im.head.abs() >= 0.5 && step_im.head.abs() < 1.0);
     }
 }
