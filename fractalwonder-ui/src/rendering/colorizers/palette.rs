@@ -101,10 +101,11 @@ impl Palette {
     pub fn ultra_fractal() -> Self {
         Self::new(vec![
             [0, 7, 100],     // Deep blue
-            [32, 107, 203],  // Blue
-            [237, 255, 255], // White
-            [255, 170, 0],   // Orange
             [0, 2, 0],       // Near black
+            [0, 7, 100],     // Deep blue
+            [32, 107, 203],  // Blue
+            [255, 170, 0],   // Orange
+            [237, 255, 255], // White
         ])
     }
 
@@ -211,6 +212,9 @@ impl Palette {
     /// Dramatic contrast.
     pub fn inferno() -> Self {
         Self::new(vec![
+            [80, 50, 40],    // Brown
+            [20, 10, 20],    // Dark purple
+            [5, 0, 10],      // Back to near black (seamless)
             [5, 0, 10],      // Near black (purple tint)
             [40, 0, 20],     // Dark burgundy
             [100, 10, 10],   // Dark red
@@ -218,9 +222,30 @@ impl Palette {
             [255, 100, 0],   // Orange
             [255, 180, 50],  // Gold
             [200, 150, 100], // Muted tan
+        ])
+    }
+
+    /// Inferno: Dark cycling palette with hot accents.
+    /// Black → deep red → orange → gold → black.
+    /// Dramatic contrast.
+    pub fn stripey_inferno() -> Self {
+        Self::new(vec![
+            [5, 0, 10],      // Near black (purple tint)
+            [200, 150, 100], // Muted tan
+            [5, 0, 10],      // Near black (purple tint)
+            [200, 150, 100], // Muted tan
+            [5, 0, 10],      // Near black (purple tint)
+            [200, 150, 100], // Muted tan
+
             [80, 50, 40],    // Brown
             [20, 10, 20],    // Dark purple
-            [5, 0, 10],      // Back to near black (seamless)
+            [5, 0, 10],      // Near black (purple tint)
+            [40, 0, 20],     // Dark burgundy
+            [100, 10, 10],   // Dark red
+            [180, 40, 0],    // Red-orange
+            [255, 100, 0],   // Orange
+            [255, 180, 50],  // Gold
+            [200, 150, 100], // Muted tan
         ])
     }
 

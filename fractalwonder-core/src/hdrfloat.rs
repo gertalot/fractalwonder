@@ -184,7 +184,7 @@ impl HDRFloat {
             return Self {
                 head: m,
                 tail: self.tail * scale,
-                exp: self.exp + e,
+                exp: self.exp.saturating_add(e),
             };
         }
 
@@ -198,7 +198,7 @@ impl HDRFloat {
         Self {
             head: new_head,
             tail: new_tail,
-            exp: self.exp + exp_adjust,
+            exp: self.exp.saturating_add(exp_adjust),
         }
     }
 
@@ -221,7 +221,7 @@ impl HDRFloat {
         Self {
             head: p,
             tail,
-            exp: self.exp + other.exp,
+            exp: self.exp.saturating_add(other.exp),
         }
         .normalize()
     }
@@ -240,7 +240,7 @@ impl HDRFloat {
         Self {
             head: p,
             tail,
-            exp: self.exp * 2,
+            exp: self.exp.saturating_mul(2),
         }
         .normalize()
     }
@@ -255,9 +255,11 @@ impl HDRFloat {
             return *self;
         }
 
-        let exp_diff = self.exp - other.exp;
+        // Use saturating subtraction to prevent overflow with extreme exponents
+        let exp_diff = self.exp.saturating_sub(other.exp);
 
         // If difference > ~48 bits, smaller value is negligible
+        // Also catches saturated values (i32::MAX or i32::MIN)
         if exp_diff > 48 {
             return *self;
         }
@@ -376,7 +378,7 @@ impl HDRFloat {
         Self {
             head: q_head,
             tail: q_tail,
-            exp: self.exp - div_exp,
+            exp: self.exp.saturating_sub(div_exp),
         }
         .normalize()
     }
@@ -426,7 +428,7 @@ impl HDRComplex {
         let two_re_im = HDRFloat {
             head: re_im.head,
             tail: re_im.tail,
-            exp: re_im.exp + 1,
+            exp: re_im.exp.saturating_add(1),
         };
         Self {
             re: re_sq.sub(&im_sq),

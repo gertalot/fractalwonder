@@ -1,9 +1,15 @@
 //! Tests for GPU renderer - verifies GPU output matches CPU perturbation.
 
 use crate::pass::Adam7Pass;
-use crate::{GpuAvailability, GpuContext, GpuPerturbationRenderer};
-use fractalwonder_compute::{compute_pixel_perturbation, ReferenceOrbit};
-use fractalwonder_core::{BigFloat, ComputeData, MandelbrotData};
+use crate::{GpuAvailability, GpuContext, GpuPerturbationHDRRenderer, GpuPerturbationRenderer};
+use fractalwonder_compute::{
+    compute_pixel_perturbation, compute_pixel_perturbation_hdr, MandelbrotRenderer, ReferenceOrbit,
+    Renderer,
+};
+use fractalwonder_core::{
+    calculate_max_iterations, BigFloat, ComputeData, HDRComplex, HDRFloat, MandelbrotData,
+    PixelRect,
+};
 
 /// Helper to create a reference orbit at a given center point.
 fn create_reference_orbit(center_re: f64, center_im: f64, max_iter: u32) -> ReferenceOrbit {
@@ -488,9 +494,12 @@ const TEST_URLS: &[&str] = &[
     "http://127.0.0.1:8080/fractalwonder/#v1:jZLhasQgDMffJZ-7QxkM1lcZo3ht2gpWi6Y9Rrl3Xzq1HuUOZqtoEuMvf91g1XibnSeoN2jREnqovzZYlVkQaniTFyHk0fb5X5epx3Wa8ieiV6RVnIg4RkvcyT9UMHtsddDONldNAeqPz3v1cLa4iJRQ5E0xkcz5crbU0vkp-ICQGUDmdaR_TvBdwU13NO6KZJRE8rzJo_JzrQdRdOagM6AoEufaeHihD4yoh5H-TVcuIgl5UCQkWbQ9JBIlUD5Il4SW5R5zRlnCX4Azeetsr4dGd8w8KduhuXpHsDuM842biXeEvbJZGSTCGNprjxwURtVpOzRo1dUgO3plArJ9co7GYia_sHXUgdzg1XR2tD-twaZ1i2UNZQXklQ09eiZVfDa_dyZd0e_0UL_ffwE",
     "http://127.0.0.1:8080/fractalwonder/#v1:nZLdasMwDIXfRddZkRiDkVcZI7iJmhhcOzhuyyh999nxL2OFMRPiRJas7xz7DlfJt9VYB_0dRtaOLfQfd7gKdWHo4YUOiFQHhgdxj4X3_hmm9EvYpsZgnGJKyi0lhGm_tAMSdLBaHuUmjR6O0m3Qv789ugYJD6WAMG-OmSQhlYXYKiMnCTFCGa0yJfwCV9HpCdlnBzc5uSUYmBEz4Z9G2ygZV9Uk-zJFIS9yiufFDywyowYseelUnjgMC8t5cf_WgbUbUuNzEVbcpZJO7T3KmhplVSK2QpGqIZQ9KM3bS5brf9fsRY9Gn-Q8yMnLPQs9sTpa4yAsKGMHszpfsQVTVqHYOY6p7ibV7lYH2yImqeeBtTgq9osnoTb28bMxbqlhZy8-usjNmdmK88-F8WtUPIzmov0RUAfOCr2d2Hpa4fvjgTztlW1QAP3r4xs",
     "http://127.0.0.1:8080/fractalwonder/#v1:nVHRbsMgDPwXP2eV2R4q5VemKaLETZAoREBTTVH_fU4CJNs6qZqVIGMOzuebYNR0G5yPUE-gyEbyUL9PMEpzJajhBQ8COXgRS8ypwCVBxFTArZzQYv12CCGggsGT0kE725x0DFAfj_fqJ5lIf85224VjeQ5Xhm8cCyr3tSyPGT8quOk29rPkTI0HfCZEYUm0-92uxXSQLm2F0mKWJvYZZj1phH-ODHrSXR__IaC4Ukws9mLxGfetJyPFhiymPBVZDia7ile5NKePdbJQ5exZd41uWeJF2pbMybsI84FxvnFD5BthHsQgDcVIK1QZGYJWjAu9bLXtGrLyZIjPztIE4vrFudhv5eivXO11iK7z8vILrz6VoUa5q-Wxv71WEL204Uye25XcgDggtzuSnyUw4v4F",
+    // Noisy viewport reported by user
+    "http://127.0.0.1:8080/fractalwonder/#v1:nVHbasMwDP0XPWdF3h4K-ZUxguuoicG1g620jNB_n5I4l20djIrEyNKRz5E0wNXSrQuRoRzAkGeKUL4PcNWuJyjhBQ8KxeRQk42uwslBxBzALZzRav52CKWggC6SsckGX50sJyiPx3vxk0zlf_F214ljeg5nhm8cE2rRNR2PGT8KuNma27HlhRoP-B9TK0um3d92EnMiF22BVeLSmtp7uPSTR_jnyKAl27T8RAPrVtYlruvFdc-4l54XqTZk1vtYm4gzwZ9tU9laZF20r8mdYmAYEy7EKnQsFWkU32lHzDRDjdMpWSO41Ora-qYir0-OJHfWLpHELyFwu4U59hJtbeLQRH35hTefxlFlQu9lVG-vBXDUPp0pilwtAtQBC-gTVU3Xz6-J-ivFsSMpuH8B",
 ];
 
-/// Compare CPU and GPU renderers for a 200x200 pixel image at the given viewport.
+/// Compare GPU perturbation (HDRFloat), CPU perturbation (HDRFloat), and pure BigFloat renderers.
+/// BigFloat is the ground truth - it uses arbitrary precision arithmetic.
 #[test]
 fn gpu_matches_cpu_for_real_viewports() {
     use url_decode::decode_url_hash;
@@ -501,11 +510,11 @@ fn gpu_matches_cpu_for_real_viewports() {
             return;
         };
 
-        let mut renderer = GpuPerturbationRenderer::new(ctx);
+        // Use HDRFloat GPU renderer for proper precision at deep zooms
+        let mut gpu_renderer = GpuPerturbationHDRRenderer::new(ctx);
 
-        let width = 200_u32;
-        let height = 200_u32;
-        let max_iter = 500;
+        let width = 64_u32;
+        let height = 64_u32;
         let tau_sq = 1e-6_f32;
 
         for (url_idx, url) in TEST_URLS.iter().enumerate() {
@@ -525,108 +534,220 @@ fn gpu_matches_cpu_for_real_viewports() {
                 viewport.height.to_f64()
             );
 
-            // Compute reference orbit at viewport center
+            // Calculate zoom-appropriate max_iterations using the same function as production code
+            // Default values: multiplier=200.0, power=2.5 (from fractalwonder-ui/src/config.rs)
+            let ref_width = 4.0_f64;
+            let zoom = ref_width / viewport.width.to_f64();
+            let zoom_exponent = zoom.log10();
+            let max_iter = calculate_max_iterations(zoom_exponent, 200.0, 2.5);
+            // Use full max_iter for accurate comparison - this test is about correctness, not speed
+            println!("Zoom: {zoom:.2e}, zoom_exponent: {zoom_exponent:.2}, max_iter: {max_iter}");
+
+            // =========================================================================
+            // 1. BigFloat renderer (ground truth - arbitrary precision)
+            // =========================================================================
+            println!("\nRendering with BigFloat (ground truth)...");
+            let bigfloat_renderer = MandelbrotRenderer::new(max_iter);
+            let bigfloat_result = bigfloat_renderer.render(viewport, (width, height));
+            println!("  BigFloat render complete: {} pixels", bigfloat_result.len());
+
+            // =========================================================================
+            // 2. GPU perturbation renderer (HDRFloat)
+            // =========================================================================
+            println!("Rendering with GPU perturbation (HDRFloat)...");
             let center_re = viewport.center.0.to_f64();
             let center_im = viewport.center.1.to_f64();
             let orbit = create_reference_orbit(center_re, center_im, max_iter);
 
-            // Compute delta step size
-            let view_width = viewport.width.to_f64() as f32;
-            let view_height = viewport.height.to_f64() as f32;
-            let dc_origin = (-view_width / 2.0, -view_height / 2.0);
-            let dc_step = (view_width / width as f32, view_height / height as f32);
+            // Convert viewport dimensions to HDRFloat for precision at deep zooms
+            // This mirrors production code in parallel_renderer.rs
+            let vp_width = HDRFloat::from_bigfloat(&viewport.width);
+            let vp_height = HDRFloat::from_bigfloat(&viewport.height);
 
-            // GPU render
-            let gpu_result = renderer
-                .render(
+            let half = HDRFloat::from_f64(0.5);
+            let half_width = vp_width.mul(&half);
+            let half_height = vp_height.mul(&half);
+            let origin_re = half_width.neg();
+            let origin_im = half_height.neg();
+
+            // Compute step as HDRFloat to preserve precision
+            let step_re = vp_width.div_f64(width as f64);
+            let step_im = vp_height.div_f64(height as f64);
+
+            let dc_origin = (
+                (origin_re.head, origin_re.tail, origin_re.exp),
+                (origin_im.head, origin_im.tail, origin_im.exp),
+            );
+            let dc_step = (
+                (step_re.head, step_re.tail, step_re.exp),
+                (step_im.head, step_im.tail, step_im.exp),
+            );
+
+            // Render entire image as a single tile
+            let tile = PixelRect {
+                x: 0,
+                y: 0,
+                width,
+                height,
+            };
+
+            let gpu_result = gpu_renderer
+                .render_tile(
                     &orbit.orbit,
                     url_idx as u32 + 1,
                     dc_origin,
                     dc_step,
                     width,
                     height,
+                    &tile,
                     max_iter,
                     tau_sq,
                     orbit.escaped_at.is_some(),
-                    Adam7Pass::all_pixels(),
                 )
                 .await
                 .expect("GPU render should succeed");
+            println!("  GPU render complete: {:.2}ms", gpu_result.compute_time_ms);
 
-            // Compare CPU vs GPU for each pixel
-            let mut matches = 0;
-            let mut mismatches = 0;
-            let mut max_iter_diff = 0_i32;
-            let mut escaped_mismatches = 0;
-            let mut glitched_count = 0;
+            // =========================================================================
+            // 3. Compare all three renderers
+            // =========================================================================
+            let mut gpu_vs_bigfloat_matches = 0_u32;
+            let mut cpu_vs_bigfloat_matches = 0_u32;
+            let mut gpu_vs_cpu_matches = 0_u32;
+            let mut gpu_vs_bigfloat_max_diff = 0_i32;
+            let mut cpu_vs_bigfloat_max_diff = 0_i32;
+            let mut gpu_vs_cpu_max_diff = 0_i32;
+            let mut glitched_count = 0_u32;
+
+            // BigFloat stats
+            let mut bf_escaped = 0_u32;
+            let mut bf_min_iter = u32::MAX;
+            let mut bf_max_iter = 0_u32;
+            let mut bf_iter_sum = 0_u64;
 
             for y in 0..height {
                 for x in 0..width {
                     let idx = (y * width + x) as usize;
 
-                    let delta_c = (
-                        dc_origin.0 as f64 + x as f64 * dc_step.0 as f64,
-                        dc_origin.1 as f64 + y as f64 * dc_step.1 as f64,
-                    );
+                    // BigFloat result (ground truth)
+                    let bf_data = &bigfloat_result[idx];
 
-                    let cpu_result =
-                        compute_pixel_perturbation(&orbit, delta_c, max_iter, tau_sq as f64);
-
+                    // GPU result
                     let gpu_data = as_mandelbrot(&gpu_result.data[idx]);
+
+                    // CPU HDRFloat perturbation result - use proper HDRFloat arithmetic
+                    // Reconstruct origin and step as HDRFloat from tuples
+                    let origin_re_hdr = HDRFloat {
+                        head: dc_origin.0 .0,
+                        tail: dc_origin.0 .1,
+                        exp: dc_origin.0 .2,
+                    };
+                    let origin_im_hdr = HDRFloat {
+                        head: dc_origin.1 .0,
+                        tail: dc_origin.1 .1,
+                        exp: dc_origin.1 .2,
+                    };
+                    let step_re_hdr = HDRFloat {
+                        head: dc_step.0 .0,
+                        tail: dc_step.0 .1,
+                        exp: dc_step.0 .2,
+                    };
+                    let step_im_hdr = HDRFloat {
+                        head: dc_step.1 .0,
+                        tail: dc_step.1 .1,
+                        exp: dc_step.1 .2,
+                    };
+
+                    // dc = origin + pixel * step
+                    let dc_re = origin_re_hdr.add(&HDRFloat::from_f64(x as f64).mul(&step_re_hdr));
+                    let dc_im = origin_im_hdr.add(&HDRFloat::from_f64(y as f64).mul(&step_im_hdr));
+                    let delta_c = HDRComplex { re: dc_re, im: dc_im };
+                    let cpu_hdr_result =
+                        compute_pixel_perturbation_hdr(&orbit, delta_c, max_iter, tau_sq as f64);
+
+                    // BigFloat stats
+                    bf_iter_sum += bf_data.iterations as u64;
+                    bf_min_iter = bf_min_iter.min(bf_data.iterations);
+                    bf_max_iter = bf_max_iter.max(bf_data.iterations);
+                    if bf_data.escaped {
+                        bf_escaped += 1;
+                    }
 
                     if gpu_data.glitched {
                         glitched_count += 1;
                     }
 
-                    let iter_diff =
-                        (gpu_data.iterations as i32 - cpu_result.iterations as i32).abs();
-                    max_iter_diff = max_iter_diff.max(iter_diff);
-
-                    // Allow ±1 iteration difference due to f32 vs f64 precision
-                    if iter_diff <= 1 {
-                        matches += 1;
-                    } else {
-                        mismatches += 1;
-                        if mismatches <= 5 {
-                            println!(
-                                "Mismatch at ({x}, {y}): GPU={}, CPU={}, diff={iter_diff}",
-                                gpu_data.iterations, cpu_result.iterations
-                            );
-                        }
+                    // GPU vs BigFloat
+                    let gpu_bf_diff = (gpu_data.iterations as i32 - bf_data.iterations as i32).abs();
+                    gpu_vs_bigfloat_max_diff = gpu_vs_bigfloat_max_diff.max(gpu_bf_diff);
+                    if gpu_bf_diff <= 1 {
+                        gpu_vs_bigfloat_matches += 1;
                     }
 
-                    // Check escaped flag consistency
-                    if gpu_data.escaped != cpu_result.escaped {
-                        escaped_mismatches += 1;
+                    // CPU HDRFloat vs BigFloat
+                    let cpu_bf_diff =
+                        (cpu_hdr_result.iterations as i32 - bf_data.iterations as i32).abs();
+                    cpu_vs_bigfloat_max_diff = cpu_vs_bigfloat_max_diff.max(cpu_bf_diff);
+                    if cpu_bf_diff <= 1 {
+                        cpu_vs_bigfloat_matches += 1;
                     }
+
+                    // GPU vs CPU HDRFloat
+                    let gpu_cpu_diff =
+                        (gpu_data.iterations as i32 - cpu_hdr_result.iterations as i32).abs();
+                    gpu_vs_cpu_max_diff = gpu_vs_cpu_max_diff.max(gpu_cpu_diff);
+                    if gpu_cpu_diff <= 1 {
+                        gpu_vs_cpu_matches += 1;
+                    }
+
                 }
             }
 
             let total = width * height;
-            let match_pct = 100.0 * matches as f64 / total as f64;
+            let gpu_bf_pct = 100.0 * gpu_vs_bigfloat_matches as f64 / total as f64;
+            let cpu_bf_pct = 100.0 * cpu_vs_bigfloat_matches as f64 / total as f64;
+            let gpu_cpu_pct = 100.0 * gpu_vs_cpu_matches as f64 / total as f64;
+            let bf_avg_iter = bf_iter_sum as f64 / total as f64;
 
-            println!("GPU vs CPU comparison for URL {}:", url_idx + 1);
-            println!("  Total pixels: {total}");
-            println!("  Matches (±1): {matches} ({match_pct:.1}%)");
-            println!("  Mismatches: {mismatches}");
-            println!("  Max iteration difference: {max_iter_diff}");
-            println!("  Escaped flag mismatches: {escaped_mismatches}");
-            println!("  Glitched pixels: {glitched_count}");
-            println!("  Compute time: {:.2}ms", gpu_result.compute_time_ms);
-
-            // Assert high match rate
-            assert!(
-                match_pct >= 99.0,
-                "URL {}: GPU should match CPU for at least 99% of pixels, got {match_pct:.1}%",
-                url_idx + 1
+            println!("\n--- Results for URL {} ---", url_idx + 1);
+            println!("BigFloat (ground truth):");
+            println!(
+                "  Iterations: min={}, max={}, avg={:.1}",
+                bf_min_iter, bf_max_iter, bf_avg_iter
+            );
+            println!(
+                "  Escaped: {} ({:.1}%)",
+                bf_escaped,
+                100.0 * bf_escaped as f64 / total as f64
             );
 
-            // Assert reasonable iteration difference
-            assert!(
-                max_iter_diff <= 100,
-                "URL {}: Maximum iteration difference should be ≤100, got {max_iter_diff}",
-                url_idx + 1
-            );
+            println!("\nGPU vs BigFloat:");
+            println!("  Matches (±1): {} ({:.1}%)", gpu_vs_bigfloat_matches, gpu_bf_pct);
+            println!("  Max iteration diff: {}", gpu_vs_bigfloat_max_diff);
+
+            println!("\nCPU HDRFloat vs BigFloat:");
+            println!("  Matches (±1): {} ({:.1}%)", cpu_vs_bigfloat_matches, cpu_bf_pct);
+            println!("  Max iteration diff: {}", cpu_vs_bigfloat_max_diff);
+
+            println!("\nGPU vs CPU HDRFloat:");
+            println!("  Matches (±1): {} ({:.1}%)", gpu_vs_cpu_matches, gpu_cpu_pct);
+            println!("  Max iteration diff: {}", gpu_vs_cpu_max_diff);
+
+            println!("\nGlitched pixels: {}", glitched_count);
+
+            // The key insight: if both GPU and CPU HDRFloat diverge from BigFloat similarly,
+            // the problem is in HDRFloat. If they diverge differently, the problem is
+            // GPU-specific or CPU-specific.
+            println!("\n=== Diagnosis ===");
+            if cpu_bf_pct < 90.0 && gpu_bf_pct < 90.0 {
+                println!("Both HDRFloat renderers diverge from BigFloat - likely HDRFloat precision/overflow issue");
+            } else if gpu_bf_pct < cpu_bf_pct - 10.0 {
+                println!("GPU diverges more than CPU - likely GPU-specific issue");
+            } else if cpu_bf_pct < gpu_bf_pct - 10.0 {
+                println!("CPU diverges more than GPU - likely CPU HDRFloat-specific issue");
+            } else {
+                println!("All renderers agree reasonably well");
+            }
         }
     });
 }

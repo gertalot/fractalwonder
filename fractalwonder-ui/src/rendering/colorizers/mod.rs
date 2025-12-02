@@ -75,6 +75,11 @@ pub fn palettes() -> Vec<PaletteEntry> {
             palette: Palette::inferno(),
         },
         PaletteEntry {
+            id: "stripey_inferno",
+            name: "Stripey Inferno",
+            palette: Palette::stripey_inferno(),
+        },
+        PaletteEntry {
             id: "aurora",
             name: "Aurora",
             palette: Palette::aurora(),
