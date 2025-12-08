@@ -120,6 +120,7 @@ impl ParallelRenderer {
         let colorizer_complete = Rc::clone(&colorizer);
         let tile_results_complete = Rc::clone(&tile_results);
         let canvas_ctx_complete = Rc::clone(&canvas_ctx);
+        let canvas_size_complete = Rc::clone(&canvas_size);
         let current_viewport: Rc<RefCell<Option<Viewport>>> = Rc::new(RefCell::new(None));
         let current_viewport_complete = Rc::clone(&current_viewport);
         worker_pool.borrow().set_render_complete_callback(move || {
@@ -139,25 +140,18 @@ impl ParallelRenderer {
                 1.0
             };
 
-            // Re-colorize with full pipeline (applies shading)
-            for result in tile_results_complete.borrow().iter() {
-                let pixels = colorizer.run_pipeline(
-                    &result.data,
-                    &opts,
-                    &pal,
-                    result.tile.width as usize,
-                    result.tile.height as usize,
-                    zoom_level,
-                );
-                let pixel_bytes: Vec<u8> = pixels.into_iter().flatten().collect();
-                let _ = draw_pixels_to_canvas(
-                    ctx,
-                    &pixel_bytes,
-                    result.tile.width,
-                    result.tile.x as f64,
-                    result.tile.y as f64,
-                );
-            }
+            // Assemble all tiles into a single full-image buffer for unified histogram
+            let (width, height) = canvas_size_complete.get();
+            let tiles = tile_results_complete.borrow();
+            let full_buffer = assemble_tiles_to_buffer(&tiles, width as usize, height as usize);
+
+            // Run pipeline on full image (builds one histogram for entire image)
+            let final_pixels =
+                colorizer.run_pipeline(&full_buffer, &opts, &pal, width as usize, height as usize, zoom_level);
+
+            // Draw full frame
+            let pixel_bytes: Vec<u8> = final_pixels.into_iter().flatten().collect();
+            let _ = draw_full_frame(ctx, &pixel_bytes, width, height);
         });
 
         Ok(Self {
@@ -208,24 +202,18 @@ impl ParallelRenderer {
             1.0
         };
 
-        for result in self.tile_results.borrow().iter() {
-            let pixels = colorizer.run_pipeline(
-                &result.data,
-                &opts,
-                &pal,
-                result.tile.width as usize,
-                result.tile.height as usize,
-                zoom_level,
-            );
-            let pixel_bytes: Vec<u8> = pixels.into_iter().flatten().collect();
-            let _ = draw_pixels_to_canvas(
-                ctx,
-                &pixel_bytes,
-                result.tile.width,
-                result.tile.x as f64,
-                result.tile.y as f64,
-            );
-        }
+        // Assemble all tiles into a single full-image buffer for unified histogram
+        let (width, height) = self.canvas_size.get();
+        let tiles = self.tile_results.borrow();
+        let full_buffer = assemble_tiles_to_buffer(&tiles, width as usize, height as usize);
+
+        // Run pipeline on full image (builds one histogram for entire image)
+        let final_pixels =
+            colorizer.run_pipeline(&full_buffer, &opts, &pal, width as usize, height as usize, zoom_level);
+
+        // Draw full frame
+        let pixel_bytes: Vec<u8> = final_pixels.into_iter().flatten().collect();
+        let _ = draw_full_frame(ctx, &pixel_bytes, width, height);
     }
 
     pub fn progress(&self) -> RwSignal<RenderProgress> {
@@ -257,6 +245,9 @@ impl ParallelRenderer {
         if width == 0 || height == 0 {
             return;
         }
+
+        // Store canvas size for histogram assembly in callbacks
+        self.canvas_size.set((width, height));
 
         // Clear stored tile results from previous render
         self.tile_results.borrow_mut().clear();
@@ -1204,4 +1195,52 @@ fn schedule_row_set(
             }
         }
     });
+}
+
+/// Assemble tile results into a single full-image buffer.
+/// Tiles may arrive out of order, so we place each tile's data at the correct position.
+fn assemble_tiles_to_buffer(
+    tiles: &[TileResult],
+    width: usize,
+    height: usize,
+) -> Vec<ComputeData> {
+    // Initialize with default (interior) pixels
+    let mut buffer = vec![
+        ComputeData::Mandelbrot(MandelbrotData {
+            iterations: 0,
+            max_iterations: 0,
+            escaped: false,
+            glitched: false,
+            final_z_norm_sq: 0.0,
+        });
+        width * height
+    ];
+
+    // Place each tile's data at the correct position
+    for tile in tiles {
+        let tile_x = tile.tile.x as usize;
+        let tile_y = tile.tile.y as usize;
+        let tile_width = tile.tile.width as usize;
+        let tile_height = tile.tile.height as usize;
+
+        for local_y in 0..tile_height {
+            let global_y = tile_y + local_y;
+            if global_y >= height {
+                break;
+            }
+            for local_x in 0..tile_width {
+                let global_x = tile_x + local_x;
+                if global_x >= width {
+                    break;
+                }
+                let local_idx = local_y * tile_width + local_x;
+                let global_idx = global_y * width + global_x;
+                if local_idx < tile.data.len() {
+                    buffer[global_idx] = tile.data[local_idx].clone();
+                }
+            }
+        }
+    }
+
+    buffer
 }
