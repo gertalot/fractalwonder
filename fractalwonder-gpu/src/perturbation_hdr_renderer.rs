@@ -90,11 +90,24 @@ impl GpuPerturbationHDRRenderer {
         let buffers = self.buffers.as_ref().unwrap();
 
         // Upload orbit if changed
+        // Uses full HDRFloat representation matching CPU: value = (head + tail) × 2^exp
         if self.cached_orbit_id != Some(orbit_id) {
             log::info!("Uploading orbit {} ({} points)", orbit_id, orbit.len());
-            let orbit_data: Vec<[f32; 2]> = orbit
+            let orbit_data: Vec<[f32; 6]> = orbit
                 .iter()
-                .map(|&(re, im)| [re as f32, im as f32])
+                .map(|&(re, im)| {
+                    // Convert to HDRFloat format matching CPU implementation
+                    let re_hdr = fractalwonder_core::HDRFloat::from_f64(re);
+                    let im_hdr = fractalwonder_core::HDRFloat::from_f64(im);
+                    [
+                        re_hdr.head,
+                        re_hdr.tail,
+                        im_hdr.head,
+                        im_hdr.tail,
+                        f32::from_bits(re_hdr.exp as u32),
+                        f32::from_bits(im_hdr.exp as u32),
+                    ]
+                })
                 .collect();
             self.context.queue.write_buffer(
                 &buffers.reference_orbit,

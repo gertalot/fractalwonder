@@ -89,10 +89,25 @@ impl ProgressiveGpuRenderer {
         let buffers = self.buffers.as_ref().unwrap();
 
         // Upload orbit if changed
+        // Store as (re_hi, re_lo, im_hi, im_lo) with exponents packed into hi/lo
+        // Uses HDRFloat representation: value = (head + tail) × 2^exp, head in [0.5, 1.0)
         if self.cached_orbit_id != Some(orbit_id) {
-            let orbit_data: Vec<[f32; 2]> = orbit
+            let orbit_data: Vec<[f32; 6]> = orbit
                 .iter()
-                .map(|&(re, im)| [re as f32, im as f32])
+                .map(|&(re, im)| {
+                    // Convert to HDRFloat format matching CPU implementation
+                    let re_hdr = fractalwonder_core::HDRFloat::from_f64(re);
+                    let im_hdr = fractalwonder_core::HDRFloat::from_f64(im);
+                    [
+                        re_hdr.head,
+                        re_hdr.tail,
+                        im_hdr.head,
+                        im_hdr.tail,
+                        // Pack exponents as f32 for GPU (will be bitcast to i32)
+                        f32::from_bits(re_hdr.exp as u32),
+                        f32::from_bits(im_hdr.exp as u32),
+                    ]
+                })
                 .collect();
             self.context.queue.write_buffer(
                 &buffers.reference_orbit,

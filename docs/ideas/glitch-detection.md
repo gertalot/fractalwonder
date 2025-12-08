@@ -115,11 +115,71 @@ Fixing the GPU HDRFloat bug may significantly reduce glitch frequency, potential
 unnecessary for most use cases. However, some glitches are mathematically expected (reference orbit
 too far from pixel orbit), so a re-rendering mechanism may still be needed eventually.
 
+## Investigation: Orbit Precision (December 2025)
+
+### What Was Fixed
+
+The reference orbit was being uploaded to GPU with precision loss. Originally, orbit values
+(f64 pairs) were converted to f32 during upload, losing 29 bits of mantissa precision.
+
+**Solution implemented:**
+- Changed orbit buffer from `[f32; 2]` (re, im) to `[f32; 6]` (re_head, re_tail, im_head, im_tail, re_exp, im_exp)
+- Upload uses `HDRFloat::from_f64()` to properly split f64 values into normalized HDRFloat representation
+- GPU reconstructs `HDRFloat(head, tail, exp)` from the 6 values per orbit point
+
+**Files modified:**
+- `fractalwonder-gpu/src/buffers.rs` - orbit buffer size changes
+- `fractalwonder-gpu/src/progressive_renderer.rs` - HDRFloat orbit upload
+- `fractalwonder-gpu/src/perturbation_hdr_renderer.rs` - same
+- `fractalwonder-gpu/src/renderer.rs` - same
+- `fractalwonder-gpu/src/shaders/progressive_iteration.wgsl` - orbit reading with HDRFloat reconstruction
+- `fractalwonder-gpu/src/shaders/delta_iteration_hdr.wgsl` - same
+
+### Verification
+
+The orbit precision fix was verified by checking reconstruction error:
+```
+Orbit reconstruction check: GPU HDRFloat from orbit matches original f64 to ~1e-16 relative error
+```
+
+This confirms the HDRFloat orbit representation is now correct.
+
+### Key Finding
+
+**The orbit precision fix did NOT resolve the GPU/CPU divergence.** The ~43% mismatch rate persists.
+
+This proves the remaining divergence is due to **HDRFloat arithmetic differences** between GPU and
+CPU implementations, not orbit precision loss. The GPU consistently underestimates iteration counts
+(escapes earlier than CPU), which points to subtle differences in:
+- HDRFloat multiplication/addition/subtraction precision
+- Rebase decision threshold comparisons
+- Normalization edge cases in WGSL vs Rust
+
+### WGSL Shader Validation
+
+WGSL shaders can be validated offline using the `naga` CLI tool (part of wgpu):
+```bash
+~/.cargo/bin/naga src/shaders/progressive_iteration.wgsl
+```
+
+This catches syntax errors and undefined variables before runtime, avoiding opaque "Invalid
+ComputePipeline" browser errors.
+
+### Test Added
+
+`gpu_orbit_precision_matches_cpu` in `fractalwonder-gpu/src/tests.rs`:
+- Renders same viewport with GPU and CPU HDRFloat
+- Compares iteration counts for all pixels
+- Reports mismatch rate and examples of divergence
+
+Run with: `cargo test -p fractalwonder-gpu gpu_orbit_precision_matches_cpu -- --nocapture`
+
 ## Next Steps
 
-1. Find and fix the GPU HDRFloat divergence bug
-2. Re-run glitch detection test to measure improvement
-3. If significant glitches remain, implement CPU fallback for glitched pixels
+1. ~~Find and fix the GPU orbit precision bug~~ ✓ Fixed (but didn't resolve divergence)
+2. **Investigate GPU HDRFloat arithmetic divergence** - the remaining root cause
+3. Compare specific HDRFloat operations (mul, add, normalize) between GPU and CPU
+4. If HDRFloat precision can't be improved, implement CPU fallback for glitched pixels
 
 ## References
 

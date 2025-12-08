@@ -349,9 +349,11 @@ impl ProgressiveGpuBuffers {
             mapped_at_creation: false,
         });
 
+        // Orbit stored as 6 f32s per point: (re_head, re_tail, im_head, im_tail, re_exp, im_exp)
+        // This uses full HDRFloat representation matching the CPU implementation
         let reference_orbit = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("progressive_reference_orbit"),
-            size: (orbit_len as usize * std::mem::size_of::<[f32; 2]>()) as u64,
+            size: (orbit_len as usize * std::mem::size_of::<[f32; 6]>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -497,9 +499,11 @@ impl PerturbationHDRBuffers {
             mapped_at_creation: false,
         });
 
+        // Orbit stored as 6 f32s per point: (re_head, re_tail, im_head, im_tail, re_exp, im_exp)
+        // This uses full HDRFloat representation matching the CPU implementation
         let reference_orbit = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perturbation_hdr_reference_orbit"),
-            size: (orbit_len as usize * std::mem::size_of::<[f32; 2]>()) as u64,
+            size: (orbit_len as usize * std::mem::size_of::<[f32; 6]>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -585,9 +589,11 @@ impl GpuBuffers {
             mapped_at_creation: false,
         });
 
+        // Orbit stored as 6 f32s per point: (re_head, re_tail, im_head, im_tail, re_exp, im_exp)
+        // This uses full HDRFloat representation matching the CPU implementation
         let reference_orbit = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("reference_orbit"),
-            size: (orbit_len as usize * std::mem::size_of::<[f32; 2]>()) as u64,
+            size: (orbit_len as usize * std::mem::size_of::<[f32; 6]>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });

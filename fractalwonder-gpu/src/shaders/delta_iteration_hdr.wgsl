@@ -269,7 +269,9 @@ struct Uniforms {
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var<storage, read> reference_orbit: array<vec2<f32>>;
+// Orbit stored as 6 f32s per point: [re_head, re_tail, im_head, im_tail, re_exp, im_exp]
+// This uses full HDRFloat representation matching CPU: value = (head + tail) × 2^exp
+@group(0) @binding(1) var<storage, read> reference_orbit: array<f32>;
 @group(0) @binding(2) var<storage, read_write> results: array<u32>;
 @group(0) @binding(3) var<storage, read_write> glitch_flags: array<u32>;
 @group(0) @binding(4) var<storage, read_write> z_norm_sq: array<f32>;
@@ -343,14 +345,18 @@ fn main(@builtin(global_invocation_id) local_id: vec3<u32>) {
             glitched = true;
         }
 
-        // Get Z_m from reference orbit
-        let z_m = reference_orbit[m % orbit_len];
-        let z_m_re = z_m.x;
-        let z_m_im = z_m.y;
+        // Orbit stored as 6 f32s: [re_head, re_tail, im_head, im_tail, re_exp, im_exp]
+        let orbit_idx = (m % orbit_len) * 6u;
+        let z_m_re_head = reference_orbit[orbit_idx];
+        let z_m_re_tail = reference_orbit[orbit_idx + 1u];
+        let z_m_im_head = reference_orbit[orbit_idx + 2u];
+        let z_m_im_tail = reference_orbit[orbit_idx + 3u];
+        let z_m_re_exp = bitcast<i32>(bitcast<u32>(reference_orbit[orbit_idx + 4u]));
+        let z_m_im_exp = bitcast<i32>(bitcast<u32>(reference_orbit[orbit_idx + 5u]));
 
-        // Full z = Z_m + δz (convert Z_m to HDRFloat for addition)
-        let z_m_hdr_re = HDRFloat(z_m_re, 0.0, 0);
-        let z_m_hdr_im = HDRFloat(z_m_im, 0.0, 0);
+        // Full z = Z_m + δz (reconstruct Z_m as HDRFloat with proper exponent)
+        let z_m_hdr_re = HDRFloat(z_m_re_head, z_m_re_tail, z_m_re_exp);
+        let z_m_hdr_im = HDRFloat(z_m_im_head, z_m_im_tail, z_m_im_exp);
         let z_re = hdr_add(z_m_hdr_re, dz.re);
         let z_im = hdr_add(z_m_hdr_im, dz.im);
         let z = HDRComplex(z_re, z_im);
@@ -361,7 +367,8 @@ fn main(@builtin(global_invocation_id) local_id: vec3<u32>) {
 
         // For output, convert to f32
         let z_mag_sq = hdr_to_f32(z_mag_sq_hdr);
-        let z_m_mag_sq = z_m_re * z_m_re + z_m_im * z_m_im;
+        // Use full HDRFloat precision for glitch detection
+        let z_m_mag_sq = hdr_to_f32(hdr_complex_norm_sq_hdr(HDRComplex(z_m_hdr_re, z_m_hdr_im)));
 
         // 1. Escape check - use HDRFloat comparison
         let escape_radius_sq_hdr = hdr_from_f32_const(uniforms.escape_radius_sq);
@@ -395,9 +402,9 @@ fn main(@builtin(global_invocation_id) local_id: vec3<u32>) {
         }
 
         // 4. Delta iteration: δz' = 2·Z_m·δz + δz² + δc
-        // 2·Z_m·δz (complex multiplication then scale by 2)
-        let two_z_dz_re = hdr_mul_f32(hdr_sub(hdr_mul_f32(dz.re, z_m_re), hdr_mul_f32(dz.im, z_m_im)), 2.0);
-        let two_z_dz_im = hdr_mul_f32(hdr_add(hdr_mul_f32(dz.re, z_m_im), hdr_mul_f32(dz.im, z_m_re)), 2.0);
+        // Use z_m HDRFloat values for full precision multiplication
+        let two_z_dz_re = hdr_mul_f32(hdr_sub(hdr_mul(dz.re, z_m_hdr_re), hdr_mul(dz.im, z_m_hdr_im)), 2.0);
+        let two_z_dz_im = hdr_mul_f32(hdr_add(hdr_mul(dz.re, z_m_hdr_im), hdr_mul(dz.im, z_m_hdr_re)), 2.0);
 
         // δz²
         let dz_sq = hdr_complex_square(dz);

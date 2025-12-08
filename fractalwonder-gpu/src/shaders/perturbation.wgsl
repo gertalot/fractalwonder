@@ -17,7 +17,9 @@ struct Uniforms {
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var<storage, read> reference_orbit: array<vec2<f32>>;
+// Orbit stored as 6 f32s per point: [re_head, re_tail, im_head, im_tail, re_exp, im_exp]
+// For this f32-only shader, we just use head values (exponent is ignored since we work in f32 range)
+@group(0) @binding(1) var<storage, read> reference_orbit: array<f32>;
 @group(0) @binding(2) var<storage, read_write> results: array<u32>;
 @group(0) @binding(3) var<storage, read_write> glitch_flags: array<u32>;
 @group(0) @binding(4) var<storage, read_write> z_norm_sq: array<f32>;
@@ -88,7 +90,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             glitched = true;
         }
 
-        let Z = reference_orbit[m % orbit_len];
+        // Orbit stored as 6 f32s: [re_head, re_tail, im_head, im_tail, re_exp, im_exp]
+        // For f32 shader, we reconstruct from head+tail (ignoring exponent since f32 range is limited)
+        let orbit_idx = (m % orbit_len) * 6u;
+        let Z = vec2<f32>(
+            reference_orbit[orbit_idx] + reference_orbit[orbit_idx + 1u],
+            reference_orbit[orbit_idx + 2u] + reference_orbit[orbit_idx + 3u]
+        );
         let z = Z + dz;
 
         let z_sq = dot(z, z);
