@@ -283,13 +283,18 @@ impl ParallelRenderer {
         // Start render with GPU perturbation or CPU fallback
         // Check runtime use_gpu option (user-controllable) AND config gpu_enabled (fractal type)
         let use_gpu = self.config.gpu_enabled && self.options.borrow().use_gpu;
-        if use_gpu {
+        let use_progressive = self.config.gpu_progressive_row_sets > 0;
+        if use_gpu && use_progressive {
             // Use progressive GPU rendering (row-sets / venetian blinds pattern)
             log::info!(
                 "Using progressive GPU renderer (zoom={zoom:.2e}, row_sets={})",
                 self.config.gpu_progressive_row_sets
             );
             self.start_progressive_gpu_render(viewport, canvas);
+        } else if use_gpu {
+            // Use old tiled GPU renderer
+            log::info!("Using tiled GPU renderer (zoom={zoom:.2e})");
+            self.start_gpu_render(viewport, canvas, tile_size);
         } else {
             log::info!("Using CPU renderer (zoom={zoom:.2e})");
             self.worker_pool.borrow_mut().start_perturbation_render(
