@@ -50,6 +50,12 @@ pub struct FractalConfig {
     /// Enable GPU acceleration via WebGPU compute shaders.
     /// Falls back to CPU if GPU unavailable or disabled.
     pub gpu_enabled: bool,
+    /// Iterations per GPU dispatch (prevents timeout).
+    /// Default 100,000 keeps each dispatch under browser timeout threshold.
+    pub gpu_iterations_per_dispatch: u32,
+    /// Number of row-sets for progressive rendering (venetian blinds).
+    /// Default 16 means rows 0,16,32... render first, then 1,17,33..., etc.
+    pub gpu_progressive_row_sets: u32,
 }
 
 impl FractalConfig {
@@ -82,6 +88,8 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         bigfloat_threshold_bits: 1024,
         bla_enabled: false,
         gpu_enabled: false,
+        gpu_iterations_per_dispatch: 100_000,
+        gpu_progressive_row_sets: 16,
     },
     FractalConfig {
         id: "mandelbrot",
@@ -97,6 +105,8 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         bigfloat_threshold_bits: 1024, // ~10^300 zoom
         bla_enabled: true,
         gpu_enabled: true,
+        gpu_iterations_per_dispatch: 100_000,
+        gpu_progressive_row_sets: 16,
     },
 ];
 
