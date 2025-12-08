@@ -205,12 +205,109 @@ impl PerturbationHDRUniforms {
     }
 }
 
-/// Maximum tile size for GPU rendering (64×64 = 4096 pixels).
-pub const GPU_TILE_SIZE: u32 = 64;
-pub const GPU_TILE_PIXELS: u32 = GPU_TILE_SIZE * GPU_TILE_SIZE;
+/// Uniform data for progressive GPU rendering with row-sets.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct ProgressiveGpuUniforms {
+    // Image dimensions
+    pub image_width: u32,
+    pub image_height: u32,
+
+    // Row-set info
+    pub row_set_index: u32,
+    pub row_set_count: u32,
+    pub row_set_pixel_count: u32,
+    pub _pad0: u32,
+
+    // Iteration chunking
+    pub chunk_start_iter: u32,
+    pub chunk_size: u32,
+    pub max_iterations: u32,
+    pub escape_radius_sq: f32,
+    pub tau_sq: f32,
+    pub _pad1: u32,
+
+    // dc_origin as HDRFloat
+    pub dc_origin_re_head: f32,
+    pub dc_origin_re_tail: f32,
+    pub dc_origin_re_exp: i32,
+    pub _pad2: u32,
+    pub dc_origin_im_head: f32,
+    pub dc_origin_im_tail: f32,
+    pub dc_origin_im_exp: i32,
+    pub _pad3: u32,
+
+    // dc_step as HDRFloat
+    pub dc_step_re_head: f32,
+    pub dc_step_re_tail: f32,
+    pub dc_step_re_exp: i32,
+    pub _pad4: u32,
+    pub dc_step_im_head: f32,
+    pub dc_step_im_tail: f32,
+    pub dc_step_im_exp: i32,
+    pub _pad5: u32,
+
+    // Reference orbit info
+    pub reference_escaped: u32,
+    pub orbit_len: u32,
+    pub _pad6: [u32; 2],
+}
+
+impl ProgressiveGpuUniforms {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        image_width: u32,
+        image_height: u32,
+        row_set_index: u32,
+        row_set_count: u32,
+        row_set_pixel_count: u32,
+        chunk_start_iter: u32,
+        chunk_size: u32,
+        max_iterations: u32,
+        tau_sq: f32,
+        dc_origin: ((f32, f32, i32), (f32, f32, i32)),
+        dc_step: ((f32, f32, i32), (f32, f32, i32)),
+        reference_escaped: bool,
+        orbit_len: u32,
+    ) -> Self {
+        Self {
+            image_width,
+            image_height,
+            row_set_index,
+            row_set_count,
+            row_set_pixel_count,
+            _pad0: 0,
+            chunk_start_iter,
+            chunk_size,
+            max_iterations,
+            escape_radius_sq: 65536.0,
+            tau_sq,
+            _pad1: 0,
+            dc_origin_re_head: dc_origin.0 .0,
+            dc_origin_re_tail: dc_origin.0 .1,
+            dc_origin_re_exp: dc_origin.0 .2,
+            _pad2: 0,
+            dc_origin_im_head: dc_origin.1 .0,
+            dc_origin_im_tail: dc_origin.1 .1,
+            dc_origin_im_exp: dc_origin.1 .2,
+            _pad3: 0,
+            dc_step_re_head: dc_step.0 .0,
+            dc_step_re_tail: dc_step.0 .1,
+            dc_step_re_exp: dc_step.0 .2,
+            _pad4: 0,
+            dc_step_im_head: dc_step.1 .0,
+            dc_step_im_tail: dc_step.1 .1,
+            dc_step_im_exp: dc_step.1 .2,
+            _pad5: 0,
+            reference_escaped: if reference_escaped { 1 } else { 0 },
+            orbit_len,
+            _pad6: [0, 0],
+        }
+    }
+}
 
 /// GPU buffers for perturbation HDRFloat rendering.
-/// Buffers are sized for a single tile (64×64), reused across tile dispatches.
+/// Buffers are sized for the provided tile size.
 pub struct PerturbationHDRBuffers {
     pub uniforms: wgpu::Buffer,
     pub reference_orbit: wgpu::Buffer,
@@ -225,8 +322,8 @@ pub struct PerturbationHDRBuffers {
 
 impl PerturbationHDRBuffers {
     /// Create tile-sized buffers. Orbit buffer sized for orbit_len.
-    pub fn new(device: &wgpu::Device, orbit_len: u32) -> Self {
-        let tile_pixels = GPU_TILE_PIXELS as usize;
+    pub fn new(device: &wgpu::Device, orbit_len: u32, tile_size: u32) -> Self {
+        let tile_pixels = (tile_size * tile_size) as usize;
 
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perturbation_hdr_uniforms"),
