@@ -16,3 +16,6 @@ cargo test --workspace --all-targets --all-features
 
 echo "—————————————— Running wasm-pack test ——————————————"
 wasm-pack test --headless --chrome fractalwonder-ui
+
+echo "—————————————— Validating WGSL shaders ——————————————"
+find . -name "*.wgsl" -type f -print0 | xargs -0 naga --bulk-validate
