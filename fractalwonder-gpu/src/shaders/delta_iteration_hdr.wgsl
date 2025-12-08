@@ -186,6 +186,42 @@ fn hdr_complex_norm_sq(a: HDRComplex) -> f32 {
     return hdr_to_f32(sum);
 }
 
+// Return norm_sq as HDRFloat (preserves extended exponent range)
+fn hdr_complex_norm_sq_hdr(a: HDRComplex) -> HDRFloat {
+    let re_sq = hdr_square(a.re);
+    let im_sq = hdr_square(a.im);
+    return hdr_add(re_sq, im_sq);
+}
+
+// Compare two HDRFloat values: a < b
+// For magnitude comparisons, both values are non-negative
+fn hdr_less_than(a: HDRFloat, b: HDRFloat) -> bool {
+    // Handle zeros
+    let a_zero = a.head == 0.0 && a.tail == 0.0;
+    let b_zero = b.head == 0.0 && b.tail == 0.0;
+    if a_zero { return !b_zero; }
+    if b_zero { return false; }
+
+    // Compare exponents first (both positive for magnitudes)
+    if a.exp != b.exp {
+        return a.exp < b.exp;
+    }
+
+    // Same exponent - compare mantissas
+    return (a.head + a.tail) < (b.head + b.tail);
+}
+
+// Compare: a > b
+fn hdr_greater_than(a: HDRFloat, b: HDRFloat) -> bool {
+    return hdr_less_than(b, a);
+}
+
+// Create HDRFloat from f32 constant (for escape_radius_sq, tau_sq)
+fn hdr_from_f32_const(val: f32) -> HDRFloat {
+    if val == 0.0 { return HDR_ZERO; }
+    return hdr_normalize(HDRFloat(val, 0.0, 0));
+}
+
 // Create HDRFloat from parts (for uniforms)
 fn hdr_from_parts(head: f32, tail: f32, exp: i32) -> HDRFloat {
     return HDRFloat(head, tail, exp);
@@ -319,29 +355,39 @@ fn main(@builtin(global_invocation_id) local_id: vec3<u32>) {
         let z_im = hdr_add(z_m_hdr_im, dz.im);
         let z = HDRComplex(z_re, z_im);
 
-        // Magnitudes
-        let z_mag_sq = hdr_complex_norm_sq(z);
-        let z_m_mag_sq = z_m_re * z_m_re + z_m_im * z_m_im;
-        let dz_mag_sq = hdr_complex_norm_sq(dz);
+        // Compute magnitudes as HDRFloat (preserves precision)
+        let z_mag_sq_hdr = hdr_complex_norm_sq_hdr(z);
+        let dz_mag_sq_hdr = hdr_complex_norm_sq_hdr(dz);
 
-        // 1. Escape check
-        if z_mag_sq > uniforms.escape_radius_sq {
+        // For output, convert to f32
+        let z_mag_sq = hdr_to_f32(z_mag_sq_hdr);
+        let z_m_mag_sq = z_m_re * z_m_re + z_m_im * z_m_im;
+
+        // 1. Escape check - use HDRFloat comparison
+        let escape_radius_sq_hdr = hdr_from_f32_const(uniforms.escape_radius_sq);
+        if hdr_greater_than(z_mag_sq_hdr, escape_radius_sq_hdr) {
             results[tile_idx] = n;
             glitch_flags[tile_idx] = select(0u, 1u, glitched);
             z_norm_sq[tile_idx] = z_mag_sq;
             return;
         }
 
-        // 2. Pauldelbrot glitch detection
-        if z_m_mag_sq > 1e-20 && z_mag_sq < uniforms.tau_sq * z_m_mag_sq {
-            glitched = true;
+        // 2. Pauldelbrot glitch detection - use HDRFloat comparison
+        let z_m_mag_sq_hdr = hdr_from_f32_const(z_m_mag_sq);
+        let threshold_hdr = hdr_from_f32_const(1e-20);
+        if hdr_greater_than(z_m_mag_sq_hdr, threshold_hdr) {
+            let tau_z_m_sq_hdr = hdr_mul_f32(z_m_mag_sq_hdr, uniforms.tau_sq);
+            if hdr_less_than(z_mag_sq_hdr, tau_z_m_sq_hdr) {
+                glitched = true;
+            }
         }
 
         // 3. Rebase check: when z crosses near origin, delta becomes larger than full value.
         // Reset to use z as the new delta and restart reference orbit index.
         // NOTE: Rebasing is a precision technique, NOT a Mandelbrot iteration.
         // The iteration count n should NOT increment during rebase.
-        if z_mag_sq < dz_mag_sq {
+        // Use HDRFloat comparison to preserve precision for very small values
+        if hdr_less_than(z_mag_sq_hdr, dz_mag_sq_hdr) {
             dz = z;
             m = 0u;
             // Do NOT increment n - rebase is not a real iteration
