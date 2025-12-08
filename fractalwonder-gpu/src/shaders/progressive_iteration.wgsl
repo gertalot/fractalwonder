@@ -368,7 +368,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         // Reset to use z as the new delta and restart reference orbit index.
         // NOTE: Rebasing is a precision technique, NOT a Mandelbrot iteration.
         // The iteration count n should NOT be reset during rebase.
-        if z_mag_sq < dz_mag_sq {
+        // Use HDRFloat comparison to preserve precision for very small values
+        if hdr_less_than(z_mag_sq_hdr, dz_mag_sq_hdr) {
             dz = z;
             m = 0u;
             continue;
