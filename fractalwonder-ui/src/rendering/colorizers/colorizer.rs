@@ -62,6 +62,7 @@ impl Default for ColorizerKind {
 
 impl ColorizerKind {
     /// Run the full colorization pipeline: preprocess → colorize → postprocess.
+    #[allow(clippy::too_many_arguments)]
     pub fn run_pipeline(
         &self,
         data: &[ComputeData],
@@ -70,6 +71,7 @@ impl ColorizerKind {
         width: usize,
         height: usize,
         zoom_level: f64,
+        xray_enabled: bool,
     ) -> Vec<[u8; 4]> {
         match self {
             Self::SmoothIteration(c) => {
@@ -80,6 +82,12 @@ impl ColorizerKind {
                     .map(|(i, d)| c.colorize(d, &ctx, options, palette, i))
                     .collect();
                 c.postprocess(&mut pixels, data, &ctx, options, width, height, zoom_level);
+
+                // Apply xray coloring to glitched pixels
+                if xray_enabled {
+                    apply_xray_to_glitched(&mut pixels, data);
+                }
+
                 pixels
             }
         }
@@ -144,6 +152,7 @@ impl ColorizerKind {
         width: usize,
         height: usize,
         zoom_level: f64,
+        xray_enabled: bool,
     ) -> Vec<[u8; 4]> {
         match self {
             Self::SmoothIteration(c) => {
@@ -161,7 +170,30 @@ impl ColorizerKind {
                     height,
                     zoom_level,
                 );
+
+                // Apply xray coloring to glitched pixels
+                if xray_enabled {
+                    apply_xray_to_glitched(&mut pixels, data);
+                }
+
                 pixels
+            }
+        }
+    }
+}
+
+/// Apply xray coloring to glitched pixels in place.
+fn apply_xray_to_glitched(pixels: &mut [[u8; 4]], data: &[ComputeData]) {
+    for (pixel, d) in pixels.iter_mut().zip(data.iter()) {
+        if let ComputeData::Mandelbrot(m) = d {
+            if m.glitched {
+                if m.max_iterations == 0 {
+                    *pixel = [0, 255, 255, 255];
+                } else {
+                    let normalized = m.iterations as f64 / m.max_iterations as f64;
+                    let brightness = (64.0 + normalized * 191.0) as u8;
+                    *pixel = [0, brightness, brightness, 255];
+                }
             }
         }
     }
@@ -196,7 +228,7 @@ mod tests {
             }),
         ];
 
-        let pixels = colorizer.run_pipeline(&data, &options, &palette, 2, 1, 1.0);
+        let pixels = colorizer.run_pipeline(&data, &options, &palette, 2, 1, 1.0, false);
 
         assert_eq!(pixels.len(), 2);
         // First pixel: escaped, should have some color (with cycling, not necessarily mid-gray)

@@ -121,6 +121,7 @@ impl ParallelRenderer {
         let tile_results_complete = Rc::clone(&tile_results);
         let canvas_ctx_complete = Rc::clone(&canvas_ctx);
         let canvas_size_complete = Rc::clone(&canvas_size);
+        let xray_complete = Rc::clone(&xray_enabled);
         let current_viewport: Rc<RefCell<Option<Viewport>>> = Rc::new(RefCell::new(None));
         let current_viewport_complete = Rc::clone(&current_viewport);
         worker_pool.borrow().set_render_complete_callback(move || {
@@ -146,8 +147,16 @@ impl ParallelRenderer {
             let full_buffer = assemble_tiles_to_buffer(&tiles, width as usize, height as usize);
 
             // Run pipeline on full image (builds one histogram for entire image)
-            let final_pixels =
-                colorizer.run_pipeline(&full_buffer, &opts, &pal, width as usize, height as usize, zoom_level);
+            let xray = xray_complete.get();
+            let final_pixels = colorizer.run_pipeline(
+                &full_buffer,
+                &opts,
+                &pal,
+                width as usize,
+                height as usize,
+                zoom_level,
+                xray,
+            );
 
             // Draw full frame
             let pixel_bytes: Vec<u8> = final_pixels.into_iter().flatten().collect();
@@ -208,8 +217,16 @@ impl ParallelRenderer {
         let full_buffer = assemble_tiles_to_buffer(&tiles, width as usize, height as usize);
 
         // Run pipeline on full image (builds one histogram for entire image)
-        let final_pixels =
-            colorizer.run_pipeline(&full_buffer, &opts, &pal, width as usize, height as usize, zoom_level);
+        let xray = self.xray_enabled.get();
+        let final_pixels = colorizer.run_pipeline(
+            &full_buffer,
+            &opts,
+            &pal,
+            width as usize,
+            height as usize,
+            zoom_level,
+            xray,
+        );
 
         // Draw full frame
         let pixel_bytes: Vec<u8> = final_pixels.into_iter().flatten().collect();
@@ -794,6 +811,7 @@ fn schedule_tile(
                             .default_viewport(viewport_spawn.precision_bits())
                             .width;
                         let zoom_level = reference_width.to_f64() / viewport_spawn.width.to_f64();
+                        let xray = xray_enabled_spawn.get();
 
                         let final_pixels = col.run_pipeline(
                             &full_buffer,
@@ -802,6 +820,7 @@ fn schedule_tile(
                             width as usize,
                             height as usize,
                             zoom_level,
+                            xray,
                         );
 
                         (final_pixels, full_buffer.clone())
@@ -1133,6 +1152,7 @@ fn schedule_row_set(
                             width as usize,
                             height as usize,
                             zoom_level,
+                            xray,
                         );
 
                         (final_pixels, full_buffer.clone(), new_context)
@@ -1199,11 +1219,7 @@ fn schedule_row_set(
 
 /// Assemble tile results into a single full-image buffer.
 /// Tiles may arrive out of order, so we place each tile's data at the correct position.
-fn assemble_tiles_to_buffer(
-    tiles: &[TileResult],
-    width: usize,
-    height: usize,
-) -> Vec<ComputeData> {
+fn assemble_tiles_to_buffer(tiles: &[TileResult], width: usize, height: usize) -> Vec<ComputeData> {
     // Initialize with default (interior) pixels
     let mut buffer = vec![
         ComputeData::Mandelbrot(MandelbrotData {
