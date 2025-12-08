@@ -102,6 +102,69 @@ impl ColorizerKind {
             ),
         }
     }
+
+    /// Colorize a single pixel using a cached histogram from a previous render.
+    /// Computes fresh smooth iteration value for the new data, but uses the cached
+    /// sorted_smooth for histogram-based percentile lookup.
+    pub fn colorize_with_cached_histogram(
+        &self,
+        data: &ComputeData,
+        cached_context: &SmoothIterationContext,
+        options: &ColorOptions,
+        palette: &Palette,
+    ) -> [u8; 4] {
+        match self {
+            Self::SmoothIteration(c) => {
+                c.colorize_with_histogram(data, cached_context, options, palette)
+            }
+        }
+    }
+
+    /// Create a precomputed context from data for caching.
+    /// Returns None if histogram is disabled (no expensive computation needed).
+    pub fn create_context(
+        &self,
+        data: &[ComputeData],
+        options: &ColorOptions,
+    ) -> SmoothIterationContext {
+        match self {
+            Self::SmoothIteration(c) => c.preprocess(data, options),
+        }
+    }
+
+    /// Run the colorization pipeline using a pre-computed context.
+    /// Skips the preprocess step, using the cached context instead.
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_pipeline_with_context(
+        &self,
+        data: &[ComputeData],
+        context: &SmoothIterationContext,
+        options: &ColorOptions,
+        palette: &Palette,
+        width: usize,
+        height: usize,
+        zoom_level: f64,
+    ) -> Vec<[u8; 4]> {
+        match self {
+            Self::SmoothIteration(c) => {
+                let mut pixels: Vec<[u8; 4]> = data
+                    .iter()
+                    .enumerate()
+                    .map(|(i, d)| c.colorize(d, context, options, palette, i))
+                    .collect();
+                c.postprocess(
+                    &mut pixels,
+                    data,
+                    context,
+                    options,
+                    width,
+                    height,
+                    zoom_level,
+                );
+                pixels
+            }
+        }
+    }
 }
 
 #[cfg(test)]

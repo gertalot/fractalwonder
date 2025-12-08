@@ -2,7 +2,9 @@ use crate::config::FractalConfig;
 use crate::rendering::canvas_utils::{
     draw_full_frame, draw_pixels_to_canvas, get_2d_context, performance_now,
 };
-use crate::rendering::colorizers::{colorize_with_palette, ColorOptions, ColorizerKind, Palette};
+use crate::rendering::colorizers::{
+    colorize_with_palette, ColorOptions, ColorizerKind, Palette, SmoothIterationContext,
+};
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
 use crate::workers::{OrbitCompleteData, TileResult, WorkerPool};
@@ -49,6 +51,8 @@ pub struct ParallelRenderer {
     colorizer: Rc<RefCell<ColorizerKind>>,
     /// Current viewport for zoom calculation in recolorize
     current_viewport: Rc<RefCell<Option<Viewport>>>,
+    /// Cached colorizer context from previous render (for histogram during progressive rendering)
+    cached_context: Rc<RefCell<Option<SmoothIterationContext>>>,
 }
 
 impl ParallelRenderer {
@@ -71,6 +75,8 @@ impl ParallelRenderer {
         let palette: Rc<RefCell<Palette>> = Rc::new(RefCell::new(default_options.palette()));
         let options: Rc<RefCell<ColorOptions>> = Rc::new(RefCell::new(default_options));
         let colorizer: Rc<RefCell<ColorizerKind>> = Rc::new(RefCell::new(ColorizerKind::default()));
+        let cached_context: Rc<RefCell<Option<SmoothIterationContext>>> =
+            Rc::new(RefCell::new(None));
 
         let ctx_clone = Rc::clone(&canvas_ctx);
         let xray_clone = Rc::clone(&xray_enabled);
@@ -172,6 +178,7 @@ impl ParallelRenderer {
             palette,
             colorizer,
             current_viewport,
+            cached_context,
         })
     }
 
@@ -471,6 +478,7 @@ impl ParallelRenderer {
         let options = Rc::clone(&self.options);
         let palette = Rc::clone(&self.palette);
         let colorizer = Rc::clone(&self.colorizer);
+        let cached_context = Rc::clone(&self.cached_context);
         let progress = self.progress;
         let config = self.config;
         let viewport_clone = viewport.clone();
@@ -498,6 +506,7 @@ impl ParallelRenderer {
                 let options = Rc::clone(&options);
                 let palette = Rc::clone(&palette);
                 let colorizer = Rc::clone(&colorizer);
+                let cached_context = Rc::clone(&cached_context);
                 let viewport = viewport_clone.clone();
                 let orbit_data_clone = Rc::clone(&orbit_data);
 
@@ -541,6 +550,7 @@ impl ParallelRenderer {
                         options,
                         palette,
                         colorizer,
+                        cached_context,
                     );
                 });
             },
@@ -891,6 +901,7 @@ fn schedule_row_set(
     options: Rc<RefCell<ColorOptions>>,
     palette: Rc<RefCell<Palette>>,
     colorizer: Rc<RefCell<ColorizerKind>>,
+    cached_context: Rc<RefCell<Option<SmoothIterationContext>>>,
 ) {
     // Check generation - abort if stale
     if generation.get() != expected_gen {
@@ -913,6 +924,7 @@ fn schedule_row_set(
     let options_spawn = Rc::clone(&options);
     let palette_spawn = Rc::clone(&palette);
     let colorizer_spawn = Rc::clone(&colorizer);
+    let cached_context_spawn = Rc::clone(&cached_context);
 
     wasm_bindgen_futures::spawn_local(async move {
         // Convert viewport to HDRFloat format for delta computation
@@ -1043,11 +1055,13 @@ fn schedule_row_set(
                 }
 
                 // Draw progress: colorize and draw the rows from this row-set
+                // Use cached context from previous render for histogram-based coloring
                 let xray = xray_enabled_spawn.get();
                 if let Ok(ctx) = get_2d_context(&canvas_element_spawn) {
                     let opts = options_spawn.borrow();
                     let pal = palette_spawn.borrow();
                     let col = colorizer_spawn.borrow();
+                    let cached_ctx = cached_context_spawn.borrow();
 
                     // Draw each row in this row-set
                     let mut data_idx = 0;
@@ -1057,12 +1071,31 @@ fn schedule_row_set(
                             break;
                         }
 
-                        // Colorize single row
+                        // Colorize single row - use cached histogram if available
                         let row_end = (data_idx + width as usize).min(result.data.len());
-                        let row_pixels: Vec<u8> = result.data[data_idx..row_end]
-                            .iter()
-                            .flat_map(|d| colorize_with_palette(d, &opts, &pal, &col, xray))
-                            .collect();
+                        let row_pixels: Vec<u8> = if !xray {
+                            if let Some(ref cached) = *cached_ctx {
+                                // Use cached histogram from previous render for percentile lookup
+                                result.data[data_idx..row_end]
+                                    .iter()
+                                    .flat_map(|d| {
+                                        col.colorize_with_cached_histogram(d, cached, &opts, &pal)
+                                    })
+                                    .collect()
+                            } else {
+                                // No cached context, use simple colorization
+                                result.data[data_idx..row_end]
+                                    .iter()
+                                    .flat_map(|d| colorize_with_palette(d, &opts, &pal, &col, xray))
+                                    .collect()
+                            }
+                        } else {
+                            // X-ray mode always uses simple colorization
+                            result.data[data_idx..row_end]
+                                .iter()
+                                .flat_map(|d| colorize_with_palette(d, &opts, &pal, &col, xray))
+                                .collect()
+                        };
 
                         // Draw row at correct y position
                         let _ =
@@ -1082,7 +1115,7 @@ fn schedule_row_set(
 
                 if is_final {
                     // Run full colorizer pipeline on complete buffer
-                    let (final_pixels, full_buffer_clone) = {
+                    let (final_pixels, full_buffer_clone, new_context) = {
                         let opts = options_spawn.borrow();
                         let pal = palette_spawn.borrow();
                         let col = colorizer_spawn.borrow();
@@ -1092,8 +1125,13 @@ fn schedule_row_set(
                             .width;
                         let zoom_level = reference_width.to_f64() / viewport_spawn.width.to_f64();
 
-                        let final_pixels = col.run_pipeline(
+                        // Create context for this render (will be cached for next render)
+                        let new_context = col.create_context(&full_buffer, &opts);
+
+                        // Use the new context for final colorization
+                        let final_pixels = col.run_pipeline_with_context(
                             &full_buffer,
+                            &new_context,
                             &opts,
                             &pal,
                             width as usize,
@@ -1101,8 +1139,11 @@ fn schedule_row_set(
                             zoom_level,
                         );
 
-                        (final_pixels, full_buffer.clone())
+                        (final_pixels, full_buffer.clone(), new_context)
                     };
+
+                    // Cache context for next progressive render
+                    *cached_context_spawn.borrow_mut() = Some(new_context);
 
                     // Store for recolorize
                     tile_results_spawn.borrow_mut().clear();
@@ -1148,6 +1189,7 @@ fn schedule_row_set(
                             options_spawn,
                             palette_spawn,
                             colorizer_spawn,
+                            cached_context_spawn,
                         );
                     });
                 }

@@ -146,6 +146,27 @@ impl Colorizer for SmoothIterationColorizer {
 }
 
 impl SmoothIterationColorizer {
+    /// Colorize a single pixel using a cached histogram from a previous render.
+    /// Computes fresh smooth iteration value for the new data, but uses the cached
+    /// sorted_smooth for histogram-based percentile lookup.
+    pub fn colorize_with_histogram(
+        &self,
+        data: &ComputeData,
+        cached_context: &SmoothIterationContext,
+        options: &ColorOptions,
+        palette: &super::Palette,
+    ) -> [u8; 4] {
+        match data {
+            ComputeData::Mandelbrot(m) => {
+                // Compute fresh smooth iteration for the new pixel
+                let smooth = compute_smooth_iteration(m);
+                // Use cached histogram for percentile lookup
+                self.colorize_mandelbrot(m, smooth, cached_context, options, palette)
+            }
+            ComputeData::TestImage(_) => [128, 128, 128, 255],
+        }
+    }
+
     fn colorize_mandelbrot(
         &self,
         data: &MandelbrotData,
