@@ -329,6 +329,9 @@ pub struct ProgressiveGpuBuffers {
     pub staging_glitches: wgpu::Buffer,
     pub staging_z_norm_sq: wgpu::Buffer,
 
+    // Sync buffer for WASM chunk synchronization (4 bytes)
+    pub sync_staging: wgpu::Buffer,
+
     pub orbit_capacity: u32,
     pub row_set_pixel_count: u32,
 }
@@ -439,6 +442,14 @@ impl ProgressiveGpuBuffers {
             mapped_at_creation: false,
         });
 
+        // Tiny sync buffer for WASM chunk synchronization
+        let sync_staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_sync_staging"),
+            size: std::mem::size_of::<u32>() as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Self {
             uniforms,
             reference_orbit,
@@ -453,6 +464,7 @@ impl ProgressiveGpuBuffers {
             staging_results,
             staging_glitches,
             staging_z_norm_sq,
+            sync_staging,
             orbit_capacity: orbit_len,
             row_set_pixel_count,
         }

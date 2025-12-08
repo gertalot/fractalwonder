@@ -1030,7 +1030,7 @@ fn debug_glitched_pixels_gpu_vs_cpu() {
         // =========================================================================
         // Step 2: Sample 10% of glitched pixels evenly distributed
         // =========================================================================
-        let sample_size = (glitched_pixels.len() / 10).max(1).min(100);
+        let sample_size = (glitched_pixels.len() / 10).clamp(1, 100);
         let step = glitched_pixels.len() / sample_size;
         let sample: Vec<(u32, u32)> = glitched_pixels
             .iter()
@@ -1124,10 +1124,7 @@ fn debug_glitched_pixels_gpu_vs_cpu() {
             let gpu_data = as_mandelbrot(&gpu_result.data[0]);
 
             // --- CPU HDRFloat render ---
-            let delta_c = HDRComplex {
-                re: dc_re.clone(),
-                im: dc_im.clone(),
-            };
+            let delta_c = HDRComplex { re: dc_re, im: dc_im };
             let cpu_result =
                 compute_pixel_perturbation_hdr(&orbit, delta_c, max_iter, tau_sq as f64);
 

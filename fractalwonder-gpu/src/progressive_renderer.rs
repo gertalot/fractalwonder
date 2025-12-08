@@ -127,12 +127,8 @@ impl ProgressiveGpuRenderer {
                 orbit.len() as u32,
             );
 
-            // Wait for dispatch to complete
-            #[cfg(target_arch = "wasm32")]
-            self.context.device.poll(wgpu::Maintain::Poll);
-
-            #[cfg(not(target_arch = "wasm32"))]
-            self.context.device.poll(wgpu::Maintain::Wait);
+            // Wait for dispatch to complete using sync buffer
+            self.sync_after_dispatch().await?;
         }
 
         // Read back results
@@ -307,6 +303,52 @@ impl ProgressiveGpuRenderer {
         }
 
         self.context.queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// Synchronize after a dispatch by copying to sync buffer and awaiting map.
+    /// This ensures the compute shader has finished before proceeding.
+    async fn sync_after_dispatch(&self) -> Result<(), GpuError> {
+        let buffers = self.buffers.as_ref().unwrap();
+
+        // Copy 4 bytes from results buffer to sync staging buffer
+        let mut encoder =
+            self.context
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("sync_encoder"),
+                });
+
+        encoder.copy_buffer_to_buffer(
+            &buffers.results,
+            0,
+            &buffers.sync_staging,
+            0,
+            std::mem::size_of::<u32>() as u64,
+        );
+
+        self.context.queue.submit(std::iter::once(encoder.finish()));
+
+        // Map and await - this blocks until the copy (and all preceding work) completes
+        let slice = buffers.sync_staging.slice(..);
+        let (tx, rx) = futures_channel::oneshot::channel();
+
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+
+        // Poll to drive the async operation
+        #[cfg(target_arch = "wasm32")]
+        self.context.device.poll(wgpu::Maintain::Poll);
+
+        #[cfg(not(target_arch = "wasm32"))]
+        self.context.device.poll(wgpu::Maintain::Wait);
+
+        rx.await
+            .map_err(|_| GpuError::Unavailable("Sync channel closed".into()))?
+            .map_err(GpuError::BufferMap)?;
+
+        buffers.sync_staging.unmap();
+        Ok(())
     }
 
     async fn read_results(&self, count: usize) -> Result<(Vec<u32>, Vec<u32>, Vec<f32>), GpuError> {
