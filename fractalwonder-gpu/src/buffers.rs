@@ -306,6 +306,153 @@ impl ProgressiveGpuUniforms {
     }
 }
 
+/// GPU buffers for progressive row-set rendering.
+/// Includes persistent state buffers for iteration chunking.
+pub struct ProgressiveGpuBuffers {
+    pub uniforms: wgpu::Buffer,
+    pub reference_orbit: wgpu::Buffer,
+
+    // Persistent state (read-write, kept on GPU between chunks)
+    pub z_re: wgpu::Buffer,
+    pub z_im: wgpu::Buffer,
+    pub iter_count: wgpu::Buffer,
+    pub escaped: wgpu::Buffer,
+    pub orbit_index: wgpu::Buffer,
+
+    // Results (read back on row-set completion)
+    pub results: wgpu::Buffer,
+    pub glitch_flags: wgpu::Buffer,
+    pub z_norm_sq: wgpu::Buffer,
+
+    // Staging buffers for CPU readback
+    pub staging_results: wgpu::Buffer,
+    pub staging_glitches: wgpu::Buffer,
+    pub staging_z_norm_sq: wgpu::Buffer,
+
+    pub orbit_capacity: u32,
+    pub row_set_pixel_count: u32,
+}
+
+impl ProgressiveGpuBuffers {
+    /// Create buffers sized for a row-set.
+    /// row_set_pixel_count = (image_height / row_set_count) * image_width (rounded up)
+    pub fn new(device: &wgpu::Device, orbit_len: u32, row_set_pixel_count: u32) -> Self {
+        let pixel_count = row_set_pixel_count as usize;
+
+        let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_uniforms"),
+            size: std::mem::size_of::<ProgressiveGpuUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let reference_orbit = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_reference_orbit"),
+            size: (orbit_len as usize * std::mem::size_of::<[f32; 2]>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Persistent state buffers - HDRFloat z uses 3 f32s per component (head, tail, exp as f32)
+        let z_re = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_z_re"),
+            size: (pixel_count * 3 * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let z_im = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_z_im"),
+            size: (pixel_count * 3 * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let iter_count = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_iter_count"),
+            size: (pixel_count * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let escaped = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_escaped"),
+            size: (pixel_count * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let orbit_index = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_orbit_index"),
+            size: (pixel_count * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Result buffers
+        let results = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_results"),
+            size: (pixel_count * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let glitch_flags = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_glitch_flags"),
+            size: (pixel_count * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_z_norm_sq"),
+            size: (pixel_count * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        // Staging buffers
+        let staging_results = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_staging_results"),
+            size: (pixel_count * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let staging_glitches = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_staging_glitches"),
+            size: (pixel_count * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let staging_z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_staging_z_norm_sq"),
+            size: (pixel_count * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        Self {
+            uniforms,
+            reference_orbit,
+            z_re,
+            z_im,
+            iter_count,
+            escaped,
+            orbit_index,
+            results,
+            glitch_flags,
+            z_norm_sq,
+            staging_results,
+            staging_glitches,
+            staging_z_norm_sq,
+            orbit_capacity: orbit_len,
+            row_set_pixel_count,
+        }
+    }
+}
+
 /// GPU buffers for perturbation HDRFloat rendering.
 /// Buffers are sized for the provided tile size.
 pub struct PerturbationHDRBuffers {
