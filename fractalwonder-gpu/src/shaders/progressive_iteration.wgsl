@@ -336,12 +336,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let z_im_full = hdr_add(z_m_hdr_im, dz.im);
         let z = HDRComplex(z_re_full, z_im_full);
 
-        let z_mag_sq = hdr_complex_norm_sq(z);
-        let z_m_mag_sq = z_m_re * z_m_re + z_m_im * z_m_im;
-        let dz_mag_sq = hdr_complex_norm_sq(dz);
+        // Compute magnitudes as HDRFloat (preserves precision)
+        let z_mag_sq_hdr = hdr_complex_norm_sq_hdr(z);
+        let dz_mag_sq_hdr = hdr_complex_norm_sq_hdr(dz);
 
-        // Escape check
-        if z_mag_sq > uniforms.escape_radius_sq {
+        // For output, convert to f32
+        let z_mag_sq = hdr_to_f32(z_mag_sq_hdr);
+
+        let z_m_mag_sq = z_m_re * z_m_re + z_m_im * z_m_im;
+
+        // Escape check - use HDRFloat comparison
+        let escape_radius_sq_hdr = hdr_from_f32_const(uniforms.escape_radius_sq);
+        if hdr_greater_than(z_mag_sq_hdr, escape_radius_sq_hdr) {
             escaped_buf[linear_idx] = 1u;
             results[linear_idx] = n;
             glitch_flags[linear_idx] = select(0u, 1u, glitched);
