@@ -16,8 +16,8 @@ mod stretch;
 mod tests;
 
 pub use buffers::{
-    GpuBuffers, PerturbationHDRBuffers, PerturbationHDRUniforms, ProgressiveGpuBuffers, ProgressiveGpuUniforms,
-    Uniforms,
+    GpuBuffers, PerturbationHDRBuffers, PerturbationHDRUniforms, ProgressiveGpuBuffers,
+    ProgressiveGpuUniforms, Uniforms,
 };
 pub use device::{GpuAvailability, GpuContext};
 pub use error::GpuError;

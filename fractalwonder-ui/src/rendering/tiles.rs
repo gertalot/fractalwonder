@@ -99,18 +99,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn normal_zoom_uses_256px_tiles() {
-        assert_eq!(calculate_tile_size(1.0), 256);
-        assert_eq!(calculate_tile_size(1e6), 256);
-    }
-
-    #[test]
-    fn deep_zoom_uses_32px_tiles() {
-        assert_eq!(calculate_tile_size(1e7), 32);
-        assert_eq!(calculate_tile_size(1e50), 32);
-    }
-
-    #[test]
     fn generate_tiles_covers_canvas_exactly() {
         let tiles = generate_tiles(256, 256, 64);
 

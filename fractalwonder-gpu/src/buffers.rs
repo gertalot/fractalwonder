@@ -389,25 +389,31 @@ impl ProgressiveGpuBuffers {
             mapped_at_creation: false,
         });
 
-        // Result buffers
+        // Result buffers - need COPY_DST for clear_state_buffers, COPY_SRC for read_results
         let results = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("progressive_results"),
             size: (pixel_count * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let glitch_flags = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("progressive_glitch_flags"),
             size: (pixel_count * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let z_norm_sq = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("progressive_z_norm_sq"),
             size: (pixel_count * std::mem::size_of::<f32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 

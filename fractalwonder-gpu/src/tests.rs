@@ -549,7 +549,10 @@ fn gpu_matches_cpu_for_real_viewports() {
             println!("\nRendering with BigFloat (ground truth)...");
             let bigfloat_renderer = MandelbrotRenderer::new(max_iter);
             let bigfloat_result = bigfloat_renderer.render(viewport, (width, height));
-            println!("  BigFloat render complete: {} pixels", bigfloat_result.len());
+            println!(
+                "  BigFloat render complete: {} pixels",
+                bigfloat_result.len()
+            );
 
             // =========================================================================
             // 2. GPU perturbation renderer (HDRFloat)
@@ -591,6 +594,7 @@ fn gpu_matches_cpu_for_real_viewports() {
                 height,
             };
 
+            let tile_size = width.max(height);
             let gpu_result = gpu_renderer
                 .render_tile(
                     &orbit.orbit,
@@ -600,6 +604,7 @@ fn gpu_matches_cpu_for_real_viewports() {
                     width,
                     height,
                     &tile,
+                    tile_size,
                     max_iter,
                     tau_sq,
                     orbit.escaped_at.is_some(),
@@ -661,7 +666,10 @@ fn gpu_matches_cpu_for_real_viewports() {
                     // dc = origin + pixel * step
                     let dc_re = origin_re_hdr.add(&HDRFloat::from_f64(x as f64).mul(&step_re_hdr));
                     let dc_im = origin_im_hdr.add(&HDRFloat::from_f64(y as f64).mul(&step_im_hdr));
-                    let delta_c = HDRComplex { re: dc_re, im: dc_im };
+                    let delta_c = HDRComplex {
+                        re: dc_re,
+                        im: dc_im,
+                    };
                     let cpu_hdr_result =
                         compute_pixel_perturbation_hdr(&orbit, delta_c, max_iter, tau_sq as f64);
 
@@ -678,7 +686,8 @@ fn gpu_matches_cpu_for_real_viewports() {
                     }
 
                     // GPU vs BigFloat
-                    let gpu_bf_diff = (gpu_data.iterations as i32 - bf_data.iterations as i32).abs();
+                    let gpu_bf_diff =
+                        (gpu_data.iterations as i32 - bf_data.iterations as i32).abs();
                     gpu_vs_bigfloat_max_diff = gpu_vs_bigfloat_max_diff.max(gpu_bf_diff);
                     if gpu_bf_diff <= 1 {
                         gpu_vs_bigfloat_matches += 1;
@@ -699,7 +708,6 @@ fn gpu_matches_cpu_for_real_viewports() {
                     if gpu_cpu_diff <= 1 {
                         gpu_vs_cpu_matches += 1;
                     }
-
                 }
             }
 
@@ -722,15 +730,24 @@ fn gpu_matches_cpu_for_real_viewports() {
             );
 
             println!("\nGPU vs BigFloat:");
-            println!("  Matches (±1): {} ({:.1}%)", gpu_vs_bigfloat_matches, gpu_bf_pct);
+            println!(
+                "  Matches (±1): {} ({:.1}%)",
+                gpu_vs_bigfloat_matches, gpu_bf_pct
+            );
             println!("  Max iteration diff: {}", gpu_vs_bigfloat_max_diff);
 
             println!("\nCPU HDRFloat vs BigFloat:");
-            println!("  Matches (±1): {} ({:.1}%)", cpu_vs_bigfloat_matches, cpu_bf_pct);
+            println!(
+                "  Matches (±1): {} ({:.1}%)",
+                cpu_vs_bigfloat_matches, cpu_bf_pct
+            );
             println!("  Max iteration diff: {}", cpu_vs_bigfloat_max_diff);
 
             println!("\nGPU vs CPU HDRFloat:");
-            println!("  Matches (±1): {} ({:.1}%)", gpu_vs_cpu_matches, gpu_cpu_pct);
+            println!(
+                "  Matches (±1): {} ({:.1}%)",
+                gpu_vs_cpu_matches, gpu_cpu_pct
+            );
             println!("  Max iteration diff: {}", gpu_vs_cpu_max_diff);
 
             println!("\nGlitched pixels: {}", glitched_count);
@@ -749,5 +766,114 @@ fn gpu_matches_cpu_for_real_viewports() {
                 println!("All renderers agree reasonably well");
             }
         }
+    });
+}
+
+// =============================================================================
+// Progressive GPU renderer tests
+// =============================================================================
+
+/// Test that ProgressiveGpuRenderer initializes without panic.
+#[test]
+fn progressive_renderer_init_does_not_panic() {
+    use crate::progressive_renderer::ProgressiveGpuRenderer;
+
+    pollster::block_on(async {
+        let GpuAvailability::Available(ctx) = GpuContext::try_init().await else {
+            println!("Skipping test: no GPU available");
+            return;
+        };
+        let _renderer = ProgressiveGpuRenderer::new(ctx);
+        println!("ProgressiveGpuRenderer initialized successfully");
+    });
+}
+
+/// Test progressive renderer produces correct results for simple case.
+#[test]
+fn progressive_renderer_basic_render() {
+    use crate::progressive_renderer::ProgressiveGpuRenderer;
+
+    pollster::block_on(async {
+        let GpuAvailability::Available(ctx) = GpuContext::try_init().await else {
+            println!("Skipping test: no GPU available");
+            return;
+        };
+
+        let mut renderer = ProgressiveGpuRenderer::new(ctx);
+
+        let center_re = -0.5;
+        let center_im = 0.0;
+        let max_iter = 256;
+        let tau_sq = 1e-6_f32;
+        let width = 64_u32;
+        let height = 64_u32;
+        let row_set_count = 4_u32;
+        let iterations_per_dispatch = 100_u32;
+
+        let orbit = create_reference_orbit(center_re, center_im, max_iter);
+
+        // Setup dc_origin and dc_step as HDRFloat tuples
+        let view_width = 3.0_f32;
+        let view_height = 3.0_f32;
+        let dc_origin = ((-view_width / 2.0, 0.0, 0), (-view_height / 2.0, 0.0, 0));
+        let dc_step = (
+            (view_width / width as f32, 0.0, 0),
+            (view_height / height as f32, 0.0, 0),
+        );
+
+        // Render first row-set
+        let result = renderer
+            .render_row_set(
+                &orbit.orbit,
+                1,
+                dc_origin,
+                dc_step,
+                width,
+                height,
+                0, // row_set_index
+                row_set_count,
+                max_iter,
+                iterations_per_dispatch,
+                tau_sq,
+                orbit.escaped_at.is_some(),
+            )
+            .await
+            .expect("Progressive render should succeed");
+
+        let expected_pixels =
+            ProgressiveGpuRenderer::calculate_row_set_pixel_count(width, height, row_set_count);
+
+        assert_eq!(
+            result.data.len(),
+            expected_pixels as usize,
+            "Should have correct number of pixels"
+        );
+
+        // Check that we have a mix of escaped and non-escaped pixels
+        let escaped_count = result
+            .data
+            .iter()
+            .filter(|d| as_mandelbrot(d).escaped)
+            .count();
+
+        // Verify iteration distribution
+        let in_set_count = result
+            .data
+            .iter()
+            .filter(|d| as_mandelbrot(d).iterations == max_iter)
+            .count();
+        println!(
+            "Progressive render: {} pixels, {} escaped, {} in-set, {:.2}ms",
+            result.data.len(),
+            escaped_count,
+            in_set_count,
+            result.compute_time_ms
+        );
+
+        assert!(escaped_count > 0, "Should have some escaped pixels");
+        assert!(
+            escaped_count < result.data.len(),
+            "Should have some non-escaped pixels"
+        );
     });
 }

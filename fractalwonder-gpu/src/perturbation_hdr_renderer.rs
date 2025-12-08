@@ -20,6 +20,7 @@ pub struct GpuPerturbationHDRRenderer {
     pipeline: PerturbationHDRPipeline,
     buffers: Option<PerturbationHDRBuffers>,
     cached_orbit_id: Option<u32>,
+    cached_tile_size: u32,
 }
 
 impl GpuPerturbationHDRRenderer {
@@ -30,6 +31,7 @@ impl GpuPerturbationHDRRenderer {
             pipeline,
             buffers: None,
             cached_orbit_id: None,
+            cached_tile_size: 0,
         }
     }
 
@@ -43,6 +45,7 @@ impl GpuPerturbationHDRRenderer {
     /// * `image_width` - Full image width
     /// * `image_height` - Full image height
     /// * `tile` - Tile bounds in pixel coordinates
+    /// * `tile_size` - Base tile size for buffer allocation
     /// * `max_iterations` - Maximum iteration count
     /// * `tau_sq` - Glitch detection threshold
     /// * `reference_escaped` - Whether reference orbit escaped
@@ -56,6 +59,7 @@ impl GpuPerturbationHDRRenderer {
         image_width: u32,
         image_height: u32,
         tile: &PixelRect,
+        tile_size: u32,
         max_iterations: u32,
         tau_sq: f32,
         reference_escaped: bool,
@@ -63,14 +67,23 @@ impl GpuPerturbationHDRRenderer {
         let start = Self::now();
         let t0 = start;
 
-        // Recreate buffers if orbit capacity changed
-        if self.buffers.as_ref().map(|b| b.orbit_capacity).unwrap_or(0) < orbit.len() as u32 {
-            log::info!("Creating buffers for orbit len {}", orbit.len());
+        // Recreate buffers if orbit capacity or tile size changed
+        let needs_new_buffers = self.buffers.as_ref().map(|b| b.orbit_capacity).unwrap_or(0)
+            < orbit.len() as u32
+            || self.cached_tile_size < tile_size;
+        if needs_new_buffers {
+            log::info!(
+                "Creating buffers for orbit len {}, tile size {}",
+                orbit.len(),
+                tile_size
+            );
             self.buffers = Some(PerturbationHDRBuffers::new(
                 &self.context.device,
                 orbit.len() as u32,
+                tile_size,
             ));
             self.cached_orbit_id = None;
+            self.cached_tile_size = tile_size;
         }
         let t1 = Self::now();
 

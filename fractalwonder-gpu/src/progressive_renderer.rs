@@ -67,11 +67,7 @@ impl ProgressiveGpuRenderer {
             Self::calculate_row_set_pixel_count(image_width, image_height, row_set_count);
 
         // Recreate buffers if needed
-        let needs_new_buffers = self
-            .buffers
-            .as_ref()
-            .map(|b| b.orbit_capacity)
-            .unwrap_or(0)
+        let needs_new_buffers = self.buffers.as_ref().map(|b| b.orbit_capacity).unwrap_or(0)
             < orbit.len() as u32
             || self.cached_row_set_pixel_count < row_set_pixel_count;
 
@@ -140,9 +136,8 @@ impl ProgressiveGpuRenderer {
         }
 
         // Read back results
-        let (iterations, glitch_data, z_norm_sq_data) = self
-            .read_results(row_set_pixel_count as usize)
-            .await?;
+        let (iterations, glitch_data, z_norm_sq_data) =
+            self.read_results(row_set_pixel_count as usize).await?;
 
         // Convert to ComputeData
         let data: Vec<ComputeData> = iterations
@@ -175,6 +170,14 @@ impl ProgressiveGpuRenderer {
         // Zero out all state buffers
         let zeros_u32: Vec<u32> = vec![0; pixel_count as usize];
         let zeros_f32: Vec<f32> = vec![0.0; pixel_count as usize * 3]; // HDRFloat is 3 f32s
+
+        // Initialize results to a sentinel value (999) to detect if shader writes to it
+        let sentinel_results: Vec<u32> = vec![999; pixel_count as usize];
+        self.context.queue.write_buffer(
+            &buffers.results,
+            0,
+            bytemuck::cast_slice(&sentinel_results),
+        );
 
         self.context
             .queue
@@ -306,10 +309,7 @@ impl ProgressiveGpuRenderer {
         self.context.queue.submit(std::iter::once(encoder.finish()));
     }
 
-    async fn read_results(
-        &self,
-        count: usize,
-    ) -> Result<(Vec<u32>, Vec<u32>, Vec<f32>), GpuError> {
+    async fn read_results(&self, count: usize) -> Result<(Vec<u32>, Vec<u32>, Vec<f32>), GpuError> {
         let buffers = self.buffers.as_ref().unwrap();
 
         // Copy to staging buffers
@@ -323,9 +323,27 @@ impl ProgressiveGpuRenderer {
                     label: Some("progressive_copy_encoder"),
                 });
 
-        encoder.copy_buffer_to_buffer(&buffers.results, 0, &buffers.staging_results, 0, u32_byte_size);
-        encoder.copy_buffer_to_buffer(&buffers.glitch_flags, 0, &buffers.staging_glitches, 0, u32_byte_size);
-        encoder.copy_buffer_to_buffer(&buffers.z_norm_sq, 0, &buffers.staging_z_norm_sq, 0, f32_byte_size);
+        encoder.copy_buffer_to_buffer(
+            &buffers.results,
+            0,
+            &buffers.staging_results,
+            0,
+            u32_byte_size,
+        );
+        encoder.copy_buffer_to_buffer(
+            &buffers.glitch_flags,
+            0,
+            &buffers.staging_glitches,
+            0,
+            u32_byte_size,
+        );
+        encoder.copy_buffer_to_buffer(
+            &buffers.z_norm_sq,
+            0,
+            &buffers.staging_z_norm_sq,
+            0,
+            f32_byte_size,
+        );
 
         self.context.queue.submit(std::iter::once(encoder.finish()));
 
@@ -338,9 +356,15 @@ impl ProgressiveGpuRenderer {
         let (tx2, rx2) = futures_channel::oneshot::channel();
         let (tx3, rx3) = futures_channel::oneshot::channel();
 
-        results_slice.map_async(wgpu::MapMode::Read, move |r| { let _ = tx1.send(r); });
-        glitches_slice.map_async(wgpu::MapMode::Read, move |r| { let _ = tx2.send(r); });
-        z_norm_sq_slice.map_async(wgpu::MapMode::Read, move |r| { let _ = tx3.send(r); });
+        results_slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx1.send(r);
+        });
+        glitches_slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx2.send(r);
+        });
+        z_norm_sq_slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx3.send(r);
+        });
 
         #[cfg(target_arch = "wasm32")]
         self.context.device.poll(wgpu::Maintain::Poll);

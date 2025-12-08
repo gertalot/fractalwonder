@@ -205,16 +205,30 @@ struct Uniforms {
 @group(0) @binding(8) var<storage, read_write> glitch_flags: array<u32>;
 @group(0) @binding(9) var<storage, read_write> z_norm_sq: array<f32>;
 
-fn load_hdr(buf: ptr<storage, array<f32>, read_write>, idx: u32) -> HDRFloat {
+// Inline helper functions for z_re buffer
+fn load_z_re(idx: u32) -> HDRFloat {
     let base = idx * 3u;
-    return HDRFloat((*buf)[base], (*buf)[base + 1u], i32(bitcast<u32>((*buf)[base + 2u])));
+    return HDRFloat(z_re[base], z_re[base + 1u], i32(bitcast<u32>(z_re[base + 2u])));
 }
 
-fn store_hdr(buf: ptr<storage, array<f32>, read_write>, idx: u32, val: HDRFloat) {
+fn store_z_re(idx: u32, val: HDRFloat) {
     let base = idx * 3u;
-    (*buf)[base] = val.head;
-    (*buf)[base + 1u] = val.tail;
-    (*buf)[base + 2u] = bitcast<f32>(u32(val.exp));
+    z_re[base] = val.head;
+    z_re[base + 1u] = val.tail;
+    z_re[base + 2u] = bitcast<f32>(u32(val.exp));
+}
+
+// Inline helper functions for z_im buffer
+fn load_z_im(idx: u32) -> HDRFloat {
+    let base = idx * 3u;
+    return HDRFloat(z_im[base], z_im[base + 1u], i32(bitcast<u32>(z_im[base + 2u])));
+}
+
+fn store_z_im(idx: u32, val: HDRFloat) {
+    let base = idx * 3u;
+    z_im[base] = val.head;
+    z_im[base + 1u] = val.tail;
+    z_im[base + 2u] = bitcast<f32>(u32(val.exp));
 }
 
 @compute @workgroup_size(64)
@@ -247,7 +261,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dc = HDRComplex(dc_re, dc_im);
 
     // Load persistent state
-    var dz = HDRComplex(load_hdr(&z_re, linear_idx), load_hdr(&z_im, linear_idx));
+    var dz = HDRComplex(load_z_re(linear_idx), load_z_im(linear_idx));
     var n = iter_count[linear_idx];
     var m = orbit_index[linear_idx];
     var glitched = glitch_flags[linear_idx] != 0u;
@@ -296,8 +310,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             results[linear_idx] = n;
             glitch_flags[linear_idx] = select(0u, 1u, glitched);
             z_norm_sq[linear_idx] = z_mag_sq;
-            store_hdr(&z_re, linear_idx, dz.re);
-            store_hdr(&z_im, linear_idx, dz.im);
+            store_z_re(linear_idx, dz.re);
+            store_z_im(linear_idx, dz.im);
             iter_count[linear_idx] = n;
             orbit_index[linear_idx] = m;
             return;
@@ -334,8 +348,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     // Save state for next chunk
-    store_hdr(&z_re, linear_idx, dz.re);
-    store_hdr(&z_im, linear_idx, dz.im);
+    store_z_re(linear_idx, dz.re);
+    store_z_im(linear_idx, dz.im);
     iter_count[linear_idx] = n;
     orbit_index[linear_idx] = m;
     glitch_flags[linear_idx] = select(0u, 1u, glitched);

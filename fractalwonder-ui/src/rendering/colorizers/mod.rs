@@ -118,9 +118,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn palettes_returns_11_entries() {
+    fn palettes_returns_12_entries() {
         let palettes = palettes();
-        assert_eq!(palettes.len(), 11);
+        assert_eq!(palettes.len(), 12);
     }
 
     #[test]

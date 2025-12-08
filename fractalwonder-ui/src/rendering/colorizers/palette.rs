@@ -236,7 +236,6 @@ impl Palette {
             [200, 150, 100], // Muted tan
             [5, 0, 10],      // Near black (purple tint)
             [200, 150, 100], // Muted tan
-
             [80, 50, 40],    // Brown
             [20, 10, 20],    // Dark purple
             [5, 0, 10],      // Near black (purple tint)
