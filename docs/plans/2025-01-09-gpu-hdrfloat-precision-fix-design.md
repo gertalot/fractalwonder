@@ -148,3 +148,14 @@ if hdr_less_than(z_mag_sq_hdr, dz_mag_sq_hdr) {
 
 3. **Performance regression**: More operations per iteration
    - Mitigation: Profile before/after, optimize if needed
+
+## Results
+
+**Implementation completed 2025-01-09**
+
+- Glitched pixels reduced: 2727 → 2019 (26% reduction)
+- Visual quality: Significant improvement confirmed
+- Both shaders updated: `progressive_iteration.wgsl` and `delta_iteration_hdr.wgsl`
+
+The remaining glitched pixels have inherent precision issues that require different approaches
+(e.g., multi-reference rendering) to resolve completely.
