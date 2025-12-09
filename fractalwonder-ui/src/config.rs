@@ -89,7 +89,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         bla_enabled: false,
         gpu_enabled: false,
         gpu_iterations_per_dispatch: 100_000,
-        gpu_progressive_row_sets: 16,
+        gpu_progressive_row_sets: 32,
     },
     FractalConfig {
         id: "mandelbrot",
@@ -106,7 +106,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
         bla_enabled: true,
         gpu_enabled: true,
         gpu_iterations_per_dispatch: 100_000,
-        gpu_progressive_row_sets: 16, // 0 = use old tiled renderer, >0 = progressive
+        gpu_progressive_row_sets: 32, // 0 = use old tiled renderer, >0 = progressive
     },
 ];
 
