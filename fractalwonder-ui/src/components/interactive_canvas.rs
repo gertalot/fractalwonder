@@ -5,7 +5,6 @@ use crate::rendering::colorizers::ColorOptions;
 use crate::rendering::ParallelRenderer;
 use fractalwonder_core::{apply_pixel_transform_to_viewport, Viewport};
 use leptos::*;
-use leptos_use::use_window_size;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
@@ -37,9 +36,6 @@ pub fn InteractiveCanvas(
     color_options: Option<Signal<ColorOptions>>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
-
-    // Reactive window size - automatically updates on resize
-    let window_size = use_window_size();
 
     // Store canvas size for use in callbacks
     let canvas_size = create_rw_signal((0u32, 0u32));
@@ -142,7 +138,7 @@ pub fn InteractiveCanvas(
     }
 
     // Wire up interaction hook with cancel on start
-    let _interaction = use_canvas_interaction(
+    let interaction = use_canvas_interaction(
         canvas_ref,
         move || {
             renderer.with_value(|r| r.cancel());
@@ -158,31 +154,57 @@ pub fn InteractiveCanvas(
         },
     );
 
-    // Effect to handle resize
+    // Initial canvas setup - runs once on mount
     create_effect(move |_| {
         let Some(canvas_el) = canvas_ref.get() else {
             return;
         };
         let canvas = canvas_el.unchecked_ref::<HtmlCanvasElement>();
 
-        let width = window_size.width.get() as u32;
-        let height = window_size.height.get() as u32;
+        let window = web_sys::window().expect("should have window");
+        let width = window.inner_width().unwrap().as_f64().unwrap() as u32;
+        let height = window.inner_height().unwrap().as_f64().unwrap() as u32;
 
         if width == 0 || height == 0 {
             return;
         }
 
-        // Update canvas dimensions
+        // Set initial canvas dimensions
         canvas.set_width(width);
         canvas.set_height(height);
 
-        // Store for interaction callback
+        // Set initial canvas_size to trigger first render
         canvas_size.set((width, height));
 
-        // Notify parent of dimensions
+        // Notify parent of initial dimensions
         if let Some(callback) = on_resize {
             callback.call((width, height));
         }
+    });
+
+    // Update canvas_size when interaction ends (including resize)
+    // The hook handles resize debouncing - we just sync canvas_size when done
+    create_effect(move |prev_interacting: Option<bool>| {
+        let is_interacting = interaction.is_interacting.get();
+
+        // When interaction ends (was true, now false), sync canvas_size from actual canvas
+        if prev_interacting == Some(true) && !is_interacting {
+            if let Some(canvas_el) = canvas_ref.get_untracked() {
+                let canvas = canvas_el.unchecked_ref::<HtmlCanvasElement>();
+                let width = canvas.width();
+                let height = canvas.height();
+
+                if width > 0 && height > 0 {
+                    canvas_size.set((width, height));
+
+                    if let Some(callback) = on_resize {
+                        callback.call((width, height));
+                    }
+                }
+            }
+        }
+
+        is_interacting
     });
 
     // Render effect - triggers async render on viewport change

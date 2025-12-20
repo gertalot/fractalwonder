@@ -73,42 +73,23 @@ impl FractalConfig {
 }
 
 /// Registry of available fractal configurations.
-pub static FRACTAL_CONFIGS: &[FractalConfig] = &[
-    FractalConfig {
-        id: "test_image",
-        display_name: "Test Pattern",
-        default_center: ("0.0", "0.0"),
-        default_width: "100.0",
-        default_height: "100.0",
-        renderer_type: RendererType::Simple,
-        tau_sq: 1e-6,
-        worker_count: 1,
-        iteration_multiplier: 200.0,
-        iteration_power: 2.5,
-        bigfloat_threshold_bits: 1024,
-        bla_enabled: false,
-        gpu_enabled: false,
-        gpu_iterations_per_dispatch: 100_000,
-        gpu_progressive_row_sets: 32,
-    },
-    FractalConfig {
-        id: "mandelbrot",
-        display_name: "Mandelbrot Set",
-        default_center: ("-0.5", "0.0"),
-        default_width: "4.0",
-        default_height: "4.0",
-        renderer_type: RendererType::Perturbation,
-        tau_sq: 1e-6,
-        worker_count: 0, // all available workers
-        iteration_multiplier: 200.0,
-        iteration_power: 2.7,
-        bigfloat_threshold_bits: 1024, // ~10^300 zoom
-        bla_enabled: true,
-        gpu_enabled: true,
-        gpu_iterations_per_dispatch: 100_000,
-        gpu_progressive_row_sets: 32, // 0 = use old tiled renderer, >0 = progressive
-    },
-];
+pub static FRACTAL_CONFIGS: &[FractalConfig] = &[FractalConfig {
+    id: "mandelbrot",
+    display_name: "Mandelbrot Set",
+    default_center: ("-0.5", "0.0"),
+    default_width: "4.0",
+    default_height: "4.0",
+    renderer_type: RendererType::Perturbation,
+    tau_sq: 1e-6,
+    worker_count: 0, // all available workers
+    iteration_multiplier: 200.0,
+    iteration_power: 2.8,
+    bigfloat_threshold_bits: 1024, // ~10^300 zoom
+    bla_enabled: true,
+    gpu_enabled: true,
+    gpu_iterations_per_dispatch: 50_000,
+    gpu_progressive_row_sets: 32, // 0 = use old tiled renderer, >0 = progressive
+}];
 
 /// Look up a fractal configuration by ID.
 pub fn get_config(id: &str) -> Option<&'static FractalConfig> {
