@@ -103,6 +103,9 @@ pub fn compute_pixel_perturbation_bigfloat(
     // δz starts at origin
     let mut dz_re = BigFloat::zero(precision);
     let mut dz_im = BigFloat::zero(precision);
+    // δρ starts at origin (derivative delta)
+    let mut drho_re = BigFloat::zero(precision);
+    let mut drho_im = BigFloat::zero(precision);
 
     // m = reference orbit index
     let mut m: usize = 0;
@@ -140,14 +143,19 @@ pub fn compute_pixel_perturbation_bigfloat(
             glitched = true;
         }
 
-        // Get Z_m with wrap-around for non-escaping references
+        // Get Z_m and Der_m with wrap-around for non-escaping references
         let z_m = orbit.orbit[m % orbit_len];
+        let der_m = orbit.derivative[m % orbit_len];
         let z_m_re = BigFloat::with_precision(z_m.0, precision);
         let z_m_im = BigFloat::with_precision(z_m.1, precision);
+        let der_m_re = BigFloat::with_precision(der_m.0, precision);
+        let der_m_im = BigFloat::with_precision(der_m.1, precision);
 
-        // Full pixel value: z = Z_m + δz
+        // Full pixel values: z = Z_m + δz, ρ = Der_m + δρ
         let z_re = z_m_re.add(&dz_re);
         let z_im = z_m_im.add(&dz_im);
+        let rho_re = der_m_re.add(&drho_re);
+        let rho_im = der_m_im.add(&drho_im);
 
         // Compute magnitudes squared (convert to f64 for comparisons - magnitudes are bounded)
         let z_mag_sq = z_re.mul(&z_re).add(&z_im.mul(&z_im)).to_f64();
@@ -162,10 +170,10 @@ pub fn compute_pixel_perturbation_bigfloat(
                 escaped: true,
                 glitched,
                 final_z_norm_sq: z_mag_sq as f32,
-                final_z_re: 0.0,
-                final_z_im: 0.0,
-                final_derivative_re: 0.0,
-                final_derivative_im: 0.0,
+                final_z_re: z_re.to_f64() as f32,
+                final_z_im: z_im.to_f64() as f32,
+                final_derivative_re: rho_re.to_f64() as f32,
+                final_derivative_im: rho_im.to_f64() as f32,
             };
         }
 
@@ -180,18 +188,21 @@ pub fn compute_pixel_perturbation_bigfloat(
         if z_mag_sq < dz_mag_sq {
             dz_re = z_re;
             dz_im = z_im;
+            drho_re = rho_re; // Also rebase derivative
+            drho_im = rho_im;
             m = 0;
             // Do NOT increment n - rebase is not a real iteration
             continue;
         }
 
         // 4. Delta iteration: δz' = 2·Z_m·δz + δz² + δc
-        // 2·Z_m·δz = 2·(z_m_re·dz_re - z_m_im·dz_im, z_m_re·dz_im + z_m_im·dz_re)
-        let z_m_re_big = BigFloat::with_precision(z_m.0, precision);
-        let z_m_im_big = BigFloat::with_precision(z_m.1, precision);
+        // CRITICAL: Store old dz before updating - needed for derivative calculation
+        let old_dz_re = dz_re.clone();
+        let old_dz_im = dz_im.clone();
 
-        let two_z_dz_re = two.mul(&z_m_re_big.mul(&dz_re).sub(&z_m_im_big.mul(&dz_im)));
-        let two_z_dz_im = two.mul(&z_m_re_big.mul(&dz_im).add(&z_m_im_big.mul(&dz_re)));
+        // 2·Z_m·δz = 2·(z_m_re·dz_re - z_m_im·dz_im, z_m_re·dz_im + z_m_im·dz_re)
+        let two_z_dz_re = two.mul(&z_m_re.mul(&dz_re).sub(&z_m_im.mul(&dz_im)));
+        let two_z_dz_im = two.mul(&z_m_re.mul(&dz_im).add(&z_m_im.mul(&dz_re)));
 
         // δz² = (dz_re² - dz_im², 2·dz_re·dz_im)
         let dz_sq_re = dz_re.mul(&dz_re).sub(&dz_im.mul(&dz_im));
@@ -200,6 +211,23 @@ pub fn compute_pixel_perturbation_bigfloat(
         // δz' = 2·Z·δz + δz² + δc
         dz_re = two_z_dz_re.add(&dz_sq_re).add(delta_c_re);
         dz_im = two_z_dz_im.add(&dz_sq_im).add(delta_c_im);
+
+        // 5. Derivative delta iteration: δρ' = 2·Z_m·δρ + 2·δz·Der_m + 2·δz·δρ
+        // Uses old_dz (the value BEFORE the update above)
+        // Term 1: 2·Z_m·δρ (complex multiplication)
+        let two_z_drho_re = two.mul(&z_m_re.mul(&drho_re).sub(&z_m_im.mul(&drho_im)));
+        let two_z_drho_im = two.mul(&z_m_re.mul(&drho_im).add(&z_m_im.mul(&drho_re)));
+
+        // Term 2: 2·δz·Der_m (complex multiplication, using old_dz)
+        let two_dz_der_re = two.mul(&old_dz_re.mul(&der_m_re).sub(&old_dz_im.mul(&der_m_im)));
+        let two_dz_der_im = two.mul(&old_dz_re.mul(&der_m_im).add(&old_dz_im.mul(&der_m_re)));
+
+        // Term 3: 2·δz·δρ (complex multiplication, using old_dz)
+        let two_dz_drho_re = two.mul(&old_dz_re.mul(&drho_re).sub(&old_dz_im.mul(&drho_im)));
+        let two_dz_drho_im = two.mul(&old_dz_re.mul(&drho_im).add(&old_dz_im.mul(&drho_re)));
+
+        drho_re = two_z_drho_re.add(&two_dz_der_re).add(&two_dz_drho_re);
+        drho_im = two_z_drho_im.add(&two_dz_der_im).add(&two_dz_drho_im);
 
         m += 1;
         n += 1; // Only increment iteration count after a real iteration
