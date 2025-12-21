@@ -92,6 +92,7 @@ pub enum WorkerToMain {
         orbit_id: u32,
         c_ref: (f64, f64),
         orbit: Vec<(f64, f64)>,
+        derivative: Vec<(f64, f64)>,
         escaped_at: Option<u32>,
     },
 
@@ -284,6 +285,7 @@ mod tests {
             orbit_id: 42,
             c_ref: (-0.5, 0.0),
             orbit: vec![(0.0, 0.0), (-0.5, 0.0)],
+            derivative: vec![(0.0, 0.0), (1.0, 0.0)],
             escaped_at: Some(1000),
         };
         let json = serde_json::to_string(&msg).unwrap();

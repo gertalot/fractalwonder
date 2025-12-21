@@ -49,6 +49,7 @@ impl ProgressiveGpuRenderer {
     pub async fn render_row_set(
         &mut self,
         orbit: &[(f64, f64)],
+        derivative_orbit: &[(f64, f64)],
         orbit_id: u32,
         dc_origin: ((f32, f32, i32), (f32, f32, i32)),
         dc_step: ((f32, f32, i32), (f32, f32, i32)),
@@ -89,23 +90,34 @@ impl ProgressiveGpuRenderer {
         let buffers = self.buffers.as_ref().unwrap();
 
         // Upload orbit if changed
-        // Store as (re_hi, re_lo, im_hi, im_lo) with exponents packed into hi/lo
+        // Store as 12 f32s per point:
+        // [Z_re_head, Z_re_tail, Z_im_head, Z_im_tail, Z_re_exp, Z_im_exp,
+        //  Der_re_head, Der_re_tail, Der_im_head, Der_im_tail, Der_re_exp, Der_im_exp]
         // Uses HDRFloat representation: value = (head + tail) × 2^exp, head in [0.5, 1.0)
         if self.cached_orbit_id != Some(orbit_id) {
-            let orbit_data: Vec<[f32; 6]> = orbit
+            let orbit_data: Vec<[f32; 12]> = orbit
                 .iter()
-                .map(|&(re, im)| {
+                .zip(derivative_orbit.iter())
+                .map(|(&(z_re, z_im), &(der_re, der_im))| {
                     // Convert to HDRFloat format matching CPU implementation
-                    let re_hdr = fractalwonder_core::HDRFloat::from_f64(re);
-                    let im_hdr = fractalwonder_core::HDRFloat::from_f64(im);
+                    let z_re_hdr = fractalwonder_core::HDRFloat::from_f64(z_re);
+                    let z_im_hdr = fractalwonder_core::HDRFloat::from_f64(z_im);
+                    let der_re_hdr = fractalwonder_core::HDRFloat::from_f64(der_re);
+                    let der_im_hdr = fractalwonder_core::HDRFloat::from_f64(der_im);
                     [
-                        re_hdr.head,
-                        re_hdr.tail,
-                        im_hdr.head,
-                        im_hdr.tail,
+                        z_re_hdr.head,
+                        z_re_hdr.tail,
+                        z_im_hdr.head,
+                        z_im_hdr.tail,
                         // Pack exponents as f32 for GPU (will be bitcast to i32)
-                        f32::from_bits(re_hdr.exp as u32),
-                        f32::from_bits(im_hdr.exp as u32),
+                        f32::from_bits(z_re_hdr.exp as u32),
+                        f32::from_bits(z_im_hdr.exp as u32),
+                        der_re_hdr.head,
+                        der_re_hdr.tail,
+                        der_im_hdr.head,
+                        der_im_hdr.tail,
+                        f32::from_bits(der_re_hdr.exp as u32),
+                        f32::from_bits(der_im_hdr.exp as u32),
                     ]
                 })
                 .collect();

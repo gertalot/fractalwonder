@@ -1016,6 +1016,7 @@ fn schedule_row_set(
         let row_set_result = renderer
             .render_row_set(
                 &orbit_data_spawn.orbit,
+                &orbit_data_spawn.derivative,
                 orbit_data_spawn.orbit_id,
                 dc_origin,
                 dc_step,

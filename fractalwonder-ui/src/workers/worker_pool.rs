@@ -80,6 +80,7 @@ pub struct TileResult {
 #[derive(Clone)]
 pub struct OrbitCompleteData {
     pub orbit: Vec<(f64, f64)>,
+    pub derivative: Vec<(f64, f64)>,
     pub orbit_id: u32,
     pub max_iterations: u32,
     pub escaped_at: Option<u32>,
@@ -409,6 +410,7 @@ impl WorkerPool {
                 orbit_id,
                 c_ref,
                 orbit,
+                derivative,
                 escaped_at,
             } => {
                 if render_id != self.current_render_id {
@@ -441,6 +443,7 @@ impl WorkerPool {
                     if let Some(callback) = self.on_orbit_complete.borrow().as_ref() {
                         callback(OrbitCompleteData {
                             orbit: orbit.clone(),
+                            derivative: derivative.clone(),
                             orbit_id,
                             max_iterations: self.perturbation.max_iterations,
                             escaped_at,

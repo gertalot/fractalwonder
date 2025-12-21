@@ -568,6 +568,7 @@ fn progressive_renderer_basic_render() {
         let result = renderer
             .render_row_set(
                 &orbit.orbit,
+                &orbit.derivative,
                 1,
                 dc_origin,
                 dc_step,
@@ -722,6 +723,7 @@ fn debug_glitched_pixels_gpu_vs_cpu() {
                 let result = renderer
                     .render_row_set(
                         &orbit.orbit,
+                        &orbit.derivative,
                         1,
                         dc_origin,
                         dc_step,
@@ -1044,6 +1046,7 @@ fn gpu_orbit_precision_matches_cpu() {
             let result = gpu_renderer
                 .render_row_set(
                     &orbit.orbit,
+                    &orbit.derivative,
                     1,
                     dc_origin,
                     dc_step,

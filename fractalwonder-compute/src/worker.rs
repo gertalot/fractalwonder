@@ -254,6 +254,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                 orbit_id,
                 c_ref: orbit.c_ref,
                 orbit: orbit.orbit,
+                derivative: orbit.derivative,
                 escaped_at: orbit.escaped_at,
             });
         }
