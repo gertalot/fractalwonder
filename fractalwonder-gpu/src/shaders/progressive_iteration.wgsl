@@ -245,6 +245,16 @@ struct Uniforms {
 @group(0) @binding(8) var<storage, read_write> glitch_flags: array<u32>;
 @group(0) @binding(9) var<storage, read_write> z_norm_sq: array<f32>;
 
+// Derivative state buffers - HDRFloat stored as 3 consecutive f32s (head, tail, exp as f32)
+@group(0) @binding(10) var<storage, read_write> drho_re: array<f32>;
+@group(0) @binding(11) var<storage, read_write> drho_im: array<f32>;
+
+// Final value output buffers
+@group(0) @binding(12) var<storage, read_write> final_z_re_buf: array<f32>;
+@group(0) @binding(13) var<storage, read_write> final_z_im_buf: array<f32>;
+@group(0) @binding(14) var<storage, read_write> final_der_re_buf: array<f32>;
+@group(0) @binding(15) var<storage, read_write> final_der_im_buf: array<f32>;
+
 // Inline helper functions for z_re buffer
 fn load_z_re(idx: u32) -> HDRFloat {
     let base = idx * 3u;
@@ -269,6 +279,32 @@ fn store_z_im(idx: u32, val: HDRFloat) {
     z_im[base] = val.head;
     z_im[base + 1u] = val.tail;
     z_im[base + 2u] = bitcast<f32>(u32(val.exp));
+}
+
+// Inline helper functions for drho_re buffer
+fn load_drho_re(idx: u32) -> HDRFloat {
+    let base = idx * 3u;
+    return HDRFloat(drho_re[base], drho_re[base + 1u], i32(bitcast<u32>(drho_re[base + 2u])));
+}
+
+fn store_drho_re(idx: u32, val: HDRFloat) {
+    let base = idx * 3u;
+    drho_re[base] = val.head;
+    drho_re[base + 1u] = val.tail;
+    drho_re[base + 2u] = bitcast<f32>(u32(val.exp));
+}
+
+// Inline helper functions for drho_im buffer
+fn load_drho_im(idx: u32) -> HDRFloat {
+    let base = idx * 3u;
+    return HDRFloat(drho_im[base], drho_im[base + 1u], i32(bitcast<u32>(drho_im[base + 2u])));
+}
+
+fn store_drho_im(idx: u32, val: HDRFloat) {
+    let base = idx * 3u;
+    drho_im[base] = val.head;
+    drho_im[base + 1u] = val.tail;
+    drho_im[base + 2u] = bitcast<f32>(u32(val.exp));
 }
 
 @compute @workgroup_size(64)
@@ -302,6 +338,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     // Load persistent state
     var dz = HDRComplex(load_z_re(linear_idx), load_z_im(linear_idx));
+    var drho = HDRComplex(load_drho_re(linear_idx), load_drho_im(linear_idx));
     var n = iter_count[linear_idx];
     var m = orbit_index[linear_idx];
     var glitched = glitch_flags[linear_idx] != 0u;
@@ -350,6 +387,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         // Reconstruct HDRFloat with proper exponent
         let z_m_hdr_re = HDRFloat(z_m_re_head, z_m_re_tail, z_m_re_exp);
         let z_m_hdr_im = HDRFloat(z_m_im_head, z_m_im_tail, z_m_im_exp);
+        let der_m_hdr_re = HDRFloat(der_m_re_head, der_m_re_tail, der_m_re_exp);
+        let der_m_hdr_im = HDRFloat(der_m_im_head, der_m_im_tail, der_m_im_exp);
         let z_re_full = hdr_add(z_m_hdr_re, dz.re);
         let z_im_full = hdr_add(z_m_hdr_im, dz.im);
         let z = HDRComplex(z_re_full, z_im_full);
@@ -367,12 +406,24 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         // Escape check - use HDRFloat comparison
         let escape_radius_sq_hdr = hdr_from_f32_const(uniforms.escape_radius_sq);
         if hdr_greater_than(z_mag_sq_hdr, escape_radius_sq_hdr) {
+            // Compute full derivative: ρ = Der_m + δρ
+            let rho_re = hdr_add(der_m_hdr_re, drho.re);
+            let rho_im = hdr_add(der_m_hdr_im, drho.im);
+
+            // Store final values as f32
+            final_z_re_buf[linear_idx] = hdr_to_f32(z_re_full);
+            final_z_im_buf[linear_idx] = hdr_to_f32(z_im_full);
+            final_der_re_buf[linear_idx] = hdr_to_f32(rho_re);
+            final_der_im_buf[linear_idx] = hdr_to_f32(rho_im);
+
             escaped_buf[linear_idx] = 1u;
             results[linear_idx] = n;
             glitch_flags[linear_idx] = select(0u, 1u, glitched);
             z_norm_sq[linear_idx] = z_mag_sq;
             store_z_re(linear_idx, dz.re);
             store_z_im(linear_idx, dz.im);
+            store_drho_re(linear_idx, drho.re);
+            store_drho_im(linear_idx, drho.im);
             iter_count[linear_idx] = n;
             orbit_index[linear_idx] = m;
             return;
@@ -390,12 +441,20 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         // Use HDRFloat comparison to preserve precision for very small values
         if hdr_less_than(z_mag_sq_hdr, dz_mag_sq_hdr) {
             dz = z;
+            // Also rebase derivative
+            drho = HDRComplex(
+                hdr_add(der_m_hdr_re, drho.re),
+                hdr_add(der_m_hdr_im, drho.im)
+            );
             m = 0u;
             continue;
         }
 
         // Delta iteration: dz' = 2*z_m*dz + dz^2 + dc
         // Use z_m HDRFloat values for full precision multiplication
+        // Store old dz for derivative calculation
+        let old_dz = dz;
+
         let two_z_dz_re = hdr_mul_f32(hdr_sub(hdr_mul(dz.re, z_m_hdr_re), hdr_mul(dz.im, z_m_hdr_im)), 2.0);
         let two_z_dz_im = hdr_mul_f32(hdr_add(hdr_mul(dz.re, z_m_hdr_im), hdr_mul(dz.im, z_m_hdr_re)), 2.0);
         let dz_sq = hdr_complex_square(dz);
@@ -405,6 +464,24 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             hdr_add(hdr_add(two_z_dz_im, dz_sq.im), dc.im)
         );
 
+        // Derivative delta: δρ' = 2·Z_m·δρ + 2·δz·Der_m + 2·δz·δρ
+        // Term 1: 2·Z_m·δρ
+        let two_z_drho_re = hdr_mul_f32(hdr_sub(hdr_mul(drho.re, z_m_hdr_re), hdr_mul(drho.im, z_m_hdr_im)), 2.0);
+        let two_z_drho_im = hdr_mul_f32(hdr_add(hdr_mul(drho.re, z_m_hdr_im), hdr_mul(drho.im, z_m_hdr_re)), 2.0);
+
+        // Term 2: 2·δz·Der_m (using old_dz)
+        let two_dz_der_re = hdr_mul_f32(hdr_sub(hdr_mul(old_dz.re, der_m_hdr_re), hdr_mul(old_dz.im, der_m_hdr_im)), 2.0);
+        let two_dz_der_im = hdr_mul_f32(hdr_add(hdr_mul(old_dz.re, der_m_hdr_im), hdr_mul(old_dz.im, der_m_hdr_re)), 2.0);
+
+        // Term 3: 2·δz·δρ (using old_dz)
+        let two_dz_drho_re = hdr_mul_f32(hdr_sub(hdr_mul(old_dz.re, drho.re), hdr_mul(old_dz.im, drho.im)), 2.0);
+        let two_dz_drho_im = hdr_mul_f32(hdr_add(hdr_mul(old_dz.re, drho.im), hdr_mul(old_dz.im, drho.re)), 2.0);
+
+        drho = HDRComplex(
+            hdr_add(hdr_add(two_z_drho_re, two_dz_der_re), two_dz_drho_re),
+            hdr_add(hdr_add(two_z_drho_im, two_dz_der_im), two_dz_drho_im)
+        );
+
         m = m + 1u;
         n = n + 1u;
     }
@@ -412,6 +489,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     // Save state for next chunk
     store_z_re(linear_idx, dz.re);
     store_z_im(linear_idx, dz.im);
+    store_drho_re(linear_idx, drho.re);
+    store_drho_im(linear_idx, drho.im);
     iter_count[linear_idx] = n;
     orbit_index[linear_idx] = m;
     glitch_flags[linear_idx] = select(0u, 1u, glitched);
