@@ -222,7 +222,10 @@ mod tests {
         let parsed: MainToWorker = serde_json::from_str(&json).unwrap();
         match parsed {
             MainToWorker::StoreReferenceOrbit {
-                orbit_id, orbit, derivative, ..
+                orbit_id,
+                orbit,
+                derivative,
+                ..
             } => {
                 assert_eq!(orbit_id, 1);
                 assert_eq!(orbit.len(), 3);

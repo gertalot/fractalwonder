@@ -50,35 +50,33 @@ pub struct ShadingSettings {
 impl Default for ShadingSettings {
     fn default() -> Self {
         Self {
-/*
-  ambient: 0.15
-  diffuse: 0.7
-  specular: 0.3
-  shininess: 32.0
+            /*
+            ambient: 0.15
+            diffuse: 0.7
+            specular: 0.3
+            shininess: 32.0
 
-  Option 1: Punchy highlights (sharper, brighter spots)
-  ambient: 0.1      // darker shadows = more contrast
-  specular: 0.6     // 2x brighter highlights
-  shininess: 64.0   // tighter, more focused spots
+            Option 1: Punchy highlights (sharper, brighter spots)
+            ambient: 0.1      // darker shadows = more contrast
+            specular: 0.6     // 2x brighter highlights
+            shininess: 64.0   // tighter, more focused spots
 
-  Option 2: Glossy look (very concentrated bright spots)
-  ambient: 0.1
-  specular: 0.8     // intense highlights
-  shininess: 128.0  // very sharp, almost mirror-like
+            Option 2: Glossy look (very concentrated bright spots)
+            ambient: 0.1
+            specular: 0.8     // intense highlights
+            shininess: 128.0  // very sharp, almost mirror-like
 
-  Option 3: Dramatic contrast (deep shadows, bright peaks)
-  ambient: 0.05     // very dark shadows
-  diffuse: 0.5      // less diffuse = more shadow
-  specular: 0.7
-  shininess: 48.0
+            Option 3: Dramatic contrast (deep shadows, bright peaks)
+            ambient: 0.05     // very dark shadows
+            diffuse: 0.5      // less diffuse = more shadow
+            specular: 0.7
+            shininess: 48.0
 
-  Option 4: Metallic (bright + broad highlights)
-  ambient: 0.1
-  specular: 0.9     // very bright
-  shininess: 16.0   // broader, more spread out
-   */
-
-
+            Option 4: Metallic (bright + broad highlights)
+            ambient: 0.1
+            specular: 0.9     // very bright
+            shininess: 16.0   // broader, more spread out
+             */
             enabled: false,
             light_azimuth: std::f64::consts::PI / -2.0,
             light_elevation: std::f64::consts::PI / 4.0,
