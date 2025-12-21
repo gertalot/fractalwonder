@@ -497,6 +497,8 @@ pub fn compute_pixel_perturbation(
 ) -> MandelbrotData {
     // δz starts at origin
     let mut dz = (0.0_f64, 0.0_f64);
+    // δρ starts at origin (derivative delta)
+    let mut drho = (0.0_f64, 0.0_f64);
     // m = reference orbit index
     let mut m: usize = 0;
     // Track precision loss via Pauldelbrot criterion
@@ -531,11 +533,13 @@ pub fn compute_pixel_perturbation(
             glitched = true;
         }
 
-        // Get Z_m with wrap-around for non-escaping references
+        // Get Z_m and Der_m with wrap-around for non-escaping references
         let z_m = orbit.orbit[m % orbit_len];
+        let der_m = orbit.derivative[m % orbit_len];
 
-        // Full pixel value: z = Z_m + δz
+        // Full pixel value: z = Z_m + δz, ρ = Der_m + δρ
         let z = (z_m.0 + dz.0, z_m.1 + dz.1);
+        let rho = (der_m.0 + drho.0, der_m.1 + drho.1);
 
         // Precompute magnitudes squared
         let z_mag_sq = z.0 * z.0 + z.1 * z.1;
@@ -550,10 +554,10 @@ pub fn compute_pixel_perturbation(
                 escaped: true,
                 glitched,
                 final_z_norm_sq: z_mag_sq as f32,
-                final_z_re: 0.0,
-                final_z_im: 0.0,
-                final_derivative_re: 0.0,
-                final_derivative_im: 0.0,
+                final_z_re: z.0 as f32,
+                final_z_im: z.1 as f32,
+                final_derivative_re: rho.0 as f32,
+                final_derivative_im: rho.1 as f32,
             };
         }
 
@@ -570,6 +574,7 @@ pub fn compute_pixel_perturbation(
         // The iteration count n should NOT increment during rebase.
         if z_mag_sq < dz_mag_sq {
             dz = z;
+            drho = rho; // Also rebase derivative
             m = 0;
             // Do NOT increment n - rebase is not a real iteration
             continue;
@@ -579,6 +584,10 @@ pub fn compute_pixel_perturbation(
         // Complex multiplication: (a+bi)(c+di) = (ac-bd) + (ad+bc)i
         // 2·Z_m·δz = 2·(z_m.0·dz.0 - z_m.1·dz.1, z_m.0·dz.1 + z_m.1·dz.0)
         // δz² = (dz.0² - dz.1², 2·dz.0·dz.1)
+
+        // CRITICAL: Store old dz before updating - needed for derivative calculation
+        let old_dz = dz;
+
         let two_z_dz = (
             2.0 * (z_m.0 * dz.0 - z_m.1 * dz.1),
             2.0 * (z_m.0 * dz.1 + z_m.1 * dz.0),
@@ -588,6 +597,28 @@ pub fn compute_pixel_perturbation(
         dz = (
             two_z_dz.0 + dz_sq.0 + delta_c.0,
             two_z_dz.1 + dz_sq.1 + delta_c.1,
+        );
+
+        // 5. Derivative delta iteration: δρ' = 2·Z_m·δρ + 2·δz·Der_m + 2·δz·δρ
+        // Uses old_dz (the value BEFORE the update above)
+        // Term 1: 2·Z_m·δρ (complex multiplication)
+        let two_z_drho = (
+            2.0 * (z_m.0 * drho.0 - z_m.1 * drho.1),
+            2.0 * (z_m.0 * drho.1 + z_m.1 * drho.0),
+        );
+        // Term 2: 2·δz·Der_m (complex multiplication, using old_dz)
+        let two_dz_der = (
+            2.0 * (old_dz.0 * der_m.0 - old_dz.1 * der_m.1),
+            2.0 * (old_dz.0 * der_m.1 + old_dz.1 * der_m.0),
+        );
+        // Term 3: 2·δz·δρ (complex multiplication, using old_dz)
+        let two_dz_drho = (
+            2.0 * (old_dz.0 * drho.0 - old_dz.1 * drho.1),
+            2.0 * (old_dz.0 * drho.1 + old_dz.1 * drho.0),
+        );
+        drho = (
+            two_z_drho.0 + two_dz_der.0 + two_dz_drho.0,
+            two_z_drho.1 + two_dz_der.1 + two_dz_drho.1,
         );
 
         m += 1;
