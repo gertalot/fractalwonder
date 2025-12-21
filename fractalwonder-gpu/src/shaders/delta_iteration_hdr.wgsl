@@ -269,7 +269,9 @@ struct Uniforms {
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
-// Orbit stored as 6 f32s per point: [re_head, re_tail, im_head, im_tail, re_exp, im_exp]
+// Orbit stored as 12 f32s per point:
+// [Z_re_head, Z_re_tail, Z_im_head, Z_im_tail, Z_re_exp, Z_im_exp,
+//  Der_re_head, Der_re_tail, Der_im_head, Der_im_tail, Der_re_exp, Der_im_exp]
 // This uses full HDRFloat representation matching CPU: value = (head + tail) × 2^exp
 @group(0) @binding(1) var<storage, read> reference_orbit: array<f32>;
 @group(0) @binding(2) var<storage, read_write> results: array<u32>;
@@ -345,14 +347,22 @@ fn main(@builtin(global_invocation_id) local_id: vec3<u32>) {
             glitched = true;
         }
 
-        // Orbit stored as 6 f32s: [re_head, re_tail, im_head, im_tail, re_exp, im_exp]
-        let orbit_idx = (m % orbit_len) * 6u;
+        // Load Z_m from orbit (12 f32s per point, Z is at indices 0-5)
+        let orbit_idx = (m % orbit_len) * 12u;
         let z_m_re_head = reference_orbit[orbit_idx];
         let z_m_re_tail = reference_orbit[orbit_idx + 1u];
         let z_m_im_head = reference_orbit[orbit_idx + 2u];
         let z_m_im_tail = reference_orbit[orbit_idx + 3u];
         let z_m_re_exp = bitcast<i32>(bitcast<u32>(reference_orbit[orbit_idx + 4u]));
         let z_m_im_exp = bitcast<i32>(bitcast<u32>(reference_orbit[orbit_idx + 5u]));
+
+        // Load Der_m from orbit (at indices 6-11)
+        let der_m_re_head = reference_orbit[orbit_idx + 6u];
+        let der_m_re_tail = reference_orbit[orbit_idx + 7u];
+        let der_m_im_head = reference_orbit[orbit_idx + 8u];
+        let der_m_im_tail = reference_orbit[orbit_idx + 9u];
+        let der_m_re_exp = bitcast<i32>(bitcast<u32>(reference_orbit[orbit_idx + 10u]));
+        let der_m_im_exp = bitcast<i32>(bitcast<u32>(reference_orbit[orbit_idx + 11u]));
 
         // Full z = Z_m + δz (reconstruct Z_m as HDRFloat with proper exponent)
         let z_m_hdr_re = HDRFloat(z_m_re_head, z_m_re_tail, z_m_re_exp);

@@ -236,11 +236,13 @@ impl ProgressiveGpuBuffers {
             mapped_at_creation: false,
         });
 
-        // Orbit stored as 6 f32s per point: (re_head, re_tail, im_head, im_tail, re_exp, im_exp)
+        // Orbit stored as 12 f32s per point:
+        // [Z_re_head, Z_re_tail, Z_im_head, Z_im_tail, Z_re_exp, Z_im_exp,
+        //  Der_re_head, Der_re_tail, Der_im_head, Der_im_tail, Der_re_exp, Der_im_exp]
         // This uses full HDRFloat representation matching the CPU implementation
         let reference_orbit = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("progressive_reference_orbit"),
-            size: (orbit_len as usize * std::mem::size_of::<[f32; 6]>()) as u64,
+            size: (orbit_len as usize * std::mem::size_of::<[f32; 12]>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });

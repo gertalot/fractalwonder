@@ -95,6 +95,11 @@ impl ProgressiveGpuRenderer {
         //  Der_re_head, Der_re_tail, Der_im_head, Der_im_tail, Der_re_exp, Der_im_exp]
         // Uses HDRFloat representation: value = (head + tail) × 2^exp, head in [0.5, 1.0)
         if self.cached_orbit_id != Some(orbit_id) {
+            assert_eq!(
+                orbit.len(),
+                derivative_orbit.len(),
+                "Orbit and derivative must have same length"
+            );
             let orbit_data: Vec<[f32; 12]> = orbit
                 .iter()
                 .zip(derivative_orbit.iter())
