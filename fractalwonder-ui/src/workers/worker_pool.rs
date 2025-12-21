@@ -20,6 +20,7 @@ const WORKER_SCRIPT_PATH: &str = "./message-compute-worker.js";
 struct OrbitData {
     c_ref: (f64, f64),
     orbit: Vec<(f64, f64)>,
+    derivative: Vec<(f64, f64)>,
     escaped_at: Option<u32>,
 }
 
@@ -430,6 +431,7 @@ impl WorkerPool {
                 self.perturbation.pending_orbit = Some(OrbitData {
                     c_ref,
                     orbit: orbit.clone(),
+                    derivative: derivative.clone(),
                     escaped_at,
                 });
                 self.perturbation.orbit_id = orbit_id;
@@ -460,6 +462,7 @@ impl WorkerPool {
                             orbit_id,
                             c_ref,
                             orbit: orbit.clone(),
+                            derivative: derivative.clone(),
                             escaped_at,
                             dc_max: self.perturbation.dc_max,
                             bla_enabled: self.perturbation.bla_enabled,
@@ -1093,6 +1096,7 @@ impl WorkerPool {
                 orbit_id,
                 c_ref: orbit.c_ref,
                 orbit: orbit.orbit.clone(),
+                derivative: orbit.derivative.clone(),
                 escaped_at: orbit.escaped_at,
                 dc_max: self.perturbation.dc_max,
                 bla_enabled: self.perturbation.bla_enabled,
