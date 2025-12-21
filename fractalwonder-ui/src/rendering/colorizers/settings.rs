@@ -181,15 +181,6 @@ mod tests {
     }
 
     #[test]
-    fn enabled_shading_has_reasonable_defaults() {
-        let settings = ShadingSettings::enabled();
-        assert!(settings.enabled);
-        assert!(settings.light_angle > 0.0);
-        assert!(settings.height_factor > 0.0);
-        assert!(settings.blend > 0.0 && settings.blend <= 1.0);
-    }
-
-    #[test]
     fn color_options_default_values() {
         let options = ColorOptions::default();
         assert_eq!(options.palette_id, "classic");

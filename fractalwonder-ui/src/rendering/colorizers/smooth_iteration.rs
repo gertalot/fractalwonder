@@ -37,17 +37,26 @@ pub fn compute_smooth_iteration(data: &MandelbrotData) -> f64 {
     }
 }
 
-/// Build sorted smooth values for rank-order histogram coloring.
+/// Build sorted values for rank-order histogram coloring.
 /// Only includes exterior (escaped) points. Interior points are excluded.
-/// Returns a sorted Vec of smooth iteration values.
-fn build_sorted_smooth_values(smooth_values: &[f64], data: &[ComputeData]) -> Vec<f64> {
+/// When `use_smooth` is true, uses the provided smooth values.
+/// When `use_smooth` is false, uses discrete iteration counts.
+fn build_sorted_histogram_values(
+    smooth_values: &[f64],
+    data: &[ComputeData],
+    use_smooth: bool,
+) -> Vec<f64> {
     let mut sorted: Vec<f64> = smooth_values
         .iter()
         .zip(data.iter())
         .filter_map(|(&smooth, d)| {
             if let ComputeData::Mandelbrot(m) = d {
                 if m.escaped {
-                    return Some(smooth);
+                    return Some(if use_smooth {
+                        smooth
+                    } else {
+                        m.iterations as f64
+                    });
                 }
             }
             None
@@ -88,7 +97,11 @@ impl Colorizer for SmoothIterationColorizer {
             .collect();
 
         let sorted_smooth = if options.histogram_enabled {
-            Some(build_sorted_smooth_values(&smooth_values, data))
+            Some(build_sorted_histogram_values(
+                &smooth_values,
+                data,
+                options.smooth_enabled,
+            ))
         } else {
             None
         };
@@ -187,9 +200,14 @@ impl SmoothIterationColorizer {
 
         // Normalize: use rank-order if available, otherwise linear (smooth or discrete)
         let normalized = if let Some(sorted) = &context.sorted_smooth {
-            // Rank-order histogram: find percentile rank of this smooth value
-            // This distributes colors evenly across the image area
-            percentile_rank(sorted, smooth)
+            // Rank-order histogram: find percentile rank
+            // Use smooth value or discrete iterations depending on smooth_enabled
+            let lookup_value = if options.smooth_enabled {
+                smooth
+            } else {
+                data.iterations as f64
+            };
+            percentile_rank(sorted, lookup_value)
         } else if options.smooth_enabled {
             smooth / data.max_iterations as f64
         } else {
@@ -424,7 +442,7 @@ mod tests {
             })
             .collect();
 
-        let sorted = build_sorted_smooth_values(&smooth_values, &data);
+        let sorted = build_sorted_histogram_values(&smooth_values, &data, true);
 
         // Only 1 exterior pixel
         assert_eq!(sorted.len(), 1);
@@ -515,6 +533,77 @@ mod tests {
             "Higher iteration should have higher rank and brighter color: iter1={:?}, iter9={:?}",
             color1,
             color2
+        );
+    }
+
+    #[test]
+    fn smooth_option_affects_histogram_coloring() {
+        // Bug test: smooth_enabled should affect histogram coloring, but currently doesn't.
+        // When smooth is disabled + histogram enabled, pixels with same iteration count
+        // should get the same color (same rank in histogram).
+        // When smooth is enabled + histogram enabled, pixels with same iteration count
+        // but different final_z_norm_sq should get different colors (different smooth values
+        // = different ranks).
+        let colorizer = SmoothIterationColorizer;
+
+        // Create data with same iteration count but different final_z_norm_sq
+        // This causes different smooth iteration values but same discrete iterations
+        let data = vec![
+            ComputeData::Mandelbrot(MandelbrotData {
+                iterations: 5,
+                max_iterations: 10,
+                escaped: true,
+                glitched: false,
+                final_z_norm_sq: 70000.0, // Just over escape threshold
+            }),
+            ComputeData::Mandelbrot(MandelbrotData {
+                iterations: 5,
+                max_iterations: 10,
+                escaped: true,
+                glitched: false,
+                final_z_norm_sq: 100000000.0, // Very large
+            }),
+        ];
+
+        // Test with histogram + smooth enabled
+        let options_smooth = ColorOptions {
+            histogram_enabled: true,
+            smooth_enabled: true,
+            cycle_count: 1,
+            ..grayscale_options()
+        };
+        let palette = options_smooth.palette();
+        let ctx_smooth = colorizer.preprocess(&data, &options_smooth);
+        let color_smooth_0 =
+            colorizer.colorize(&data[0], &ctx_smooth, &options_smooth, &palette, 0);
+        let color_smooth_1 =
+            colorizer.colorize(&data[1], &ctx_smooth, &options_smooth, &palette, 1);
+
+        // Test with histogram + smooth disabled
+        let options_discrete = ColorOptions {
+            histogram_enabled: true,
+            smooth_enabled: false,
+            cycle_count: 1,
+            ..grayscale_options()
+        };
+        let ctx_discrete = colorizer.preprocess(&data, &options_discrete);
+        let color_discrete_0 =
+            colorizer.colorize(&data[0], &ctx_discrete, &options_discrete, &palette, 0);
+        let color_discrete_1 =
+            colorizer.colorize(&data[1], &ctx_discrete, &options_discrete, &palette, 1);
+
+        // With smooth enabled: different final_z_norm_sq = different smooth values = different ranks
+        // The two pixels should have different colors
+        assert_ne!(
+            color_smooth_0, color_smooth_1,
+            "With smooth enabled, different final_z should produce different colors"
+        );
+
+        // With smooth disabled: same iteration count = same rank in histogram
+        // The two pixels should have the same color
+        assert_eq!(
+            color_discrete_0, color_discrete_1,
+            "With smooth disabled, same iteration count should produce same color"
         );
     }
 }
