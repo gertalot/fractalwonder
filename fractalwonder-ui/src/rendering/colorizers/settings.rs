@@ -80,12 +80,12 @@ impl Default for ShadingSettings {
             enabled: false,
             light_azimuth: std::f64::consts::PI / -2.0,
             light_elevation: std::f64::consts::PI / 4.0,
-            ambient: 0.5,
+            ambient: 0.75,
             diffuse: 0.5,
             specular: 0.9,
             shininess: 64.0,
             strength: 1.5,
-            distance_falloff: 30.0,
+            distance_falloff: 10.0,
         }
     }
 }
