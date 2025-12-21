@@ -25,37 +25,43 @@ pub fn apply_transfer_bias(t: f64, bias: f32) -> f64 {
     t.clamp(0.0, 1.0).powf(bias as f64)
 }
 
-/// Settings for slope shading effect.
-#[derive(Clone, Debug, PartialEq)]
+/// Settings for derivative-based Blinn-Phong lighting.
+#[derive(Clone, Debug)]
 pub struct ShadingSettings {
-    /// Whether slope shading is enabled.
     pub enabled: bool,
-    /// Light angle in radians. 0 = right, π/2 = top.
-    pub light_angle: f64,
-    /// Base height factor, auto-scaled by zoom level.
-    pub height_factor: f64,
-    /// Blend strength. 0.0 = no shading, 1.0 = full effect.
-    pub blend: f64,
+    /// Light azimuth angle in radians (0 = right, π/2 = top)
+    pub light_azimuth: f64,
+    /// Light elevation angle in radians (0 = horizon, π/2 = overhead)
+    pub light_elevation: f64,
+    /// Ambient light level [0, 1]
+    pub ambient: f64,
+    /// Diffuse reflection strength [0, 1]
+    pub diffuse: f64,
+    /// Specular reflection strength [0, 1]
+    pub specular: f64,
+    /// Specular exponent (shininess)
+    pub shininess: f64,
 }
 
 impl Default for ShadingSettings {
     fn default() -> Self {
         Self {
             enabled: false,
-            light_angle: std::f64::consts::FRAC_PI_4, // 45° (top-right)
-            height_factor: -3.0,
-            blend: 0.7,
+            light_azimuth: std::f64::consts::FRAC_PI_4, // 45°
+            light_elevation: std::f64::consts::FRAC_PI_4, // 45°
+            ambient: 0.15,
+            diffuse: 0.7,
+            specular: 0.3,
+            shininess: 32.0,
         }
     }
 }
 
 impl ShadingSettings {
-    /// Shading disabled.
     pub fn disabled() -> Self {
         Self::default()
     }
 
-    /// Default enabled shading with top-right light.
     pub fn enabled() -> Self {
         Self {
             enabled: true,
