@@ -77,8 +77,12 @@ impl ColorPipeline {
 
                 // Use cached context if available, otherwise simple colorization
                 if let Some(ref ctx) = self.cached_context {
-                    self.colorizer
-                        .colorize_with_cached_histogram(d, ctx, &self.options, &self.palette)
+                    self.colorizer.colorize_with_cached_histogram(
+                        d,
+                        ctx,
+                        &self.options,
+                        &self.palette,
+                    )
                 } else {
                     self.colorizer.colorize(d, &self.options, &self.palette)
                 }

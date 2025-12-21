@@ -2,9 +2,7 @@ use crate::config::FractalConfig;
 use crate::rendering::canvas_utils::{
     draw_full_frame, draw_pixels_to_canvas, get_2d_context, performance_now,
 };
-use crate::rendering::colorizers::{
-    colorize_with_palette, ColorOptions, ColorizerKind, Palette, SmoothIterationContext,
-};
+use crate::rendering::colorizers::{ColorOptions, ColorPipeline};
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
 use crate::workers::{OrbitCompleteData, TileResult, WorkerPool};
@@ -23,7 +21,6 @@ pub struct ParallelRenderer {
     worker_pool: Rc<RefCell<WorkerPool>>,
     progress: RwSignal<RenderProgress>,
     canvas_ctx: Rc<RefCell<Option<CanvasRenderingContext2d>>>,
-    xray_enabled: Rc<Cell<bool>>,
     /// Stored tile results for re-colorizing without recompute
     tile_results: Rc<RefCell<Vec<TileResult>>>,
     /// Progressive GPU renderer for row-set based rendering
@@ -38,23 +35,16 @@ pub struct ParallelRenderer {
     render_generation: Rc<Cell<u32>>,
     /// Full-image ComputeData buffer for GPU tile accumulation
     gpu_result_buffer: Rc<RefCell<Vec<ComputeData>>>,
-    /// Current color options for colorization
-    options: Rc<RefCell<ColorOptions>>,
-    /// Cached palette (expensive to create, so cached when options change)
-    palette: Rc<RefCell<Palette>>,
-    /// Current colorizer algorithm
-    colorizer: Rc<RefCell<ColorizerKind>>,
     /// Current viewport for zoom calculation in recolorize
     current_viewport: Rc<RefCell<Option<Viewport>>>,
-    /// Cached colorizer context from previous render (for histogram during progressive rendering)
-    cached_context: Rc<RefCell<Option<SmoothIterationContext>>>,
+    /// Unified colorization pipeline
+    pipeline: Rc<RefCell<ColorPipeline>>,
 }
 
 impl ParallelRenderer {
     pub fn new(config: &'static FractalConfig) -> Result<Self, JsValue> {
         let progress = create_rw_signal(RenderProgress::default());
         let canvas_ctx: Rc<RefCell<Option<CanvasRenderingContext2d>>> = Rc::new(RefCell::new(None));
-        let xray_enabled: Rc<Cell<bool>> = Rc::new(Cell::new(false));
         let tile_results: Rc<RefCell<Vec<TileResult>>> = Rc::new(RefCell::new(Vec::new()));
         let progressive_gpu_renderer: Rc<RefCell<Option<ProgressiveGpuRenderer>>> =
             Rc::new(RefCell::new(None));
@@ -63,32 +53,18 @@ impl ParallelRenderer {
         let canvas_size: Rc<Cell<(u32, u32)>> = Rc::new(Cell::new((0, 0)));
         let render_generation: Rc<Cell<u32>> = Rc::new(Cell::new(0));
         let gpu_result_buffer: Rc<RefCell<Vec<ComputeData>>> = Rc::new(RefCell::new(Vec::new()));
-        // Initialize with default color options and palette
-        let default_options = ColorOptions::default();
-        let palette: Rc<RefCell<Palette>> = Rc::new(RefCell::new(default_options.palette()));
-        let options: Rc<RefCell<ColorOptions>> = Rc::new(RefCell::new(default_options));
-        let colorizer: Rc<RefCell<ColorizerKind>> = Rc::new(RefCell::new(ColorizerKind::default()));
-        let cached_context: Rc<RefCell<Option<SmoothIterationContext>>> =
-            Rc::new(RefCell::new(None));
+        let pipeline = Rc::new(RefCell::new(ColorPipeline::new(ColorOptions::default())));
 
         let ctx_clone = Rc::clone(&canvas_ctx);
-        let xray_clone = Rc::clone(&xray_enabled);
         let results_clone = Rc::clone(&tile_results);
-        let options_clone = Rc::clone(&options);
-        let palette_clone = Rc::clone(&palette);
-        let colorizer_clone = Rc::clone(&colorizer);
+        let pipeline_tile = Rc::clone(&pipeline);
         let on_tile_complete = move |result: TileResult| {
             if let Some(ctx) = ctx_clone.borrow().as_ref() {
-                // Colorize with current options, colorizer, and xray state
-                let xray = xray_clone.get();
-                let opts = options_clone.borrow();
-                let pal = palette_clone.borrow();
-                let col = colorizer_clone.borrow();
-
-                let pixels: Vec<u8> = result
-                    .data
-                    .iter()
-                    .flat_map(|d| colorize_with_palette(d, &opts, &pal, &col, xray))
+                let pipeline = pipeline_tile.borrow();
+                let pixels: Vec<u8> = pipeline
+                    .colorize_chunk(&result.data)
+                    .into_iter()
+                    .flatten()
                     .collect();
 
                 // Draw to canvas
@@ -108,19 +84,13 @@ impl ParallelRenderer {
         let worker_pool = WorkerPool::new(config.id, on_tile_complete, progress)?;
 
         // Set up render complete callback to apply postprocessing (shading) when all tiles done
-        let options_complete = Rc::clone(&options);
-        let palette_complete = Rc::clone(&palette);
-        let colorizer_complete = Rc::clone(&colorizer);
         let tile_results_complete = Rc::clone(&tile_results);
         let canvas_ctx_complete = Rc::clone(&canvas_ctx);
         let canvas_size_complete = Rc::clone(&canvas_size);
-        let xray_complete = Rc::clone(&xray_enabled);
         let current_viewport: Rc<RefCell<Option<Viewport>>> = Rc::new(RefCell::new(None));
         let current_viewport_complete = Rc::clone(&current_viewport);
+        let pipeline_complete = Rc::clone(&pipeline);
         worker_pool.borrow().set_render_complete_callback(move || {
-            let opts = options_complete.borrow();
-            let pal = palette_complete.borrow();
-            let colorizer = colorizer_complete.borrow();
             let ctx_ref = canvas_ctx_complete.borrow();
             let Some(ctx) = ctx_ref.as_ref() else {
                 return;
@@ -134,22 +104,15 @@ impl ParallelRenderer {
                 1.0
             };
 
-            // Assemble all tiles into a single full-image buffer for unified histogram
+            // Assemble all tiles into a single full-image buffer
             let (width, height) = canvas_size_complete.get();
             let tiles = tile_results_complete.borrow();
             let full_buffer = assemble_tiles_to_buffer(&tiles, width as usize, height as usize);
 
-            // Run pipeline on full image (builds one histogram for entire image)
-            let xray = xray_complete.get();
-            let final_pixels = colorizer.run_pipeline(
-                &full_buffer,
-                &opts,
-                &pal,
-                width as usize,
-                height as usize,
-                zoom_level,
-                xray,
-            );
+            // Run full pipeline (builds histogram, applies shading, updates cache)
+            let mut pipeline = pipeline_complete.borrow_mut();
+            let final_pixels =
+                pipeline.colorize_final(&full_buffer, width as usize, height as usize, zoom_level);
 
             // Draw full frame
             let pixel_bytes: Vec<u8> = final_pixels.into_iter().flatten().collect();
@@ -161,7 +124,6 @@ impl ParallelRenderer {
             worker_pool,
             progress,
             canvas_ctx,
-            xray_enabled,
             tile_results,
             progressive_gpu_renderer,
             gpu_init_attempted,
@@ -169,24 +131,18 @@ impl ParallelRenderer {
             canvas_size,
             render_generation,
             gpu_result_buffer,
-            options,
-            palette,
-            colorizer,
             current_viewport,
-            cached_context,
+            pipeline,
         })
     }
 
     /// Set x-ray mode enabled state.
     pub fn set_xray_enabled(&self, enabled: bool) {
-        self.xray_enabled.set(enabled);
+        self.pipeline.borrow_mut().set_xray(enabled);
     }
 
     /// Re-colorize all stored tiles using full pipeline (no recompute).
     pub fn recolorize(&self) {
-        let opts = self.options.borrow();
-        let pal = self.palette.borrow();
-        let colorizer = self.colorizer.borrow();
         let ctx_ref = self.canvas_ctx.borrow();
         let Some(ctx) = ctx_ref.as_ref() else {
             return;
@@ -208,17 +164,10 @@ impl ParallelRenderer {
         let tiles = self.tile_results.borrow();
         let full_buffer = assemble_tiles_to_buffer(&tiles, width as usize, height as usize);
 
-        // Run pipeline on full image (builds one histogram for entire image)
-        let xray = self.xray_enabled.get();
-        let final_pixels = colorizer.run_pipeline(
-            &full_buffer,
-            &opts,
-            &pal,
-            width as usize,
-            height as usize,
-            zoom_level,
-            xray,
-        );
+        // Run pipeline on full image (builds fresh histogram, applies shading)
+        let mut pipeline = self.pipeline.borrow_mut();
+        let final_pixels =
+            pipeline.colorize_final(&full_buffer, width as usize, height as usize, zoom_level);
 
         // Draw full frame
         let pixel_bytes: Vec<u8> = final_pixels.into_iter().flatten().collect();
@@ -238,13 +187,9 @@ impl ParallelRenderer {
         self.worker_pool.borrow_mut().subdivide_glitched_cells();
     }
 
-    /// Set color options from UI. Updates cached palette if palette_id changed.
+    /// Set color options from UI.
     pub fn set_color_options(&self, new_options: &ColorOptions) {
-        let palette_changed = self.options.borrow().palette_id != new_options.palette_id;
-        *self.options.borrow_mut() = new_options.clone();
-        if palette_changed {
-            *self.palette.borrow_mut() = new_options.palette();
-        }
+        self.pipeline.borrow_mut().set_options(new_options.clone());
     }
 
     pub fn render(&self, viewport: &Viewport, canvas: &HtmlCanvasElement) {
@@ -282,7 +227,7 @@ impl ParallelRenderer {
 
         // Start render with GPU perturbation or CPU fallback
         // Check runtime use_gpu option (user-controllable) AND config gpu_enabled (fractal type)
-        let use_gpu = self.config.gpu_enabled && self.options.borrow().use_gpu;
+        let use_gpu = self.config.gpu_enabled && self.pipeline.borrow().options().use_gpu;
         let use_progressive = self.config.gpu_progressive_row_sets > 0;
         if use_gpu && use_progressive {
             // Use progressive GPU rendering (row-sets / venetian blinds pattern)
@@ -342,13 +287,9 @@ impl ParallelRenderer {
         let gpu_init_attempted = Rc::clone(&self.gpu_init_attempted);
         let gpu_in_use = Rc::clone(&self.gpu_in_use);
         let canvas_element = canvas.clone();
-        let xray_enabled = Rc::clone(&self.xray_enabled);
         let gpu_result_buffer = Rc::clone(&self.gpu_result_buffer);
         let tile_results = Rc::clone(&self.tile_results);
-        let options = Rc::clone(&self.options);
-        let palette = Rc::clone(&self.palette);
-        let colorizer = Rc::clone(&self.colorizer);
-        let cached_context = Rc::clone(&self.cached_context);
+        let pipeline = Rc::clone(&self.pipeline);
         let progress = self.progress;
         let config = self.config;
         let viewport_clone = viewport.clone();
@@ -370,13 +311,9 @@ impl ParallelRenderer {
                 let gpu_init_attempted = Rc::clone(&gpu_init_attempted);
                 let gpu_in_use = Rc::clone(&gpu_in_use);
                 let canvas_element = canvas_element.clone();
-                let xray_enabled = Rc::clone(&xray_enabled);
                 let gpu_result_buffer = Rc::clone(&gpu_result_buffer);
                 let tile_results = Rc::clone(&tile_results);
-                let options = Rc::clone(&options);
-                let palette = Rc::clone(&palette);
-                let colorizer = Rc::clone(&colorizer);
-                let cached_context = Rc::clone(&cached_context);
+                let pipeline = Rc::clone(&pipeline);
                 let viewport = viewport_clone.clone();
                 let orbit_data_clone = Rc::clone(&orbit_data);
 
@@ -410,17 +347,13 @@ impl ParallelRenderer {
                         progressive_gpu_renderer,
                         gpu_in_use,
                         canvas_element,
-                        xray_enabled,
                         gpu_result_buffer,
                         tile_results,
                         progress,
                         viewport,
                         orbit_data_clone,
                         render_start_time,
-                        options,
-                        palette,
-                        colorizer,
-                        cached_context,
+                        pipeline,
                     );
                 });
             },
@@ -462,17 +395,13 @@ fn schedule_row_set(
     progressive_gpu_renderer: Rc<RefCell<Option<ProgressiveGpuRenderer>>>,
     gpu_in_use: Rc<Cell<bool>>,
     canvas_element: HtmlCanvasElement,
-    xray_enabled: Rc<Cell<bool>>,
     gpu_result_buffer: Rc<RefCell<Vec<ComputeData>>>,
     tile_results: Rc<RefCell<Vec<TileResult>>>,
     progress: RwSignal<RenderProgress>,
     viewport: Viewport,
     orbit_data: Rc<OrbitCompleteData>,
     render_start_time: f64,
-    options: Rc<RefCell<ColorOptions>>,
-    palette: Rc<RefCell<Palette>>,
-    colorizer: Rc<RefCell<ColorizerKind>>,
-    cached_context: Rc<RefCell<Option<SmoothIterationContext>>>,
+    pipeline: Rc<RefCell<ColorPipeline>>,
 ) {
     // Check generation - abort if stale
     if generation.get() != expected_gen {
@@ -487,15 +416,11 @@ fn schedule_row_set(
     let progressive_gpu_renderer_spawn = Rc::clone(&progressive_gpu_renderer);
     let gpu_in_use_spawn = Rc::clone(&gpu_in_use);
     let canvas_element_spawn = canvas_element.clone();
-    let xray_enabled_spawn = Rc::clone(&xray_enabled);
     let gpu_result_buffer_spawn = Rc::clone(&gpu_result_buffer);
     let tile_results_spawn = Rc::clone(&tile_results);
     let viewport_spawn = viewport.clone();
     let orbit_data_spawn = Rc::clone(&orbit_data);
-    let options_spawn = Rc::clone(&options);
-    let palette_spawn = Rc::clone(&palette);
-    let colorizer_spawn = Rc::clone(&colorizer);
-    let cached_context_spawn = Rc::clone(&cached_context);
+    let pipeline_spawn = Rc::clone(&pipeline);
 
     wasm_bindgen_futures::spawn_local(async move {
         // Convert viewport to HDRFloat format for delta computation
@@ -626,16 +551,10 @@ fn schedule_row_set(
                     }
                 }
 
-                // Draw progress: colorize and draw the rows from this row-set
-                // Use cached context from previous render for histogram-based coloring
-                let xray = xray_enabled_spawn.get();
+                // Draw progress: colorize rows using pipeline
                 if let Ok(ctx) = get_2d_context(&canvas_element_spawn) {
-                    let opts = options_spawn.borrow();
-                    let pal = palette_spawn.borrow();
-                    let col = colorizer_spawn.borrow();
-                    let cached_ctx = cached_context_spawn.borrow();
+                    let pipeline = pipeline_spawn.borrow();
 
-                    // Draw each row in this row-set
                     let mut data_idx = 0;
                     for local_row in 0..rows_per_set {
                         let global_row = local_row * row_set_count + row_set_index;
@@ -643,36 +562,15 @@ fn schedule_row_set(
                             break;
                         }
 
-                        // Colorize single row - use cached histogram if available
                         let row_end = (data_idx + width as usize).min(result.data.len());
-                        let row_pixels: Vec<u8> = if !xray {
-                            if let Some(ref cached) = *cached_ctx {
-                                // Use cached histogram from previous render for percentile lookup
-                                result.data[data_idx..row_end]
-                                    .iter()
-                                    .flat_map(|d| {
-                                        col.colorize_with_cached_histogram(d, cached, &opts, &pal)
-                                    })
-                                    .collect()
-                            } else {
-                                // No cached context, use simple colorization
-                                result.data[data_idx..row_end]
-                                    .iter()
-                                    .flat_map(|d| colorize_with_palette(d, &opts, &pal, &col, xray))
-                                    .collect()
-                            }
-                        } else {
-                            // X-ray mode always uses simple colorization
-                            result.data[data_idx..row_end]
-                                .iter()
-                                .flat_map(|d| colorize_with_palette(d, &opts, &pal, &col, xray))
-                                .collect()
-                        };
+                        let row_pixels: Vec<u8> = pipeline
+                            .colorize_chunk(&result.data[data_idx..row_end])
+                            .into_iter()
+                            .flatten()
+                            .collect();
 
-                        // Draw row at correct y position
                         let _ =
                             draw_pixels_to_canvas(&ctx, &row_pixels, width, 0.0, global_row as f64);
-
                         data_idx += width as usize;
                     }
                 }
@@ -686,37 +584,23 @@ fn schedule_row_set(
                 });
 
                 if is_final {
-                    // Run full colorizer pipeline on complete buffer
-                    let (final_pixels, full_buffer_clone, new_context) = {
-                        let opts = options_spawn.borrow();
-                        let pal = palette_spawn.borrow();
-                        let col = colorizer_spawn.borrow();
+                    let (final_pixels, full_buffer_clone) = {
                         let full_buffer = gpu_result_buffer_spawn.borrow();
                         let reference_width = config
                             .default_viewport(viewport_spawn.precision_bits())
                             .width;
                         let zoom_level = reference_width.to_f64() / viewport_spawn.width.to_f64();
 
-                        // Create context for this render (will be cached for next render)
-                        let new_context = col.create_context(&full_buffer, &opts);
-
-                        // Use the new context for final colorization
-                        let final_pixels = col.run_pipeline_with_context(
+                        let mut pipeline = pipeline_spawn.borrow_mut();
+                        let final_pixels = pipeline.colorize_final(
                             &full_buffer,
-                            &new_context,
-                            &opts,
-                            &pal,
                             width as usize,
                             height as usize,
                             zoom_level,
-                            xray,
                         );
 
-                        (final_pixels, full_buffer.clone(), new_context)
+                        (final_pixels, full_buffer.clone())
                     };
-
-                    // Cache context for next progressive render
-                    *cached_context_spawn.borrow_mut() = Some(new_context);
 
                     // Store for recolorize
                     tile_results_spawn.borrow_mut().clear();
@@ -752,17 +636,13 @@ fn schedule_row_set(
                             progressive_gpu_renderer_spawn,
                             gpu_in_use_spawn,
                             canvas_element_spawn,
-                            xray_enabled_spawn,
                             gpu_result_buffer_spawn,
                             tile_results_spawn,
                             progress,
                             viewport_spawn,
                             orbit_data_spawn,
                             render_start_time,
-                            options_spawn,
-                            palette_spawn,
-                            colorizer_spawn,
-                            cached_context_spawn,
+                            pipeline_spawn,
                         );
                     });
                 }
