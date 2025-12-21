@@ -34,6 +34,7 @@ pub enum MainToWorker {
         orbit_id: u32,
         c_ref: (f64, f64),
         orbit: Vec<(f64, f64)>,
+        derivative: Vec<(f64, f64)>,
         escaped_at: Option<u32>,
         /// Maximum |δc| for any pixel in viewport (for BLA table construction)
         dc_max: f64,
@@ -212,6 +213,7 @@ mod tests {
             orbit_id: 1,
             c_ref: (-0.5, 0.0),
             orbit: vec![(0.0, 0.0), (-0.5, 0.0), (-0.25, 0.0)],
+            derivative: vec![(0.0, 0.0), (1.0, 0.0), (1.5, 0.0)],
             escaped_at: None,
             dc_max: 0.01,
             bla_enabled: true,
@@ -220,10 +222,11 @@ mod tests {
         let parsed: MainToWorker = serde_json::from_str(&json).unwrap();
         match parsed {
             MainToWorker::StoreReferenceOrbit {
-                orbit_id, orbit, ..
+                orbit_id, orbit, derivative, ..
             } => {
                 assert_eq!(orbit_id, 1);
                 assert_eq!(orbit.len(), 3);
+                assert_eq!(derivative.len(), 3);
             }
             _ => panic!("Wrong variant"),
         }
@@ -320,6 +323,7 @@ mod tests {
             orbit_id: 1,
             c_ref: (-0.5, 0.0),
             orbit: vec![(0.0, 0.0), (-0.5, 0.0)],
+            derivative: vec![(0.0, 0.0), (1.0, 0.0)],
             escaped_at: None,
             dc_max: 0.001,
             bla_enabled: true,
