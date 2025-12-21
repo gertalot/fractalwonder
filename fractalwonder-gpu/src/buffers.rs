@@ -202,6 +202,8 @@ pub struct ProgressiveGpuBuffers {
     // Persistent state (read-write, kept on GPU between chunks)
     pub z_re: wgpu::Buffer,
     pub z_im: wgpu::Buffer,
+    pub drho_re: wgpu::Buffer,
+    pub drho_im: wgpu::Buffer,
     pub iter_count: wgpu::Buffer,
     pub escaped: wgpu::Buffer,
     pub orbit_index: wgpu::Buffer,
@@ -210,11 +212,19 @@ pub struct ProgressiveGpuBuffers {
     pub results: wgpu::Buffer,
     pub glitch_flags: wgpu::Buffer,
     pub z_norm_sq: wgpu::Buffer,
+    pub final_z_re: wgpu::Buffer,
+    pub final_z_im: wgpu::Buffer,
+    pub final_derivative_re: wgpu::Buffer,
+    pub final_derivative_im: wgpu::Buffer,
 
     // Staging buffers for CPU readback
     pub staging_results: wgpu::Buffer,
     pub staging_glitches: wgpu::Buffer,
     pub staging_z_norm_sq: wgpu::Buffer,
+    pub staging_final_z_re: wgpu::Buffer,
+    pub staging_final_z_im: wgpu::Buffer,
+    pub staging_final_derivative_re: wgpu::Buffer,
+    pub staging_final_derivative_im: wgpu::Buffer,
 
     // Sync buffer for WASM chunk synchronization (4 bytes)
     pub sync_staging: wgpu::Buffer,
@@ -257,6 +267,21 @@ impl ProgressiveGpuBuffers {
 
         let z_im = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("progressive_z_im"),
+            size: (pixel_count * 3 * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Derivative state buffers - HDRFloat δρ uses 3 f32s per component (head, tail, exp as f32)
+        let drho_re = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_drho_re"),
+            size: (pixel_count * 3 * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let drho_im = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_drho_im"),
             size: (pixel_count * 3 * std::mem::size_of::<f32>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -311,6 +336,43 @@ impl ProgressiveGpuBuffers {
             mapped_at_creation: false,
         });
 
+        // Final value output buffers (f32 per pixel)
+        let final_z_re = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_final_z_re"),
+            size: (pixel_count * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let final_z_im = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_final_z_im"),
+            size: (pixel_count * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let final_derivative_re = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_final_derivative_re"),
+            size: (pixel_count * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let final_derivative_im = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_final_derivative_im"),
+            size: (pixel_count * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         // Staging buffers
         let staging_results = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("progressive_staging_results"),
@@ -333,6 +395,34 @@ impl ProgressiveGpuBuffers {
             mapped_at_creation: false,
         });
 
+        let staging_final_z_re = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_staging_final_z_re"),
+            size: (pixel_count * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let staging_final_z_im = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_staging_final_z_im"),
+            size: (pixel_count * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let staging_final_derivative_re = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_staging_final_derivative_re"),
+            size: (pixel_count * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let staging_final_derivative_im = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_staging_final_derivative_im"),
+            size: (pixel_count * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         // Tiny sync buffer for WASM chunk synchronization
         let sync_staging = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("progressive_sync_staging"),
@@ -346,15 +436,25 @@ impl ProgressiveGpuBuffers {
             reference_orbit,
             z_re,
             z_im,
+            drho_re,
+            drho_im,
             iter_count,
             escaped,
             orbit_index,
             results,
             glitch_flags,
             z_norm_sq,
+            final_z_re,
+            final_z_im,
+            final_derivative_re,
+            final_derivative_im,
             staging_results,
             staging_glitches,
             staging_z_norm_sq,
+            staging_final_z_re,
+            staging_final_z_im,
+            staging_final_derivative_re,
+            staging_final_derivative_im,
             sync_staging,
             orbit_capacity: orbit_len,
             row_set_pixel_count,

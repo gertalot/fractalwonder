@@ -317,6 +317,30 @@ impl ProgressiveGpuRenderer {
                         binding: 9,
                         resource: buffers.z_norm_sq.as_entire_binding(),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 10,
+                        resource: buffers.drho_re.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 11,
+                        resource: buffers.drho_im.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 12,
+                        resource: buffers.final_z_re.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 13,
+                        resource: buffers.final_z_im.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 14,
+                        resource: buffers.final_derivative_re.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 15,
+                        resource: buffers.final_derivative_im.as_entire_binding(),
+                    },
                 ],
             });
 
