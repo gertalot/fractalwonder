@@ -218,6 +218,10 @@ mod tests {
                 escaped: true,
                 glitched: false,
                 final_z_norm_sq: 100000.0,
+                final_z_re: 0.0,
+                final_z_im: 0.0,
+                final_derivative_re: 0.0,
+                final_derivative_im: 0.0,
             }),
             ComputeData::Mandelbrot(MandelbrotData {
                 iterations: 0,
@@ -225,6 +229,10 @@ mod tests {
                 escaped: false,
                 glitched: false,
                 final_z_norm_sq: 0.0,
+                final_z_re: 0.0,
+                final_z_im: 0.0,
+                final_derivative_re: 0.0,
+                final_derivative_im: 0.0,
             }),
         ];
 

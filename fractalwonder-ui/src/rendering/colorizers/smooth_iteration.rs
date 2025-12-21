@@ -243,6 +243,10 @@ mod tests {
             escaped: false,
             glitched: false,
             final_z_norm_sq: 4.0,
+            final_z_re: 0.0,
+            final_z_im: 0.0,
+            final_derivative_re: 0.0,
+            final_derivative_im: 0.0,
         };
         let smooth = compute_smooth_iteration(&data);
         assert_eq!(smooth, 1000.0);
@@ -256,6 +260,10 @@ mod tests {
             escaped: true,
             glitched: false,
             final_z_norm_sq: 100000.0,
+            final_z_re: 0.0,
+            final_z_im: 0.0,
+            final_derivative_re: 0.0,
+            final_derivative_im: 0.0,
         };
         let smooth = compute_smooth_iteration(&data);
         // Should be close to 10 but with fractional adjustment
@@ -276,6 +284,10 @@ mod tests {
             escaped: true,
             glitched: false,
             final_z_norm_sq: z_norm_sq,
+            final_z_re: 0.0,
+            final_z_im: 0.0,
+            final_derivative_re: 0.0,
+            final_derivative_im: 0.0,
         })
     }
 
@@ -286,6 +298,10 @@ mod tests {
             escaped: false,
             glitched: false,
             final_z_norm_sq: 0.0,
+            final_z_re: 0.0,
+            final_z_im: 0.0,
+            final_derivative_re: 0.0,
+            final_derivative_im: 0.0,
         })
     }
 
@@ -355,6 +371,10 @@ mod tests {
             escaped: true,
             glitched: false,
             final_z_norm_sq: 70000.0, // Just over escape threshold (256² = 65536)
+            final_z_re: 0.0,
+            final_z_im: 0.0,
+            final_derivative_re: 0.0,
+            final_derivative_im: 0.0,
         });
 
         let data2 = ComputeData::Mandelbrot(MandelbrotData {
@@ -363,6 +383,10 @@ mod tests {
             escaped: true,
             glitched: false,
             final_z_norm_sq: 100000000.0, // Very large |z|²
+            final_z_re: 0.0,
+            final_z_im: 0.0,
+            final_derivative_re: 0.0,
+            final_derivative_im: 0.0,
         });
 
         let palette = options.palette();
@@ -424,6 +448,10 @@ mod tests {
                 escaped: true,
                 glitched: false,
                 final_z_norm_sq: 100000.0,
+                final_z_re: 0.0,
+                final_z_im: 0.0,
+                final_derivative_re: 0.0,
+                final_derivative_im: 0.0,
             }),
             ComputeData::Mandelbrot(MandelbrotData {
                 iterations: 10,
@@ -431,6 +459,10 @@ mod tests {
                 escaped: false, // Interior point
                 glitched: false,
                 final_z_norm_sq: 0.0,
+                final_z_re: 0.0,
+                final_z_im: 0.0,
+                final_derivative_re: 0.0,
+                final_derivative_im: 0.0,
             }),
         ];
 
@@ -464,6 +496,10 @@ mod tests {
                     escaped: true,
                     glitched: false,
                     final_z_norm_sq: 100000.0,
+                    final_z_re: 0.0,
+                    final_z_im: 0.0,
+                    final_derivative_re: 0.0,
+                    final_derivative_im: 0.0,
                 })
             })
             .collect();
@@ -505,6 +541,10 @@ mod tests {
                 escaped: true,
                 glitched: false,
                 final_z_norm_sq: 100000.0,
+                final_z_re: 0.0,
+                final_z_im: 0.0,
+                final_derivative_re: 0.0,
+                final_derivative_im: 0.0,
             }));
         }
         for _ in 0..10 {
@@ -514,6 +554,10 @@ mod tests {
                 escaped: true,
                 glitched: false,
                 final_z_norm_sq: 100000.0,
+                final_z_re: 0.0,
+                final_z_im: 0.0,
+                final_derivative_re: 0.0,
+                final_derivative_im: 0.0,
             }));
         }
 
@@ -555,6 +599,10 @@ mod tests {
                 escaped: true,
                 glitched: false,
                 final_z_norm_sq: 70000.0, // Just over escape threshold
+                final_z_re: 0.0,
+                final_z_im: 0.0,
+                final_derivative_re: 0.0,
+                final_derivative_im: 0.0,
             }),
             ComputeData::Mandelbrot(MandelbrotData {
                 iterations: 5,
@@ -562,6 +610,10 @@ mod tests {
                 escaped: true,
                 glitched: false,
                 final_z_norm_sq: 100000000.0, // Very large
+                final_z_re: 0.0,
+                final_z_im: 0.0,
+                final_derivative_re: 0.0,
+                final_derivative_im: 0.0,
             }),
         ];
 
