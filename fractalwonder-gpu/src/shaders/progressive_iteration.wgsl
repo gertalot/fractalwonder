@@ -233,78 +233,72 @@ struct Uniforms {
 // This uses full HDRFloat representation matching CPU: value = (head + tail) × 2^exp
 @group(0) @binding(1) var<storage, read> reference_orbit: array<f32>;
 
-// Persistent state buffers - HDRFloat stored as 3 consecutive f32s (head, tail, exp as f32)
-@group(0) @binding(2) var<storage, read_write> z_re: array<f32>;
-@group(0) @binding(3) var<storage, read_write> z_im: array<f32>;
-@group(0) @binding(4) var<storage, read_write> iter_count: array<u32>;
-@group(0) @binding(5) var<storage, read_write> escaped_buf: array<u32>;
-@group(0) @binding(6) var<storage, read_write> orbit_index: array<u32>;
+// Persistent state buffers
+// z_state: 6 f32s per pixel (z_re head/tail/exp, z_im head/tail/exp)
+@group(0) @binding(2) var<storage, read_write> z_state: array<f32>;
+@group(0) @binding(3) var<storage, read_write> iter_count: array<u32>;
+@group(0) @binding(4) var<storage, read_write> escaped_buf: array<u32>;
+@group(0) @binding(5) var<storage, read_write> orbit_index: array<u32>;
 
 // Result buffers
-@group(0) @binding(7) var<storage, read_write> results: array<u32>;
-@group(0) @binding(8) var<storage, read_write> glitch_flags: array<u32>;
-@group(0) @binding(9) var<storage, read_write> z_norm_sq: array<f32>;
+@group(0) @binding(6) var<storage, read_write> results: array<u32>;
+@group(0) @binding(7) var<storage, read_write> glitch_flags: array<u32>;
+@group(0) @binding(8) var<storage, read_write> z_norm_sq: array<f32>;
 
-// Derivative state buffers - HDRFloat stored as 3 consecutive f32s (head, tail, exp as f32)
-@group(0) @binding(10) var<storage, read_write> drho_re: array<f32>;
-@group(0) @binding(11) var<storage, read_write> drho_im: array<f32>;
+// Derivative state buffer: 6 f32s per pixel (drho_re head/tail/exp, drho_im head/tail/exp)
+@group(0) @binding(9) var<storage, read_write> drho_state: array<f32>;
 
-// Final value output buffers
-@group(0) @binding(12) var<storage, read_write> final_z_re_buf: array<f32>;
-@group(0) @binding(13) var<storage, read_write> final_z_im_buf: array<f32>;
-@group(0) @binding(14) var<storage, read_write> final_der_re_buf: array<f32>;
-@group(0) @binding(15) var<storage, read_write> final_der_im_buf: array<f32>;
+// Final value output buffer: 4 f32s per pixel (z_re, z_im, der_re, der_im)
+@group(0) @binding(10) var<storage, read_write> final_values: array<f32>;
 
-// Inline helper functions for z_re buffer
+// z_state layout: 6 f32s per pixel [z_re.head, z_re.tail, z_re.exp, z_im.head, z_im.tail, z_im.exp]
 fn load_z_re(idx: u32) -> HDRFloat {
-    let base = idx * 3u;
-    return HDRFloat(z_re[base], z_re[base + 1u], i32(bitcast<u32>(z_re[base + 2u])));
+    let base = idx * 6u;
+    return HDRFloat(z_state[base], z_state[base + 1u], i32(bitcast<u32>(z_state[base + 2u])));
 }
 
 fn store_z_re(idx: u32, val: HDRFloat) {
-    let base = idx * 3u;
-    z_re[base] = val.head;
-    z_re[base + 1u] = val.tail;
-    z_re[base + 2u] = bitcast<f32>(u32(val.exp));
+    let base = idx * 6u;
+    z_state[base] = val.head;
+    z_state[base + 1u] = val.tail;
+    z_state[base + 2u] = bitcast<f32>(u32(val.exp));
 }
 
-// Inline helper functions for z_im buffer
 fn load_z_im(idx: u32) -> HDRFloat {
-    let base = idx * 3u;
-    return HDRFloat(z_im[base], z_im[base + 1u], i32(bitcast<u32>(z_im[base + 2u])));
+    let base = idx * 6u + 3u;
+    return HDRFloat(z_state[base], z_state[base + 1u], i32(bitcast<u32>(z_state[base + 2u])));
 }
 
 fn store_z_im(idx: u32, val: HDRFloat) {
-    let base = idx * 3u;
-    z_im[base] = val.head;
-    z_im[base + 1u] = val.tail;
-    z_im[base + 2u] = bitcast<f32>(u32(val.exp));
+    let base = idx * 6u + 3u;
+    z_state[base] = val.head;
+    z_state[base + 1u] = val.tail;
+    z_state[base + 2u] = bitcast<f32>(u32(val.exp));
 }
 
-// Inline helper functions for drho_re buffer
+// drho_state layout: 6 f32s per pixel [drho_re.head, drho_re.tail, drho_re.exp, drho_im.head, drho_im.tail, drho_im.exp]
 fn load_drho_re(idx: u32) -> HDRFloat {
-    let base = idx * 3u;
-    return HDRFloat(drho_re[base], drho_re[base + 1u], i32(bitcast<u32>(drho_re[base + 2u])));
+    let base = idx * 6u;
+    return HDRFloat(drho_state[base], drho_state[base + 1u], i32(bitcast<u32>(drho_state[base + 2u])));
 }
 
 fn store_drho_re(idx: u32, val: HDRFloat) {
-    let base = idx * 3u;
-    drho_re[base] = val.head;
-    drho_re[base + 1u] = val.tail;
-    drho_re[base + 2u] = bitcast<f32>(u32(val.exp));
+    let base = idx * 6u;
+    drho_state[base] = val.head;
+    drho_state[base + 1u] = val.tail;
+    drho_state[base + 2u] = bitcast<f32>(u32(val.exp));
 }
 
-// Inline helper functions for drho_im buffer
 fn load_drho_im(idx: u32) -> HDRFloat {
-    let base = idx * 3u;
-    return HDRFloat(drho_im[base], drho_im[base + 1u], i32(bitcast<u32>(drho_im[base + 2u])));
+    let base = idx * 6u + 3u;
+    return HDRFloat(drho_state[base], drho_state[base + 1u], i32(bitcast<u32>(drho_state[base + 2u])));
 }
 
 fn store_drho_im(idx: u32, val: HDRFloat) {
-    let base = idx * 3u;
-    drho_im[base] = val.head;
-    drho_im[base + 1u] = val.tail;
-    drho_im[base + 2u] = bitcast<f32>(u32(val.exp));
+    let base = idx * 6u + 3u;
+    drho_state[base] = val.head;
+    drho_state[base + 1u] = val.tail;
+    drho_state[base + 2u] = bitcast<f32>(u32(val.exp));
 }
 
 @compute @workgroup_size(64)
@@ -410,11 +404,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             let rho_re = hdr_add(der_m_hdr_re, drho.re);
             let rho_im = hdr_add(der_m_hdr_im, drho.im);
 
-            // Store final values as f32
-            final_z_re_buf[linear_idx] = hdr_to_f32(z_re_full);
-            final_z_im_buf[linear_idx] = hdr_to_f32(z_im_full);
-            final_der_re_buf[linear_idx] = hdr_to_f32(rho_re);
-            final_der_im_buf[linear_idx] = hdr_to_f32(rho_im);
+            // Store final values as f32 (packed: z_re, z_im, der_re, der_im)
+            let final_base = linear_idx * 4u;
+            final_values[final_base] = hdr_to_f32(z_re_full);
+            final_values[final_base + 1u] = hdr_to_f32(z_im_full);
+            final_values[final_base + 2u] = hdr_to_f32(rho_re);
+            final_values[final_base + 3u] = hdr_to_f32(rho_im);
 
             escaped_buf[linear_idx] = 1u;
             results[linear_idx] = n;

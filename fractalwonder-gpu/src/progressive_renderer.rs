@@ -214,7 +214,10 @@ impl ProgressiveGpuRenderer {
 
         // Zero out all state buffers
         let zeros_u32: Vec<u32> = vec![0; pixel_count as usize];
-        let zeros_f32: Vec<f32> = vec![0.0; pixel_count as usize * 3]; // HDRFloat is 3 f32s
+        // z_state: 6 f32s per pixel (z_re head/tail/exp + z_im head/tail/exp)
+        let zeros_z_state: Vec<f32> = vec![0.0; pixel_count as usize * 6];
+        // drho_state: 6 f32s per pixel (drho_re head/tail/exp + drho_im head/tail/exp)
+        let zeros_drho_state: Vec<f32> = vec![0.0; pixel_count as usize * 6];
 
         // Initialize results to a sentinel value (999) to detect if shader writes to it
         let sentinel_results: Vec<u32> = vec![999; pixel_count as usize];
@@ -226,10 +229,12 @@ impl ProgressiveGpuRenderer {
 
         self.context
             .queue
-            .write_buffer(&buffers.z_re, 0, bytemuck::cast_slice(&zeros_f32));
-        self.context
-            .queue
-            .write_buffer(&buffers.z_im, 0, bytemuck::cast_slice(&zeros_f32));
+            .write_buffer(&buffers.z_state, 0, bytemuck::cast_slice(&zeros_z_state));
+        self.context.queue.write_buffer(
+            &buffers.drho_state,
+            0,
+            bytemuck::cast_slice(&zeros_drho_state),
+        );
         self.context
             .queue
             .write_buffer(&buffers.iter_count, 0, bytemuck::cast_slice(&zeros_u32));
@@ -300,59 +305,39 @@ impl ProgressiveGpuRenderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: buffers.z_re.as_entire_binding(),
+                        resource: buffers.z_state.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
-                        resource: buffers.z_im.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 4,
                         resource: buffers.iter_count.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 5,
+                        binding: 4,
                         resource: buffers.escaped.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 6,
+                        binding: 5,
                         resource: buffers.orbit_index.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 7,
+                        binding: 6,
                         resource: buffers.results.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 8,
+                        binding: 7,
                         resource: buffers.glitch_flags.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 9,
+                        binding: 8,
                         resource: buffers.z_norm_sq.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
+                        binding: 9,
+                        resource: buffers.drho_state.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
                         binding: 10,
-                        resource: buffers.drho_re.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 11,
-                        resource: buffers.drho_im.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 12,
-                        resource: buffers.final_z_re.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 13,
-                        resource: buffers.final_z_im.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 14,
-                        resource: buffers.final_derivative_re.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 15,
-                        resource: buffers.final_derivative_im.as_entire_binding(),
+                        resource: buffers.final_values.as_entire_binding(),
                     },
                 ],
             });
@@ -444,6 +429,8 @@ impl ProgressiveGpuRenderer {
         // Copy to staging buffers
         let u32_byte_size = (count * std::mem::size_of::<u32>()) as u64;
         let f32_byte_size = (count * std::mem::size_of::<f32>()) as u64;
+        // final_values: 4 f32s per pixel (z_re, z_im, der_re, der_im)
+        let final_values_byte_size = (count * 4 * std::mem::size_of::<f32>()) as u64;
 
         let mut encoder =
             self.context
@@ -474,32 +461,11 @@ impl ProgressiveGpuRenderer {
             f32_byte_size,
         );
         encoder.copy_buffer_to_buffer(
-            &buffers.final_z_re,
+            &buffers.final_values,
             0,
-            &buffers.staging_final_z_re,
+            &buffers.staging_final_values,
             0,
-            f32_byte_size,
-        );
-        encoder.copy_buffer_to_buffer(
-            &buffers.final_z_im,
-            0,
-            &buffers.staging_final_z_im,
-            0,
-            f32_byte_size,
-        );
-        encoder.copy_buffer_to_buffer(
-            &buffers.final_derivative_re,
-            0,
-            &buffers.staging_final_derivative_re,
-            0,
-            f32_byte_size,
-        );
-        encoder.copy_buffer_to_buffer(
-            &buffers.final_derivative_im,
-            0,
-            &buffers.staging_final_derivative_im,
-            0,
-            f32_byte_size,
+            final_values_byte_size,
         );
 
         self.context.queue.submit(std::iter::once(encoder.finish()));
@@ -508,18 +474,12 @@ impl ProgressiveGpuRenderer {
         let results_slice = buffers.staging_results.slice(..u32_byte_size);
         let glitches_slice = buffers.staging_glitches.slice(..u32_byte_size);
         let z_norm_sq_slice = buffers.staging_z_norm_sq.slice(..f32_byte_size);
-        let final_z_re_slice = buffers.staging_final_z_re.slice(..f32_byte_size);
-        let final_z_im_slice = buffers.staging_final_z_im.slice(..f32_byte_size);
-        let final_der_re_slice = buffers.staging_final_derivative_re.slice(..f32_byte_size);
-        let final_der_im_slice = buffers.staging_final_derivative_im.slice(..f32_byte_size);
+        let final_values_slice = buffers.staging_final_values.slice(..final_values_byte_size);
 
         let (tx1, rx1) = futures_channel::oneshot::channel();
         let (tx2, rx2) = futures_channel::oneshot::channel();
         let (tx3, rx3) = futures_channel::oneshot::channel();
         let (tx4, rx4) = futures_channel::oneshot::channel();
-        let (tx5, rx5) = futures_channel::oneshot::channel();
-        let (tx6, rx6) = futures_channel::oneshot::channel();
-        let (tx7, rx7) = futures_channel::oneshot::channel();
 
         results_slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx1.send(r);
@@ -530,17 +490,8 @@ impl ProgressiveGpuRenderer {
         z_norm_sq_slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx3.send(r);
         });
-        final_z_re_slice.map_async(wgpu::MapMode::Read, move |r| {
+        final_values_slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx4.send(r);
-        });
-        final_z_im_slice.map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx5.send(r);
-        });
-        final_der_re_slice.map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx6.send(r);
-        });
-        final_der_im_slice.map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx7.send(r);
         });
 
         #[cfg(target_arch = "wasm32")]
@@ -561,15 +512,6 @@ impl ProgressiveGpuRenderer {
         rx4.await
             .map_err(|_| GpuError::Unavailable("Channel closed".into()))?
             .map_err(GpuError::BufferMap)?;
-        rx5.await
-            .map_err(|_| GpuError::Unavailable("Channel closed".into()))?
-            .map_err(GpuError::BufferMap)?;
-        rx6.await
-            .map_err(|_| GpuError::Unavailable("Channel closed".into()))?
-            .map_err(GpuError::BufferMap)?;
-        rx7.await
-            .map_err(|_| GpuError::Unavailable("Channel closed".into()))?
-            .map_err(GpuError::BufferMap)?;
 
         let iterations: Vec<u32> = {
             let view = results_slice.get_mapped_range();
@@ -583,30 +525,31 @@ impl ProgressiveGpuRenderer {
             let view = z_norm_sq_slice.get_mapped_range();
             bytemuck::cast_slice(&view).to_vec()
         };
-        let final_z_re_data: Vec<f32> = {
-            let view = final_z_re_slice.get_mapped_range();
+
+        // Unpack final_values: 4 f32s per pixel (z_re, z_im, der_re, der_im)
+        let final_values_data: Vec<f32> = {
+            let view = final_values_slice.get_mapped_range();
             bytemuck::cast_slice(&view).to_vec()
         };
-        let final_z_im_data: Vec<f32> = {
-            let view = final_z_im_slice.get_mapped_range();
-            bytemuck::cast_slice(&view).to_vec()
-        };
-        let final_der_re_data: Vec<f32> = {
-            let view = final_der_re_slice.get_mapped_range();
-            bytemuck::cast_slice(&view).to_vec()
-        };
-        let final_der_im_data: Vec<f32> = {
-            let view = final_der_im_slice.get_mapped_range();
-            bytemuck::cast_slice(&view).to_vec()
-        };
+
+        // Unpack into separate vectors
+        let mut final_z_re_data = Vec::with_capacity(count);
+        let mut final_z_im_data = Vec::with_capacity(count);
+        let mut final_der_re_data = Vec::with_capacity(count);
+        let mut final_der_im_data = Vec::with_capacity(count);
+
+        for i in 0..count {
+            let base = i * 4;
+            final_z_re_data.push(final_values_data[base]);
+            final_z_im_data.push(final_values_data[base + 1]);
+            final_der_re_data.push(final_values_data[base + 2]);
+            final_der_im_data.push(final_values_data[base + 3]);
+        }
 
         buffers.staging_results.unmap();
         buffers.staging_glitches.unmap();
         buffers.staging_z_norm_sq.unmap();
-        buffers.staging_final_z_re.unmap();
-        buffers.staging_final_z_im.unmap();
-        buffers.staging_final_derivative_re.unmap();
-        buffers.staging_final_derivative_im.unmap();
+        buffers.staging_final_values.unmap();
 
         Ok((
             iterations,

@@ -265,22 +265,6 @@ impl Palette {
             [5, 0, 10],      // Near black (purple tint)
             [200, 150, 100], // Muted tan
             [5, 0, 10],      // Near black (purple tint)
-            [200, 150, 100], // Muted tan
-            [80, 50, 40],    // Brown
-            [20, 10, 20],    // Dark purple
-            [5, 0, 10],      // Near black (purple tint)
-            [40, 0, 20],     // Dark burgundy
-            [100, 10, 10],   // Dark red
-            [180, 40, 0],    // Red-orange
-            [5, 0, 10],      // Near black (purple tint)
-            [40, 0, 20],     // Dark burgundy
-            [100, 10, 10],   // Dark red
-            [180, 40, 0],    // Red-orange
-            [5, 0, 10],      // Near black (purple tint)
-            [40, 0, 20],     // Dark burgundy
-            [100, 10, 10],   // Dark red
-            [180, 40, 0],    // Red-orange
-            [5, 0, 10],      // Near black (purple tint)
             [40, 0, 20],     // Dark burgundy
             [100, 10, 10],   // Dark red
             [180, 40, 0],    // Red-orange

@@ -15,6 +15,9 @@ impl ProgressiveGpuPipeline {
             ),
         });
 
+        // Bind group layout uses 10 storage buffers to fit within WebGPU browser limits.
+        // Buffer consolidation: z_re+z_im → z_state, drho_re+drho_im → drho_state,
+        // final_z_re+final_z_im+final_der_re+final_der_im → final_values
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("progressive_layout"),
             entries: &[
@@ -40,7 +43,7 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 2: z_re (read-write storage)
+                // binding 2: z_state (combined z_re + z_im, 6 f32s per pixel)
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -51,7 +54,7 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 3: z_im (read-write storage)
+                // binding 3: iter_count (read-write storage)
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -62,7 +65,7 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 4: iter_count (read-write storage)
+                // binding 4: escaped (read-write storage)
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -73,7 +76,7 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 5: escaped (read-write storage)
+                // binding 5: orbit_index (read-write storage)
                 wgpu::BindGroupLayoutEntry {
                     binding: 5,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -84,7 +87,7 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 6: orbit_index (read-write storage)
+                // binding 6: results (read-write storage)
                 wgpu::BindGroupLayoutEntry {
                     binding: 6,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -95,7 +98,7 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 7: results (read-write storage)
+                // binding 7: glitch_flags (read-write storage)
                 wgpu::BindGroupLayoutEntry {
                     binding: 7,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -106,7 +109,7 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 8: glitch_flags (read-write storage)
+                // binding 8: z_norm_sq (read-write storage)
                 wgpu::BindGroupLayoutEntry {
                     binding: 8,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -117,7 +120,7 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 9: z_norm_sq (read-write storage)
+                // binding 9: drho_state (combined drho_re + drho_im, 6 f32s per pixel)
                 wgpu::BindGroupLayoutEntry {
                     binding: 9,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -128,64 +131,9 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 10: drho_re (read-write storage)
+                // binding 10: final_values (combined z_re, z_im, der_re, der_im, 4 f32s per pixel)
                 wgpu::BindGroupLayoutEntry {
                     binding: 10,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // binding 11: drho_im (read-write storage)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 11,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // binding 12: final_z_re (read-write storage)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 12,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // binding 13: final_z_im (read-write storage)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 13,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // binding 14: final_derivative_re (read-write storage)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 14,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // binding 15: final_derivative_im (read-write storage)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 15,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },

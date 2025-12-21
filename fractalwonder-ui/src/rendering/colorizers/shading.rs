@@ -116,7 +116,20 @@ pub fn apply_slope_shading(
             };
 
             // Compute Blinn-Phong shade
-            let shade = blinn_phong(normal, light, settings);
+            let raw_shade = blinn_phong(normal, light, settings);
+
+            // Calculate distance factor: stronger effect far from set, weaker near boundary
+            // normalized_iter: 0.0 = escaped immediately (far), 1.0 = near set boundary
+            let normalized_iter = if m.max_iterations > 0 {
+                (m.iterations as f64) / (m.max_iterations as f64)
+            } else {
+                0.0
+            };
+            let distance_factor = 1.0 - normalized_iter.powf(settings.distance_falloff);
+
+            // Apply strength and distance modulation
+            // shade of 1.0 = no change, deviations are amplified by strength * distance_factor
+            let shade = 1.0 + (raw_shade - 1.0) * settings.strength * distance_factor;
 
             // Apply shade to pixel
             pixels[idx] = apply_shade(pixels[idx], shade);
@@ -173,11 +186,26 @@ mod tests {
         assert!((len - 1.0).abs() < 0.01);
     }
 
+    /// Create test settings with predictable values for unit tests.
+    fn test_settings() -> ShadingSettings {
+        ShadingSettings {
+            enabled: true,
+            light_azimuth: 0.0,
+            light_elevation: std::f64::consts::FRAC_PI_4,
+            ambient: 0.15,
+            diffuse: 0.7,
+            specular: 0.3,
+            shininess: 32.0,
+            strength: 1.0,
+            distance_falloff: 0.0,
+        }
+    }
+
     #[test]
     fn blinn_phong_facing_light() {
         let normal = (0.0, 0.0, 1.0); // Pointing straight up
         let light = (0.0, 0.0, 1.0); // Light from above
-        let settings = ShadingSettings::enabled();
+        let settings = test_settings();
         let shade = blinn_phong(normal, light, &settings);
         // Should be bright (ambient + diffuse + specular)
         assert!(shade > 0.8, "shade = {}", shade);
@@ -187,7 +215,7 @@ mod tests {
     fn blinn_phong_away_from_light() {
         let normal = (0.0, 0.0, 1.0); // Pointing up
         let light = (0.0, 0.0, -1.0); // Light from below
-        let settings = ShadingSettings::enabled();
+        let settings = test_settings();
         let shade = blinn_phong(normal, light, &settings);
         // Should be dark (ambient only, no diffuse/specular)
         assert!(shade < 0.3, "shade = {}", shade);
