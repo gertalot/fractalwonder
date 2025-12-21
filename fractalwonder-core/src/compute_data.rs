@@ -51,6 +51,18 @@ pub struct MandelbrotData {
     /// |z|² at escape for smooth iteration coloring. Interior points store 0.0.
     #[serde(default)]
     pub final_z_norm_sq: f32,
+    /// Real part of z at escape (for derivative-based lighting)
+    #[serde(default)]
+    pub final_z_re: f32,
+    /// Imaginary part of z at escape (for derivative-based lighting)
+    #[serde(default)]
+    pub final_z_im: f32,
+    /// Real part of derivative ρ = dz/dc at escape
+    #[serde(default)]
+    pub final_derivative_re: f32,
+    /// Imaginary part of derivative ρ = dz/dc at escape
+    #[serde(default)]
+    pub final_derivative_im: f32,
 }
 
 /// Unified enum for all compute results.

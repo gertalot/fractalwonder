@@ -343,6 +343,10 @@ impl ParallelRenderer {
                 escaped: false,
                 glitched: false,
                 final_z_norm_sq: 0.0,
+                final_z_re: 0.0,
+                final_z_im: 0.0,
+                final_derivative_re: 0.0,
+                final_derivative_im: 0.0,
             });
             (width * height) as usize
         ];
@@ -473,6 +477,10 @@ impl ParallelRenderer {
                 escaped: false,
                 glitched: false,
                 final_z_norm_sq: 0.0,
+                final_z_re: 0.0,
+                final_z_im: 0.0,
+                final_derivative_re: 0.0,
+                final_derivative_im: 0.0,
             });
             (width * height) as usize
         ];
@@ -1228,6 +1236,10 @@ fn assemble_tiles_to_buffer(tiles: &[TileResult], width: usize, height: usize) -
             escaped: false,
             glitched: false,
             final_z_norm_sq: 0.0,
+            final_z_re: 0.0,
+            final_z_im: 0.0,
+            final_derivative_re: 0.0,
+            final_derivative_im: 0.0,
         });
         width * height
     ];

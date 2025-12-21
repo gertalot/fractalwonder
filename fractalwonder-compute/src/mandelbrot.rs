@@ -54,6 +54,10 @@ impl MandelbrotRenderer {
                     escaped: true,
                     glitched: false,
                     final_z_norm_sq: z_norm_sq.to_f64() as f32,
+                    final_z_re: 0.0,
+                    final_z_im: 0.0,
+                    final_derivative_re: 0.0,
+                    final_derivative_im: 0.0,
                 };
             }
 
@@ -72,6 +76,10 @@ impl MandelbrotRenderer {
             escaped: false,
             glitched: false,
             final_z_norm_sq: 0.0,
+            final_z_re: 0.0,
+            final_z_im: 0.0,
+            final_derivative_re: 0.0,
+            final_derivative_im: 0.0,
         }
     }
 }

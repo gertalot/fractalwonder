@@ -253,6 +253,10 @@ impl GpuPerturbationHDRRenderer {
                     escaped: iter < max_iterations,
                     glitched: glitch_flag != 0,
                     final_z_norm_sq: z_sq,
+                    final_z_re: 0.0,
+                    final_z_im: 0.0,
+                    final_derivative_re: 0.0,
+                    final_derivative_im: 0.0,
                 })
             })
             .collect();
