@@ -43,7 +43,7 @@ impl Default for ShadingSettings {
         Self {
             enabled: false,
             light_angle: std::f64::consts::FRAC_PI_4, // 45° (top-right)
-            height_factor: 1.5,
+            height_factor: -3.0,
             blend: 0.7,
         }
     }
