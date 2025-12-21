@@ -120,12 +120,13 @@ pub fn apply_slope_shading(
 
             // Calculate distance factor: stronger effect far from set, weaker near boundary
             // normalized_iter: 0.0 = escaped immediately (far), 1.0 = near set boundary
+            // Higher distance_falloff = more aggressive suppression near set boundary
             let normalized_iter = if m.max_iterations > 0 {
                 (m.iterations as f64) / (m.max_iterations as f64)
             } else {
                 0.0
             };
-            let distance_factor = 1.0 - normalized_iter.powf(settings.distance_falloff);
+            let distance_factor = (1.0 - normalized_iter).powf(settings.distance_falloff);
 
             // Apply strength and distance modulation
             // shade of 1.0 = no change, deviations are amplified by strength * distance_factor

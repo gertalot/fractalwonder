@@ -85,7 +85,7 @@ impl Default for ShadingSettings {
             specular: 0.9,
             shininess: 64.0,
             strength: 1.5,
-            distance_falloff: 3.0,
+            distance_falloff: 30.0,
         }
     }
 }
