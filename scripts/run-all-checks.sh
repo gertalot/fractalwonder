@@ -2,6 +2,16 @@
 
 RUSTFLAGS="-D warnings"
 
+# Parse arguments
+INCLUDE_IGNORED=""
+for arg in "$@"; do
+    case $arg in
+        --full)
+            INCLUDE_IGNORED="--include-ignored"
+            ;;
+    esac
+done
+
 echo "—————————————— Running cargo fmt ——————————————"
 cargo fmt --all
 
@@ -12,7 +22,7 @@ echo "—————————————— Running cargo check ———�
 cargo check --workspace --all-targets --all-features
 
 echo "—————————————— Running cargo test ——————————————"
-cargo test --workspace --all-targets --all-features
+cargo test --workspace --all-targets --all-features -- $INCLUDE_IGNORED
 
 echo "—————————————— Running wasm-pack test ——————————————"
 wasm-pack test --headless --chrome fractalwonder-ui

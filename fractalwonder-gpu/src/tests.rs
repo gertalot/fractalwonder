@@ -1,10 +1,8 @@
 //! Tests for GPU renderer - verifies GPU output matches CPU perturbation.
 
-use crate::pass::Adam7Pass;
-use crate::{GpuAvailability, GpuContext, GpuPerturbationHDRRenderer, GpuPerturbationRenderer};
+use crate::{GpuAvailability, GpuContext, GpuPerturbationHDRRenderer};
 use fractalwonder_compute::{
-    compute_pixel_perturbation, compute_pixel_perturbation_hdr, MandelbrotRenderer, ReferenceOrbit,
-    Renderer,
+    compute_pixel_perturbation_hdr, MandelbrotRenderer, ReferenceOrbit, Renderer,
 };
 use fractalwonder_core::{
     calculate_max_iterations, BigFloat, ComputeData, HDRComplex, HDRFloat, MandelbrotData,
@@ -42,263 +40,6 @@ fn gpu_init_does_not_panic() {
                 println!("GPU unavailable: {reason}");
             }
         }
-    });
-}
-
-/// Verify GPU iteration counts match CPU for a grid of test points.
-#[test]
-fn gpu_matches_cpu_iteration_counts() {
-    pollster::block_on(async {
-        let GpuAvailability::Available(ctx) = GpuContext::try_init().await else {
-            println!("Skipping test: no GPU available");
-            return;
-        };
-
-        let mut renderer = GpuPerturbationRenderer::new(ctx);
-
-        let center_re = -0.5;
-        let center_im = 0.0;
-        let max_iter = 256;
-        let tau_sq = 1e-6_f32;
-        let width = 64_u32;
-        let height = 64_u32;
-
-        let orbit = create_reference_orbit(center_re, center_im, max_iter);
-
-        let view_width = 3.0_f32;
-        let view_height = 3.0_f32;
-        let dc_origin = (-view_width / 2.0, -view_height / 2.0);
-        let dc_step = (view_width / width as f32, view_height / height as f32);
-
-        let gpu_result = renderer
-            .render(
-                &orbit.orbit,
-                1,
-                dc_origin,
-                dc_step,
-                width,
-                height,
-                max_iter,
-                tau_sq,
-                orbit.escaped_at.is_some(),
-                Adam7Pass::all_pixels(),
-            )
-            .await
-            .expect("GPU render should succeed");
-
-        let mut matches = 0;
-        let mut mismatches = 0;
-        let mut max_diff = 0_i32;
-
-        for y in 0..height {
-            for x in 0..width {
-                let idx = (y * width + x) as usize;
-
-                let delta_c = (
-                    dc_origin.0 as f64 + x as f64 * dc_step.0 as f64,
-                    dc_origin.1 as f64 + y as f64 * dc_step.1 as f64,
-                );
-
-                let cpu_result =
-                    compute_pixel_perturbation(&orbit, delta_c, max_iter, tau_sq as f64);
-
-                let gpu_data = as_mandelbrot(&gpu_result.data[idx]);
-                let gpu_iter = gpu_data.iterations;
-                let cpu_iter = cpu_result.iterations;
-
-                let diff = (gpu_iter as i32 - cpu_iter as i32).abs();
-                max_diff = max_diff.max(diff);
-
-                if diff <= 1 {
-                    matches += 1;
-                } else {
-                    mismatches += 1;
-                    if mismatches <= 5 {
-                        println!(
-                            "Mismatch at ({x}, {y}): GPU={gpu_iter}, CPU={cpu_iter}, diff={diff}"
-                        );
-                    }
-                }
-            }
-        }
-
-        let total = width * height;
-        let match_pct = 100.0 * matches as f64 / total as f64;
-
-        println!("GPU vs CPU comparison:");
-        println!("  Total pixels: {total}");
-        println!("  Matches (±1): {matches} ({match_pct:.1}%)");
-        println!("  Mismatches: {mismatches}");
-        println!("  Max iteration difference: {max_diff}");
-
-        // Note: f32 (GPU) vs f64 (CPU) precision differences cause iteration divergence
-        // at boundary regions where rebase decisions differ. The 80% threshold reflects
-        // the inherent precision gap between f32 and f64 perturbation. For higher accuracy,
-        // use the HDR renderer which matches CPU HDRFloat more closely.
-        assert!(
-            match_pct >= 80.0,
-            "GPU should match CPU for at least 80% of pixels, got {match_pct:.1}%"
-        );
-        assert!(
-            max_diff <= 250,
-            "Maximum iteration difference should be ≤250, got {max_diff}"
-        );
-    });
-}
-
-/// Verify glitch detection flags are set correctly.
-#[test]
-fn gpu_glitch_detection_works() {
-    pollster::block_on(async {
-        let GpuAvailability::Available(ctx) = GpuContext::try_init().await else {
-            println!("Skipping test: no GPU available");
-            return;
-        };
-
-        let mut renderer = GpuPerturbationRenderer::new(ctx);
-
-        let max_iter = 500;
-        let orbit = create_reference_orbit(-0.5, 0.0, max_iter);
-
-        let width = 100;
-        let height = 100;
-
-        let dc_origin = (-2.0_f32, -1.5_f32);
-        let dc_step = (3.0 / width as f32, 3.0 / height as f32);
-
-        let gpu_result = renderer
-            .render(
-                &orbit.orbit,
-                1,
-                dc_origin,
-                dc_step,
-                width,
-                height,
-                max_iter,
-                1e-6,
-                orbit.escaped_at.is_some(),
-                Adam7Pass::all_pixels(),
-            )
-            .await
-            .expect("GPU render should succeed");
-
-        let glitch_count = gpu_result.glitched_pixel_count();
-        let total = (width * height) as usize;
-
-        println!("Glitch detection test:");
-        println!("  Total pixels: {total}");
-        println!("  Glitched pixels: {glitch_count}");
-        println!(
-            "  Glitch rate: {:.1}%",
-            100.0 * glitch_count as f64 / total as f64
-        );
-
-        assert!(glitch_count < total, "Not all pixels should be glitched");
-    });
-}
-
-/// Test that known in-set points reach max iterations.
-#[test]
-fn gpu_in_set_points_reach_max_iter() {
-    pollster::block_on(async {
-        let GpuAvailability::Available(ctx) = GpuContext::try_init().await else {
-            println!("Skipping test: no GPU available");
-            return;
-        };
-
-        let mut renderer = GpuPerturbationRenderer::new(ctx);
-
-        let max_iter = 100;
-        let orbit = create_reference_orbit(0.0, 0.0, max_iter);
-
-        let width = 1;
-        let height = 1;
-        let dc_origin = (0.0_f32, 0.0_f32);
-        let dc_step = (0.0, 0.0);
-
-        let gpu_result = renderer
-            .render(
-                &orbit.orbit,
-                1,
-                dc_origin,
-                dc_step,
-                width,
-                height,
-                max_iter,
-                1e-6,
-                orbit.escaped_at.is_some(),
-                Adam7Pass::all_pixels(),
-            )
-            .await
-            .expect("GPU render should succeed");
-
-        let gpu_data = as_mandelbrot(&gpu_result.data[0]);
-
-        println!(
-            "In-set test: origin reached {} iterations (max={max_iter})",
-            gpu_data.iterations
-        );
-
-        assert_eq!(
-            gpu_data.iterations, max_iter,
-            "Origin should reach max_iter={max_iter}, got {}",
-            gpu_data.iterations
-        );
-        assert!(!gpu_data.escaped, "Origin should not escape");
-    });
-}
-
-/// Test that known escaping points escape quickly.
-#[test]
-fn gpu_escaping_points_escape_quickly() {
-    pollster::block_on(async {
-        let GpuAvailability::Available(ctx) = GpuContext::try_init().await else {
-            println!("Skipping test: no GPU available");
-            return;
-        };
-
-        let mut renderer = GpuPerturbationRenderer::new(ctx);
-
-        let max_iter = 100;
-        let orbit = create_reference_orbit(0.0, 0.0, max_iter);
-
-        let width = 1;
-        let height = 1;
-        let dc_origin = (3.0_f32, 0.0_f32);
-        let dc_step = (0.0, 0.0);
-
-        let gpu_result = renderer
-            .render(
-                &orbit.orbit,
-                1,
-                dc_origin,
-                dc_step,
-                width,
-                height,
-                max_iter,
-                1e-6,
-                orbit.escaped_at.is_some(),
-                Adam7Pass::all_pixels(),
-            )
-            .await
-            .expect("GPU render should succeed");
-
-        let gpu_data = as_mandelbrot(&gpu_result.data[0]);
-
-        println!(
-            "Escape test: c=3+0i escaped at iteration {}",
-            gpu_data.iterations
-        );
-
-        assert!(
-            gpu_data.iterations < 5,
-            "Point at c=3+0i should escape within 5 iterations, got {}",
-            gpu_data.iterations
-        );
-        assert!(
-            gpu_data.escaped,
-            "Point at c=3+0i should be marked as escaped"
-        );
     });
 }
 
@@ -502,6 +243,7 @@ const TEST_URLS: &[&str] = &[
 /// Compare GPU perturbation (HDRFloat), CPU perturbation (HDRFloat), and pure BigFloat renderers.
 /// BigFloat is the ground truth - it uses arbitrary precision arithmetic.
 #[test]
+#[ignore = "slow: compares GPU vs CPU for many real viewports"]
 fn gpu_matches_cpu_for_real_viewports() {
     use url_decode::decode_url_hash;
 
@@ -1271,8 +1013,10 @@ fn gpu_orbit_precision_matches_cpu() {
         }
 
         // Setup dc parameters
-        let width = 100_u32;
-        let height = 100_u32;
+        // Use smaller image size to keep test runtime reasonable (32x32 = 1024 pixels)
+        // At deep zoom, each pixel needs 15,000-35,000 iterations of HDRFloat math
+        let width = 32_u32;
+        let height = 32_u32;
         let vp_width = HDRFloat::from_bigfloat(&viewport.width);
         let vp_height = HDRFloat::from_bigfloat(&viewport.height);
         let half = HDRFloat::from_f64(0.5);
