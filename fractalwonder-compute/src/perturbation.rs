@@ -227,6 +227,7 @@ pub fn compute_pixel_perturbation_hdr(
     tau_sq: f64,
 ) -> MandelbrotData {
     let mut dz = HDRComplex::ZERO;
+    let mut drho = HDRComplex::ZERO; // Derivative delta
     let mut m: usize = 0;
     let mut glitched = false;
 
@@ -257,10 +258,13 @@ pub fn compute_pixel_perturbation_hdr(
         }
 
         let (z_m_re, z_m_im) = orbit.orbit[m % orbit_len];
+        let (der_m_re, der_m_im) = orbit.derivative[m % orbit_len];
 
-        // z = Z_m + δz
+        // Full values: z = Z_m + δz, ρ = Der_m + δρ
         let z_re = HDRFloat::from_f64(z_m_re).add(&dz.re);
         let z_im = HDRFloat::from_f64(z_m_im).add(&dz.im);
+        let rho_re = HDRFloat::from_f64(der_m_re).add(&drho.re);
+        let rho_im = HDRFloat::from_f64(der_m_im).add(&drho.im);
 
         // Magnitudes (f64 - bounded values)
         let z_mag_sq = z_re.square().add(&z_im.square()).to_f64();
@@ -275,10 +279,10 @@ pub fn compute_pixel_perturbation_hdr(
                 escaped: true,
                 glitched,
                 final_z_norm_sq: z_mag_sq as f32,
-                final_z_re: 0.0,
-                final_z_im: 0.0,
-                final_derivative_re: 0.0,
-                final_derivative_im: 0.0,
+                final_z_re: z_re.to_f64() as f32,
+                final_z_im: z_im.to_f64() as f32,
+                final_derivative_re: rho_re.to_f64() as f32,
+                final_derivative_im: rho_im.to_f64() as f32,
             };
         }
 
@@ -292,12 +296,19 @@ pub fn compute_pixel_perturbation_hdr(
         // The iteration count n should NOT increment during rebase.
         if z_mag_sq < dz_mag_sq {
             dz = HDRComplex { re: z_re, im: z_im };
+            drho = HDRComplex {
+                re: rho_re,
+                im: rho_im,
+            }; // Also rebase derivative
             m = 0;
             // Do NOT increment n - rebase is not a real iteration
             continue;
         }
 
         // 4. Delta iteration: δz' = 2·Z·δz + δz² + δc
+        // CRITICAL: Store old dz before updating - needed for derivative calculation
+        let old_dz = dz;
+
         // 2·Z·δz = 2·(Z_re·δz_re - Z_im·δz_im, Z_re·δz_im + Z_im·δz_re)
         let two_z_dz_re = dz
             .re
@@ -317,6 +328,49 @@ pub fn compute_pixel_perturbation_hdr(
         dz = HDRComplex {
             re: two_z_dz_re.add(&dz_sq.re).add(&delta_c.re),
             im: two_z_dz_im.add(&dz_sq.im).add(&delta_c.im),
+        };
+
+        // 5. Derivative delta iteration: δρ' = 2·Z_m·δρ + 2·δz·Der_m + 2·δz·δρ
+        // Uses old_dz (the value BEFORE the update above)
+        // Term 1: 2·Z_m·δρ (complex multiplication)
+        let two_z_drho_re = drho
+            .re
+            .mul_f64(z_m_re)
+            .sub(&drho.im.mul_f64(z_m_im))
+            .mul_f64(2.0);
+        let two_z_drho_im = drho
+            .re
+            .mul_f64(z_m_im)
+            .add(&drho.im.mul_f64(z_m_re))
+            .mul_f64(2.0);
+
+        // Term 2: 2·δz·Der_m (complex multiplication, using old_dz)
+        let two_dz_der_re = old_dz
+            .re
+            .mul_f64(der_m_re)
+            .sub(&old_dz.im.mul_f64(der_m_im))
+            .mul_f64(2.0);
+        let two_dz_der_im = old_dz
+            .re
+            .mul_f64(der_m_im)
+            .add(&old_dz.im.mul_f64(der_m_re))
+            .mul_f64(2.0);
+
+        // Term 3: 2·δz·δρ (complex multiplication, using old_dz)
+        let two_dz_drho_re = old_dz
+            .re
+            .mul(&drho.re)
+            .sub(&old_dz.im.mul(&drho.im))
+            .mul_f64(2.0);
+        let two_dz_drho_im = old_dz
+            .re
+            .mul(&drho.im)
+            .add(&old_dz.im.mul(&drho.re))
+            .mul_f64(2.0);
+
+        drho = HDRComplex {
+            re: two_z_drho_re.add(&two_dz_der_re).add(&two_dz_drho_re),
+            im: two_z_drho_im.add(&two_dz_der_im).add(&two_dz_drho_im),
         };
 
         m += 1;
