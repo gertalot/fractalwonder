@@ -164,27 +164,40 @@ impl ProgressiveGpuRenderer {
         }
 
         // Read back results
-        let (iterations, glitch_data, z_norm_sq_data) =
-            self.read_results(row_set_pixel_count as usize).await?;
+        let (
+            iterations,
+            glitch_data,
+            z_norm_sq_data,
+            final_z_re_data,
+            final_z_im_data,
+            final_der_re_data,
+            final_der_im_data,
+        ) = self.read_results(row_set_pixel_count as usize).await?;
 
         // Convert to ComputeData
         let data: Vec<ComputeData> = iterations
             .iter()
             .zip(glitch_data.iter())
             .zip(z_norm_sq_data.iter())
-            .map(|((&iter, &glitch_flag), &z_sq)| {
-                ComputeData::Mandelbrot(MandelbrotData {
-                    iterations: iter,
-                    max_iterations,
-                    escaped: iter < max_iterations,
-                    glitched: glitch_flag != 0,
-                    final_z_norm_sq: z_sq,
-                    final_z_re: 0.0,
-                    final_z_im: 0.0,
-                    final_derivative_re: 0.0,
-                    final_derivative_im: 0.0,
-                })
-            })
+            .zip(final_z_re_data.iter())
+            .zip(final_z_im_data.iter())
+            .zip(final_der_re_data.iter())
+            .zip(final_der_im_data.iter())
+            .map(
+                |((((((iter, glitch), z_sq), z_re), z_im), der_re), der_im)| {
+                    ComputeData::Mandelbrot(MandelbrotData {
+                        iterations: *iter,
+                        max_iterations,
+                        escaped: *iter < max_iterations,
+                        glitched: *glitch != 0,
+                        final_z_norm_sq: *z_sq,
+                        final_z_re: *z_re,
+                        final_z_im: *z_im,
+                        final_derivative_re: *der_re,
+                        final_derivative_im: *der_im,
+                    })
+                },
+            )
             .collect();
 
         let end = Self::now();
@@ -411,7 +424,21 @@ impl ProgressiveGpuRenderer {
         Ok(())
     }
 
-    async fn read_results(&self, count: usize) -> Result<(Vec<u32>, Vec<u32>, Vec<f32>), GpuError> {
+    async fn read_results(
+        &self,
+        count: usize,
+    ) -> Result<
+        (
+            Vec<u32>,
+            Vec<u32>,
+            Vec<f32>,
+            Vec<f32>,
+            Vec<f32>,
+            Vec<f32>,
+            Vec<f32>,
+        ),
+        GpuError,
+    > {
         let buffers = self.buffers.as_ref().unwrap();
 
         // Copy to staging buffers
@@ -446,6 +473,34 @@ impl ProgressiveGpuRenderer {
             0,
             f32_byte_size,
         );
+        encoder.copy_buffer_to_buffer(
+            &buffers.final_z_re,
+            0,
+            &buffers.staging_final_z_re,
+            0,
+            f32_byte_size,
+        );
+        encoder.copy_buffer_to_buffer(
+            &buffers.final_z_im,
+            0,
+            &buffers.staging_final_z_im,
+            0,
+            f32_byte_size,
+        );
+        encoder.copy_buffer_to_buffer(
+            &buffers.final_derivative_re,
+            0,
+            &buffers.staging_final_derivative_re,
+            0,
+            f32_byte_size,
+        );
+        encoder.copy_buffer_to_buffer(
+            &buffers.final_derivative_im,
+            0,
+            &buffers.staging_final_derivative_im,
+            0,
+            f32_byte_size,
+        );
 
         self.context.queue.submit(std::iter::once(encoder.finish()));
 
@@ -453,10 +508,18 @@ impl ProgressiveGpuRenderer {
         let results_slice = buffers.staging_results.slice(..u32_byte_size);
         let glitches_slice = buffers.staging_glitches.slice(..u32_byte_size);
         let z_norm_sq_slice = buffers.staging_z_norm_sq.slice(..f32_byte_size);
+        let final_z_re_slice = buffers.staging_final_z_re.slice(..f32_byte_size);
+        let final_z_im_slice = buffers.staging_final_z_im.slice(..f32_byte_size);
+        let final_der_re_slice = buffers.staging_final_derivative_re.slice(..f32_byte_size);
+        let final_der_im_slice = buffers.staging_final_derivative_im.slice(..f32_byte_size);
 
         let (tx1, rx1) = futures_channel::oneshot::channel();
         let (tx2, rx2) = futures_channel::oneshot::channel();
         let (tx3, rx3) = futures_channel::oneshot::channel();
+        let (tx4, rx4) = futures_channel::oneshot::channel();
+        let (tx5, rx5) = futures_channel::oneshot::channel();
+        let (tx6, rx6) = futures_channel::oneshot::channel();
+        let (tx7, rx7) = futures_channel::oneshot::channel();
 
         results_slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx1.send(r);
@@ -466,6 +529,18 @@ impl ProgressiveGpuRenderer {
         });
         z_norm_sq_slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx3.send(r);
+        });
+        final_z_re_slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx4.send(r);
+        });
+        final_z_im_slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx5.send(r);
+        });
+        final_der_re_slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx6.send(r);
+        });
+        final_der_im_slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx7.send(r);
         });
 
         #[cfg(target_arch = "wasm32")]
@@ -483,6 +558,18 @@ impl ProgressiveGpuRenderer {
         rx3.await
             .map_err(|_| GpuError::Unavailable("Channel closed".into()))?
             .map_err(GpuError::BufferMap)?;
+        rx4.await
+            .map_err(|_| GpuError::Unavailable("Channel closed".into()))?
+            .map_err(GpuError::BufferMap)?;
+        rx5.await
+            .map_err(|_| GpuError::Unavailable("Channel closed".into()))?
+            .map_err(GpuError::BufferMap)?;
+        rx6.await
+            .map_err(|_| GpuError::Unavailable("Channel closed".into()))?
+            .map_err(GpuError::BufferMap)?;
+        rx7.await
+            .map_err(|_| GpuError::Unavailable("Channel closed".into()))?
+            .map_err(GpuError::BufferMap)?;
 
         let iterations: Vec<u32> = {
             let view = results_slice.get_mapped_range();
@@ -496,12 +583,40 @@ impl ProgressiveGpuRenderer {
             let view = z_norm_sq_slice.get_mapped_range();
             bytemuck::cast_slice(&view).to_vec()
         };
+        let final_z_re_data: Vec<f32> = {
+            let view = final_z_re_slice.get_mapped_range();
+            bytemuck::cast_slice(&view).to_vec()
+        };
+        let final_z_im_data: Vec<f32> = {
+            let view = final_z_im_slice.get_mapped_range();
+            bytemuck::cast_slice(&view).to_vec()
+        };
+        let final_der_re_data: Vec<f32> = {
+            let view = final_der_re_slice.get_mapped_range();
+            bytemuck::cast_slice(&view).to_vec()
+        };
+        let final_der_im_data: Vec<f32> = {
+            let view = final_der_im_slice.get_mapped_range();
+            bytemuck::cast_slice(&view).to_vec()
+        };
 
         buffers.staging_results.unmap();
         buffers.staging_glitches.unmap();
         buffers.staging_z_norm_sq.unmap();
+        buffers.staging_final_z_re.unmap();
+        buffers.staging_final_z_im.unmap();
+        buffers.staging_final_derivative_re.unmap();
+        buffers.staging_final_derivative_im.unmap();
 
-        Ok((iterations, glitch_data, z_norm_sq_data))
+        Ok((
+            iterations,
+            glitch_data,
+            z_norm_sq_data,
+            final_z_re_data,
+            final_z_im_data,
+            final_der_re_data,
+            final_der_im_data,
+        ))
     }
 
     #[cfg(target_arch = "wasm32")]
