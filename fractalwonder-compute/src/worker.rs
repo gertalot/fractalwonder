@@ -20,6 +20,7 @@ type BoxedRenderer = Box<dyn Renderer<Data = ComputeData>>;
 struct CachedOrbit {
     c_ref: (f64, f64),
     orbit: Vec<(f64, f64)>,
+    derivative: Vec<(f64, f64)>,
     escaped_at: Option<u32>,
     bla_table: Option<BlaTable>,
 }
@@ -29,6 +30,7 @@ impl CachedOrbit {
         ReferenceOrbit {
             c_ref: self.c_ref,
             orbit: self.orbit.clone(),
+            derivative: self.derivative.clone(),
             escaped_at: self.escaped_at,
         }
     }
@@ -272,9 +274,12 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             let bla_useful = dc_max_log2 < -900.0; // Roughly 10^-270
 
             let bla_table = if bla_enabled && bla_useful {
+                // TODO: derivative should come from the message in future tasks
+                let derivative = vec![(0.0, 0.0); orbit.len()];
                 let ref_orbit = ReferenceOrbit {
                     c_ref,
                     orbit: orbit.clone(),
+                    derivative,
                     escaped_at,
                 };
                 let table = BlaTable::compute(&ref_orbit, dc_max);
@@ -301,11 +306,14 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                 None
             };
 
+            // TODO: derivative should come from the message in future tasks
+            let derivative = vec![(0.0, 0.0); orbit.len()];
             state.orbit_cache.insert(
                 orbit_id,
                 CachedOrbit {
                     c_ref,
                     orbit,
+                    derivative,
                     escaped_at,
                     bla_table,
                 },
