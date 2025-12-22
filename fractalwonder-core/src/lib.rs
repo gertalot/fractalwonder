@@ -1,4 +1,5 @@
 pub mod bigfloat;
+pub mod complex_delta;
 pub mod compute_data;
 pub mod hdrfloat;
 pub mod messages;
@@ -8,6 +9,7 @@ pub mod transforms;
 pub mod viewport;
 
 pub use bigfloat::BigFloat;
+pub use complex_delta::{ComplexDelta, F64Complex};
 pub use compute_data::{ComputeData, MandelbrotData, TestImageData};
 pub use hdrfloat::{HDRComplex, HDRFloat};
 pub use messages::{MainToWorker, WorkerToMain};
