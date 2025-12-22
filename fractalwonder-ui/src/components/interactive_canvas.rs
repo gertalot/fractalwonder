@@ -195,10 +195,13 @@ pub fn InteractiveCanvas(
                 let height = canvas.height();
 
                 if width > 0 && height > 0 {
-                    canvas_size.set((width, height));
+                    let current = canvas_size.get_untracked();
+                    if current != (width, height) {
+                        canvas_size.set((width, height));
 
-                    if let Some(callback) = on_resize {
-                        callback.call((width, height));
+                        if let Some(callback) = on_resize {
+                            callback.call((width, height));
+                        }
                     }
                 }
             }
