@@ -2140,4 +2140,80 @@ mod tests {
         assert_eq!(original.iterations, generic.iterations);
         assert_eq!(original.escaped, generic.escaped);
     }
+
+    #[test]
+    fn generic_hdr_matches_original() {
+        use fractalwonder_core::{HDRComplex, HDRFloat};
+
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 500);
+
+        // Test several delta values
+        let test_deltas = [(0.1, 0.05), (0.01, 0.01), (-0.05, 0.1)];
+
+        for (dx, dy) in test_deltas {
+            let delta_hdr = HDRComplex {
+                re: HDRFloat::from_f64(dx),
+                im: HDRFloat::from_f64(dy),
+            };
+
+            let original = compute_pixel_perturbation_hdr(&orbit, delta_hdr, 500, TEST_TAU_SQ);
+            let generic = compute_pixel_perturbation_generic(&orbit, delta_hdr, 500, TEST_TAU_SQ);
+
+            assert_eq!(
+                original.iterations, generic.iterations,
+                "Iteration mismatch for delta ({}, {})",
+                dx, dy
+            );
+            assert_eq!(
+                original.escaped, generic.escaped,
+                "Escaped mismatch for delta ({}, {})",
+                dx, dy
+            );
+        }
+    }
+
+    #[test]
+    fn generic_bigfloat_matches_original() {
+        use fractalwonder_core::BigFloatComplex;
+
+        let precision = 256;
+        let c_ref = (
+            BigFloat::with_precision(-0.5, precision),
+            BigFloat::zero(precision),
+        );
+        let orbit = ReferenceOrbit::compute(&c_ref, 500);
+
+        let test_deltas = [(0.1, 0.05), (0.01, 0.01)];
+
+        for (dx, dy) in test_deltas {
+            let delta_re = BigFloat::with_precision(dx, precision);
+            let delta_im = BigFloat::with_precision(dy, precision);
+
+            let original = compute_pixel_perturbation_bigfloat(
+                &orbit,
+                &delta_re,
+                &delta_im,
+                500,
+                TEST_TAU_SQ,
+            );
+            let generic = compute_pixel_perturbation_generic(
+                &orbit,
+                BigFloatComplex::new(delta_re, delta_im),
+                500,
+                TEST_TAU_SQ,
+            );
+
+            assert_eq!(
+                original.iterations, generic.iterations,
+                "Iteration mismatch for delta ({}, {})",
+                dx, dy
+            );
+            assert_eq!(
+                original.escaped, generic.escaped,
+                "Escaped mismatch for delta ({}, {})",
+                dx, dy
+            );
+        }
+    }
 }
