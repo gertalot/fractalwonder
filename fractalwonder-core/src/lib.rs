@@ -9,7 +9,7 @@ pub mod transforms;
 pub mod viewport;
 
 pub use bigfloat::BigFloat;
-pub use complex_delta::{ComplexDelta, F64Complex};
+pub use complex_delta::{BigFloatComplex, ComplexDelta, F64Complex};
 pub use compute_data::{ComputeData, MandelbrotData, TestImageData};
 pub use hdrfloat::{HDRComplex, HDRFloat};
 pub use messages::{MainToWorker, WorkerToMain};
