@@ -48,6 +48,11 @@ impl GlitchResolver {
         }
     }
 
+    /// Convert PixelRect to Bounds for intersection checks.
+    fn tile_to_bounds(tile: &PixelRect) -> Bounds {
+        Bounds::new(tile.x, tile.y, tile.width, tile.height)
+    }
+
     /// Initialize for a new render.
     pub fn init_for_render(&mut self, canvas_size: (u32, u32)) {
         self.quadtree = Some(QuadtreeCell::new_root(canvas_size));
@@ -119,10 +124,6 @@ impl GlitchResolver {
             return 0;
         }
 
-        fn tile_to_bounds(tile: &PixelRect) -> Bounds {
-            Bounds::new(tile.x, tile.y, tile.width, tile.height)
-        }
-
         fn subdivide_leaves_once(
             cell: &mut QuadtreeCell,
             glitched_tiles: &[PixelRect],
@@ -130,7 +131,7 @@ impl GlitchResolver {
         ) {
             let has_glitched = glitched_tiles
                 .iter()
-                .any(|tile| cell.bounds.intersects(&tile_to_bounds(tile)));
+                .any(|tile| cell.bounds.intersects(&GlitchResolver::tile_to_bounds(tile)));
 
             if !has_glitched {
                 return;
@@ -173,10 +174,6 @@ impl GlitchResolver {
             return 0;
         };
 
-        fn tile_to_bounds(tile: &PixelRect) -> Bounds {
-            Bounds::new(tile.x, tile.y, tile.width, tile.height)
-        }
-
         let mut leaves = Vec::new();
         quadtree.collect_leaves(&mut leaves);
 
@@ -187,7 +184,7 @@ impl GlitchResolver {
             let has_glitched = self
                 .glitched_tiles
                 .iter()
-                .any(|tile| leaf.bounds.intersects(&tile_to_bounds(tile)));
+                .any(|tile| leaf.bounds.intersects(&Self::tile_to_bounds(tile)));
 
             if !has_glitched {
                 continue;
@@ -279,10 +276,6 @@ impl GlitchResolver {
             return Vec::new();
         };
 
-        fn tile_to_bounds(tile: &PixelRect) -> Bounds {
-            Bounds::new(tile.x, tile.y, tile.width, tile.height)
-        }
-
         let mut leaves = Vec::new();
         quadtree.collect_leaves(&mut leaves);
 
@@ -292,7 +285,7 @@ impl GlitchResolver {
                 let count = self
                     .glitched_tiles
                     .iter()
-                    .filter(|tile| leaf.bounds.intersects(&tile_to_bounds(tile)))
+                    .filter(|tile| leaf.bounds.intersects(&Self::tile_to_bounds(tile)))
                     .count();
                 if count > 0 {
                     Some((leaf.bounds, count))
