@@ -305,4 +305,48 @@ mod tests {
         let norm = a.norm_sq();
         assert!((norm - 25.0).abs() < 1e-10);
     }
+
+    #[test]
+    fn bigfloat_complex_square() {
+        use crate::BigFloat;
+        // (3 + 4i)² = 9 + 24i + 16i² = 9 + 24i - 16 = -7 + 24i
+        let a = BigFloatComplex::new(
+            BigFloat::with_precision(3.0, 128),
+            BigFloat::with_precision(4.0, 128),
+        );
+        let b = a.square();
+        let (re, im) = b.to_f64_pair();
+        assert!((re - (-7.0)).abs() < 1e-10);
+        assert!((im - 24.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn bigfloat_complex_scale() {
+        use crate::BigFloat;
+        let a = BigFloatComplex::new(
+            BigFloat::with_precision(1.0, 128),
+            BigFloat::with_precision(2.0, 128),
+        );
+        let b = a.scale(3.0);
+        let (re, im) = b.to_f64_pair();
+        assert!((re - 3.0).abs() < 1e-10);
+        assert!((im - 6.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn bigfloat_complex_sub() {
+        use crate::BigFloat;
+        let a = BigFloatComplex::new(
+            BigFloat::with_precision(5.0, 128),
+            BigFloat::with_precision(7.0, 128),
+        );
+        let b = BigFloatComplex::new(
+            BigFloat::with_precision(2.0, 128),
+            BigFloat::with_precision(3.0, 128),
+        );
+        let c = a.sub(&b);
+        let (re, im) = c.to_f64_pair();
+        assert!((re - 3.0).abs() < 1e-10);
+        assert!((im - 4.0).abs() < 1e-10);
+    }
 }
