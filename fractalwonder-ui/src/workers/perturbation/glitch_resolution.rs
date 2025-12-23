@@ -129,9 +129,10 @@ impl GlitchResolver {
             glitched_tiles: &[PixelRect],
             subdivided_count: &mut u32,
         ) {
-            let has_glitched = glitched_tiles
-                .iter()
-                .any(|tile| cell.bounds.intersects(&GlitchResolver::tile_to_bounds(tile)));
+            let has_glitched = glitched_tiles.iter().any(|tile| {
+                cell.bounds
+                    .intersects(&GlitchResolver::tile_to_bounds(tile))
+            });
 
             if !has_glitched {
                 return;

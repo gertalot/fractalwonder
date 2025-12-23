@@ -65,6 +65,22 @@ pub struct MandelbrotData {
     pub final_derivative_im: f32,
 }
 
+impl Default for MandelbrotData {
+    fn default() -> Self {
+        Self {
+            iterations: 0,
+            max_iterations: 0,
+            escaped: false,
+            glitched: false,
+            final_z_norm_sq: 0.0,
+            final_z_re: 0.0,
+            final_z_im: 0.0,
+            final_derivative_re: 0.0,
+            final_derivative_im: 0.0,
+        }
+    }
+}
+
 /// Unified enum for all compute results.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ComputeData {

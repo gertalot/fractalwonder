@@ -264,20 +264,8 @@ impl ParallelRenderer {
         self.progress.set(RenderProgress::new(row_set_count));
 
         // Initialize full-image result buffer
-        *self.gpu_result_buffer.borrow_mut() = vec![
-            ComputeData::Mandelbrot(MandelbrotData {
-                iterations: 0,
-                max_iterations: 0,
-                escaped: false,
-                glitched: false,
-                final_z_norm_sq: 0.0,
-                final_z_re: 0.0,
-                final_z_im: 0.0,
-                final_derivative_re: 0.0,
-                final_derivative_im: 0.0,
-            });
-            (width * height) as usize
-        ];
+        *self.gpu_result_buffer.borrow_mut() =
+            vec![ComputeData::Mandelbrot(MandelbrotData::default()); (width * height) as usize];
 
         self.canvas_size.set((width, height));
 
@@ -658,20 +646,7 @@ fn schedule_row_set(
 /// Tiles may arrive out of order, so we place each tile's data at the correct position.
 fn assemble_tiles_to_buffer(tiles: &[TileResult], width: usize, height: usize) -> Vec<ComputeData> {
     // Initialize with default (interior) pixels
-    let mut buffer = vec![
-        ComputeData::Mandelbrot(MandelbrotData {
-            iterations: 0,
-            max_iterations: 0,
-            escaped: false,
-            glitched: false,
-            final_z_norm_sq: 0.0,
-            final_z_re: 0.0,
-            final_z_im: 0.0,
-            final_derivative_re: 0.0,
-            final_derivative_im: 0.0,
-        });
-        width * height
-    ];
+    let mut buffer = vec![ComputeData::Mandelbrot(MandelbrotData::default()); width * height];
 
     // Place each tile's data at the correct position
     for tile in tiles {
@@ -701,3 +676,7 @@ fn assemble_tiles_to_buffer(tiles: &[TileResult], width: usize, height: usize) -
 
     buffer
 }
+
+#[cfg(test)]
+#[path = "parallel_renderer_tests.rs"]
+mod tests;

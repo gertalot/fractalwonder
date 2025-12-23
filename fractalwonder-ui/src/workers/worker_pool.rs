@@ -180,13 +180,18 @@ impl WorkerPool {
             self.initialized_workers.insert(worker_id);
             if was_empty {
                 if let Some(pending) = self.pending_orbit_request.take() {
-                    web_sys::console::log_1(&"[WorkerPool] First worker ready, dispatching queued orbit request".into());
-                    self.send_to_worker(worker_id, &MainToWorker::ComputeReferenceOrbit {
-                        render_id: pending.request.render_id,
-                        orbit_id: pending.request.orbit_id,
-                        c_ref_json: pending.request.c_ref_json,
-                        max_iterations: pending.request.max_iterations,
-                    });
+                    web_sys::console::log_1(
+                        &"[WorkerPool] First worker ready, dispatching queued orbit request".into(),
+                    );
+                    self.send_to_worker(
+                        worker_id,
+                        &MainToWorker::ComputeReferenceOrbit {
+                            render_id: pending.request.render_id,
+                            orbit_id: pending.request.orbit_id,
+                            c_ref_json: pending.request.c_ref_json,
+                            max_iterations: pending.request.max_iterations,
+                        },
+                    );
                     return;
                 }
             }
@@ -207,25 +212,42 @@ impl WorkerPool {
         compute_time_ms: f64,
     ) {
         if render_id != self.current_render_id {
-            web_sys::console::warn_1(&format!(
-                "[WorkerPool] Ignoring stale tile from render #{} (current: #{})",
-                render_id, self.current_render_id
-            ).into());
+            web_sys::console::warn_1(
+                &format!(
+                    "[WorkerPool] Ignoring stale tile from render #{} (current: #{})",
+                    render_id, self.current_render_id
+                )
+                .into(),
+            );
             return;
         }
 
         if self.is_perturbation_render {
-            let glitched_count = data.iter().filter(|d| matches!(d, ComputeData::Mandelbrot(m) if m.glitched)).count();
+            let glitched_count = data
+                .iter()
+                .filter(|d| matches!(d, ComputeData::Mandelbrot(m) if m.glitched))
+                .count();
             if glitched_count > 0 {
-                web_sys::console::log_1(&format!(
-                    "[WorkerPool] Tile ({},{}): {}/{} pixels glitched",
-                    tile.x, tile.y, glitched_count, data.len()
-                ).into());
-                self.perturbation.glitch_resolver_mut().record_glitched_tile(tile);
+                web_sys::console::log_1(
+                    &format!(
+                        "[WorkerPool] Tile ({},{}): {}/{} pixels glitched",
+                        tile.x,
+                        tile.y,
+                        glitched_count,
+                        data.len()
+                    )
+                    .into(),
+                );
+                self.perturbation
+                    .glitch_resolver_mut()
+                    .record_glitched_tile(tile);
             }
         }
 
-        let elapsed = self.render_start_time.map(|start| performance_now() - start).unwrap_or(0.0);
+        let elapsed = self
+            .render_start_time
+            .map(|start| performance_now() - start)
+            .unwrap_or(0.0);
         let is_complete = {
             let mut complete = false;
             self.progress.update(|p| {
@@ -240,13 +262,20 @@ impl WorkerPool {
         if is_complete && self.is_perturbation_render {
             let total = self.progress.get_untracked().total_steps;
             let glitched_count = self.perturbation.glitch_resolver().glitched_tile_count();
-            web_sys::console::log_1(&format!(
-                "[WorkerPool] Render complete: {} tiles had glitches (of {} total)",
-                glitched_count, total
-            ).into());
+            web_sys::console::log_1(
+                &format!(
+                    "[WorkerPool] Render complete: {} tiles had glitches (of {} total)",
+                    glitched_count, total
+                )
+                .into(),
+            );
         }
 
-        (self.on_tile_complete)(TileResult { tile, data, compute_time_ms });
+        (self.on_tile_complete)(TileResult {
+            tile,
+            data,
+            compute_time_ms,
+        });
 
         if is_complete {
             if let Some(ref callback) = *self.on_render_complete.borrow() {
@@ -275,20 +304,32 @@ impl WorkerPool {
             return;
         }
 
-        web_sys::console::log_1(&format!(
-            "[WorkerPool] Reference orbit complete: {} points, escaped_at={:?}",
-            orbit.len(), escaped_at
-        ).into());
+        web_sys::console::log_1(
+            &format!(
+                "[WorkerPool] Reference orbit complete: {} points, escaped_at={:?}",
+                orbit.len(),
+                escaped_at
+            )
+            .into(),
+        );
 
-        let orbit_data = OrbitData { c_ref, orbit: orbit.clone(), derivative: derivative.clone(), escaped_at };
+        let orbit_data = OrbitData {
+            c_ref,
+            orbit: orbit.clone(),
+            derivative: derivative.clone(),
+            escaped_at,
+        };
         self.pending_orbit_data = Some(orbit_data.clone());
 
         if self.gpu_mode {
             web_sys::console::log_1(&"[WorkerPool] GPU mode: triggering orbit callback".into());
             if let Some(callback) = self.on_orbit_complete.borrow().as_ref() {
                 callback(OrbitCompleteData {
-                    orbit, derivative, orbit_id,
-                    max_iterations: self.perturbation.max_iterations(), escaped_at,
+                    orbit,
+                    derivative,
+                    orbit_id,
+                    max_iterations: self.perturbation.max_iterations(),
+                    escaped_at,
                 });
             }
             return;
@@ -301,13 +342,30 @@ impl WorkerPool {
     }
 
     fn handle_orbit_stored(&mut self, worker_id: usize, orbit_id: u32) {
-        if self.perturbation.glitch_resolver().is_tracking_orbit(orbit_id) {
-            web_sys::console::log_1(&format!("[WorkerPool] Worker {} stored orbit #{}", worker_id, orbit_id).into());
-            let all_confirmed = self.perturbation.glitch_resolver_mut().confirm_orbit_stored(
-                orbit_id, worker_id, &self.initialized_workers,
+        if self
+            .perturbation
+            .glitch_resolver()
+            .is_tracking_orbit(orbit_id)
+        {
+            web_sys::console::log_1(
+                &format!(
+                    "[WorkerPool] Worker {} stored orbit #{}",
+                    worker_id, orbit_id
+                )
+                .into(),
             );
+            let all_confirmed = self
+                .perturbation
+                .glitch_resolver_mut()
+                .confirm_orbit_stored(orbit_id, worker_id, &self.initialized_workers);
             if all_confirmed {
-                web_sys::console::log_1(&format!("[WorkerPool] Phase 8: All workers confirmed orbit #{}", orbit_id).into());
+                web_sys::console::log_1(
+                    &format!(
+                        "[WorkerPool] Phase 8: All workers confirmed orbit #{}",
+                        orbit_id
+                    )
+                    .into(),
+                );
             }
             return;
         }
@@ -318,11 +376,19 @@ impl WorkerPool {
 
         self.perturbation.record_worker_has_orbit(worker_id);
 
-        if self.perturbation.all_workers_have_orbit(&self.initialized_workers) && !self.pending_tiles.is_empty() {
-            web_sys::console::log_1(&format!(
-                "[WorkerPool] All {} workers have orbit, dispatching {} tiles",
-                self.perturbation.workers_with_orbit_count(), self.pending_tiles.len()
-            ).into());
+        if self
+            .perturbation
+            .all_workers_have_orbit(&self.initialized_workers)
+            && !self.pending_tiles.is_empty()
+        {
+            web_sys::console::log_1(
+                &format!(
+                    "[WorkerPool] All {} workers have orbit, dispatching {} tiles",
+                    self.perturbation.workers_with_orbit_count(),
+                    self.pending_tiles.len()
+                )
+                .into(),
+            );
             for worker_id in 0..self.workers.len() {
                 if self.initialized_workers.contains(&worker_id) {
                     self.dispatch_work(worker_id);
@@ -334,7 +400,9 @@ impl WorkerPool {
     fn handle_message(&mut self, worker_id: usize, msg: WorkerToMain) {
         match msg {
             WorkerToMain::Ready => self.handle_ready(worker_id),
-            WorkerToMain::RequestWork { render_id } => self.handle_request_work(worker_id, render_id),
+            WorkerToMain::RequestWork { render_id } => {
+                self.handle_request_work(worker_id, render_id)
+            }
             WorkerToMain::TileComplete {
                 render_id,
                 tile,
@@ -349,7 +417,8 @@ impl WorkerPool {
                 orbit,
                 derivative,
                 escaped_at,
-            } => self.handle_orbit_complete(render_id, orbit_id, c_ref, orbit, derivative, escaped_at),
+            } => self
+                .handle_orbit_complete(render_id, orbit_id, c_ref, orbit, derivative, escaped_at),
             WorkerToMain::OrbitStored { orbit_id } => self.handle_orbit_stored(worker_id, orbit_id),
         }
     }
@@ -366,7 +435,10 @@ impl WorkerPool {
 
         if let Some(tile) = self.pending_tiles.pop_front() {
             if self.is_perturbation_render {
-                if let Some(msg) = self.perturbation.build_tile_message(self.current_render_id, tile) {
+                if let Some(msg) = self
+                    .perturbation
+                    .build_tile_message(self.current_render_id, tile)
+                {
                     self.send_to_worker(worker_id, &msg);
                 } else {
                     self.send_to_worker(worker_id, &MainToWorker::NoWork);
@@ -425,18 +497,27 @@ impl WorkerPool {
         }
     }
 
-    pub fn start_perturbation_render(&mut self, viewport: Viewport, canvas_size: (u32, u32), tiles: Vec<PixelRect>) {
+    pub fn start_perturbation_render(
+        &mut self,
+        viewport: Viewport,
+        canvas_size: (u32, u32),
+        tiles: Vec<PixelRect>,
+    ) {
         self.is_perturbation_render = true;
         self.gpu_mode = false;
         self.current_render_id = self.current_render_id.wrapping_add(1);
 
-        let orbit_request = match self.perturbation.start_render(self.current_render_id, &viewport, canvas_size) {
-            Ok(req) => req,
-            Err(e) => {
-                web_sys::console::error_1(&format!("[WorkerPool] {}", e).into());
-                return;
-            }
-        };
+        let orbit_request =
+            match self
+                .perturbation
+                .start_render(self.current_render_id, &viewport, canvas_size)
+            {
+                Ok(req) => req,
+                Err(e) => {
+                    web_sys::console::error_1(&format!("[WorkerPool] {}", e).into());
+                    return;
+                }
+            };
 
         let zoom_exponent = (4.0 / viewport.width.to_f64()).log10();
         web_sys::console::log_1(&format!(
@@ -448,19 +529,27 @@ impl WorkerPool {
         self.canvas_size = canvas_size;
         self.pending_tiles = tiles.into();
         self.render_start_time = Some(performance_now());
-        self.progress.set(RenderProgress::new(self.pending_tiles.len() as u32));
+        self.progress
+            .set(RenderProgress::new(self.pending_tiles.len() as u32));
 
         if let Some(&worker_id) = self.initialized_workers.iter().next() {
             self.pending_orbit_request = None;
-            self.send_to_worker(worker_id, &MainToWorker::ComputeReferenceOrbit {
-                render_id: orbit_request.render_id,
-                orbit_id: orbit_request.orbit_id,
-                c_ref_json: orbit_request.c_ref_json,
-                max_iterations: orbit_request.max_iterations,
-            });
+            self.send_to_worker(
+                worker_id,
+                &MainToWorker::ComputeReferenceOrbit {
+                    render_id: orbit_request.render_id,
+                    orbit_id: orbit_request.orbit_id,
+                    c_ref_json: orbit_request.c_ref_json,
+                    max_iterations: orbit_request.max_iterations,
+                },
+            );
         } else {
-            web_sys::console::log_1(&"[WorkerPool] No workers initialized yet, queueing orbit request".into());
-            self.pending_orbit_request = Some(PendingOrbitRequest { request: orbit_request });
+            web_sys::console::log_1(
+                &"[WorkerPool] No workers initialized yet, queueing orbit request".into(),
+            );
+            self.pending_orbit_request = Some(PendingOrbitRequest {
+                request: orbit_request,
+            });
         }
     }
 
@@ -491,40 +580,75 @@ impl WorkerPool {
     }
 
     pub fn subdivide_glitched_cells(&mut self) {
-        let subdivided = self.perturbation.glitch_resolver_mut().subdivide_glitched_cells();
+        let subdivided = self
+            .perturbation
+            .glitch_resolver_mut()
+            .subdivide_glitched_cells();
         if subdivided == 0 {
             web_sys::console::log_1(&"[WorkerPool] No cells subdivided".into());
             return;
         }
 
-        web_sys::console::log_1(&format!("[WorkerPool] Subdivided {} cells with glitched tiles", subdivided).into());
-        for (bounds, count) in self.perturbation.glitch_resolver().leaves_with_glitch_counts() {
-            web_sys::console::log_1(&format!(
-                "[WorkerPool] Cell ({},{})-({},{}): {} glitched tiles",
-                bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height, count
-            ).into());
+        web_sys::console::log_1(
+            &format!(
+                "[WorkerPool] Subdivided {} cells with glitched tiles",
+                subdivided
+            )
+            .into(),
+        );
+        for (bounds, count) in self
+            .perturbation
+            .glitch_resolver()
+            .leaves_with_glitch_counts()
+        {
+            web_sys::console::log_1(
+                &format!(
+                    "[WorkerPool] Cell ({},{})-({},{}): {} glitched tiles",
+                    bounds.x,
+                    bounds.y,
+                    bounds.x + bounds.width,
+                    bounds.y + bounds.height,
+                    count
+                )
+                .into(),
+            );
         }
         self.compute_orbits_for_glitched_cells();
     }
 
     fn compute_orbits_for_glitched_cells(&mut self) {
         let Some(viewport) = self.current_viewport.clone() else {
-            web_sys::console::log_1(&"[WorkerPool] No viewport available, cannot compute cell center orbits".into());
+            web_sys::console::log_1(
+                &"[WorkerPool] No viewport available, cannot compute cell center orbits".into(),
+            );
             return;
         };
 
         let max_iterations = self.perturbation.max_iterations();
         let start_time = performance_now();
-        let computed = self.perturbation.glitch_resolver_mut().compute_cell_orbits(&viewport, self.canvas_size, max_iterations);
+        let computed = self.perturbation.glitch_resolver_mut().compute_cell_orbits(
+            &viewport,
+            self.canvas_size,
+            max_iterations,
+        );
         let elapsed = performance_now() - start_time;
-        web_sys::console::log_1(&format!("[WorkerPool] Phase 7: Computed {} reference orbits in {:.1}ms", computed, elapsed).into());
+        web_sys::console::log_1(
+            &format!(
+                "[WorkerPool] Phase 7: Computed {} reference orbits in {:.1}ms",
+                computed, elapsed
+            )
+            .into(),
+        );
         self.broadcast_cell_orbits_to_workers();
     }
 
     fn broadcast_cell_orbits_to_workers(&mut self) {
         let dc_max = self.perturbation.dc_max();
         let bla_enabled = self.perturbation.bla_enabled();
-        let broadcasts = self.perturbation.glitch_resolver_mut().orbits_to_broadcast(dc_max, bla_enabled);
+        let broadcasts = self
+            .perturbation
+            .glitch_resolver_mut()
+            .orbits_to_broadcast(dc_max, bla_enabled);
 
         if broadcasts.is_empty() {
             web_sys::console::log_1(&"[WorkerPool] Phase 8: No cell orbits to distribute".into());
@@ -536,10 +660,24 @@ impl WorkerPool {
             for worker_id in 0..self.workers.len() {
                 self.send_to_worker(worker_id, msg);
             }
-            web_sys::console::log_1(&format!("[WorkerPool] Phase 8: Broadcasting orbit #{} to {} workers", orbit_id, self.workers.len()).into());
+            web_sys::console::log_1(
+                &format!(
+                    "[WorkerPool] Phase 8: Broadcasting orbit #{} to {} workers",
+                    orbit_id,
+                    self.workers.len()
+                )
+                .into(),
+            );
         }
         let elapsed = performance_now() - start_time;
-        web_sys::console::log_1(&format!("[WorkerPool] Phase 8: Broadcast {} cell orbits in {:.1}ms", broadcasts.len(), elapsed).into());
+        web_sys::console::log_1(
+            &format!(
+                "[WorkerPool] Phase 8: Broadcast {} cell orbits in {:.1}ms",
+                broadcasts.len(),
+                elapsed
+            )
+            .into(),
+        );
     }
 
     /// Terminate and recreate all workers. Used when switching renderers.
@@ -595,13 +733,17 @@ impl WorkerPool {
         self.is_perturbation_render = false;
         self.current_render_id = self.current_render_id.wrapping_add(1);
 
-        let orbit_request = match self.perturbation.start_gpu_render(self.current_render_id, &viewport, canvas_size) {
-            Ok(req) => req,
-            Err(e) => {
-                web_sys::console::error_1(&format!("[WorkerPool] {}", e).into());
-                return;
-            }
-        };
+        let orbit_request =
+            match self
+                .perturbation
+                .start_gpu_render(self.current_render_id, &viewport, canvas_size)
+            {
+                Ok(req) => req,
+                Err(e) => {
+                    web_sys::console::error_1(&format!("[WorkerPool] {}", e).into());
+                    return;
+                }
+            };
 
         let zoom_exponent = (4.0 / viewport.width.to_f64()).log10();
         web_sys::console::log_1(
@@ -631,7 +773,9 @@ impl WorkerPool {
             web_sys::console::log_1(
                 &"[WorkerPool] No workers initialized yet, queueing orbit request".into(),
             );
-            self.pending_orbit_request = Some(PendingOrbitRequest { request: orbit_request });
+            self.pending_orbit_request = Some(PendingOrbitRequest {
+                request: orbit_request,
+            });
         }
     }
 
