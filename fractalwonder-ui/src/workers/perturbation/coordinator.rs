@@ -97,11 +97,6 @@ impl PerturbationCoordinator {
         self.state.max_iterations
     }
 
-    /// Get tau_sq for glitch detection.
-    pub fn tau_sq(&self) -> f64 {
-        self.state.tau_sq
-    }
-
     /// Get dc_max for BLA.
     pub fn dc_max(&self) -> f64 {
         self.state.dc_max

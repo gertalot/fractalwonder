@@ -11,15 +11,6 @@ use std::collections::{HashMap, HashSet};
 /// Key for identifying quadtree cells: (x, y, width, height)
 pub type CellKey = (u32, u32, u32, u32);
 
-/// Data needed to broadcast an orbit to workers.
-#[derive(Clone)]
-pub struct OrbitBroadcast {
-    pub c_ref: (f64, f64),
-    pub orbit: Vec<(f64, f64)>,
-    pub derivative: Vec<(f64, f64)>,
-    pub escaped_at: Option<u32>,
-}
-
 /// Manages glitch detection and resolution via quadtree subdivision.
 pub struct GlitchResolver {
     /// Quadtree for spatial tracking of glitched regions
@@ -85,7 +76,8 @@ impl GlitchResolver {
         self.glitched_tile_count
     }
 
-    /// Get quadtree reference for logging.
+    /// Get quadtree reference for testing.
+    #[allow(dead_code)]
     pub fn quadtree(&self) -> Option<&QuadtreeCell> {
         self.quadtree.as_ref()
     }
