@@ -1,15 +1,15 @@
 //! Options dropdown menu with grouped sections for Effects and Cycles.
-//!
-//! Note: The `unused_parens` allow is required because the Leptos `view!` macro
-//! misparses `>=` operators (interpreting `>` as HTML syntax).
 
-#![allow(unused_parens)]
-
+use crate::components::{MenuItem, MenuSection, StepperMenuItem};
 use crate::rendering::colorizers::settings::{MAX_TRANSFER_BIAS, MIN_TRANSFER_BIAS};
 use leptos::*;
 
 #[component]
 pub fn OptionsMenu(
+    /// Menu open state
+    is_open: ReadSignal<bool>,
+    /// Set menu open state
+    set_is_open: WriteSignal<bool>,
     /// 3D shading enabled state
     shading_enabled: Signal<bool>,
     /// Callback when 3D is toggled
@@ -38,8 +38,16 @@ pub fn OptionsMenu(
     use_gpu: Signal<bool>,
     /// Callback when GPU toggle is clicked
     on_gpu_toggle: Callback<()>,
+    /// X-ray mode enabled state
+    xray_enabled: Signal<bool>,
+    /// Callback when X-ray toggle is clicked
+    on_xray_toggle: Callback<()>,
 ) -> impl IntoView {
-    let (is_open, set_is_open) = create_signal(false);
+    // Derived signals for stepper bounds
+    let cycle_at_min = Signal::derive(move || cycle_count.get() <= 1);
+    let cycle_at_max = Signal::derive(move || cycle_count.get() >= 1024);
+    let bias_at_min = Signal::derive(move || transfer_bias.get() <= MIN_TRANSFER_BIAS);
+    let bias_at_max = Signal::derive(move || transfer_bias.get() >= MAX_TRANSFER_BIAS);
 
     view! {
         <div class="relative">
@@ -53,121 +61,64 @@ pub fn OptionsMenu(
 
             {move || is_open.get().then(|| view! {
                 <div class="absolute bottom-full mb-2 left-0 min-w-48 bg-black/70 backdrop-blur-sm border border-gray-800 rounded-lg overflow-hidden">
-                    // Renderer section
-                    <div class="px-3 py-2 text-xs text-gray-400 uppercase tracking-wider border-b border-gray-800">
-                        "Renderer"
-                    </div>
-                    <button
-                        class="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center justify-between"
-                        on:click=move |_| {
-                            on_gpu_toggle.call(());
-                        }
-                    >
-                        <span class="flex items-center gap-2">
-                            <span class=move || if use_gpu.get() { "opacity-100" } else { "opacity-30" }>
-                                {move || if use_gpu.get() { "☑" } else { "☐" }}
-                            </span>
-                            "Use GPU"
-                        </span>
-                        <span class="text-xs text-gray-500">"[G]"</span>
-                    </button>
+                    <MenuSection title="Renderer" show_top_border=false />
+                    <MenuItem
+                        active=use_gpu
+                        on_click=on_gpu_toggle
+                        label="Use GPU"
+                        shortcut="[G]"
+                    />
 
-                    // Effects section
-                    <div class="px-3 py-2 text-xs text-gray-400 uppercase tracking-wider border-t border-b border-gray-800">
-                        "Effects"
-                    </div>
-                    <button
-                        class="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center justify-between"
-                        on:click=move |_| {
-                            on_shading_toggle.call(());
-                        }
-                    >
-                        <span class="flex items-center gap-2">
-                            <span class=move || if shading_enabled.get() { "opacity-100" } else { "opacity-30" }>
-                                {move || if shading_enabled.get() { "☑" } else { "☐" }}
-                            </span>
-                            "3D"
-                        </span>
-                        <span class="text-xs text-gray-500">"[3]"</span>
-                    </button>
-                    <button
-                        class="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center justify-between"
-                        on:click=move |_| {
-                            on_smooth_toggle.call(());
-                        }
-                    >
-                        <span class="flex items-center gap-2">
-                            <span class=move || if smooth_enabled.get() { "opacity-100" } else { "opacity-30" }>
-                                {move || if smooth_enabled.get() { "☑" } else { "☐" }}
-                            </span>
-                            "Smooth"
-                        </span>
-                        <span class="text-xs text-gray-500">"[S]"</span>
-                    </button>
-                    <button
-                        class="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center justify-between"
-                        on:click=move |_| {
-                            on_histogram_toggle.call(());
-                        }
-                    >
-                        <span class="flex items-center gap-2">
-                            <span class=move || if histogram_enabled.get() { "opacity-100" } else { "opacity-30" }>
-                                {move || if histogram_enabled.get() { "☑" } else { "☐" }}
-                            </span>
-                            "Histogram"
-                        </span>
-                        <span class="text-xs text-gray-500">"[H]"</span>
-                    </button>
+                    <MenuSection title="Effects" />
+                    <MenuItem
+                        active=shading_enabled
+                        on_click=on_shading_toggle
+                        label="3D"
+                        shortcut="[3]"
+                    />
+                    <MenuItem
+                        active=smooth_enabled
+                        on_click=on_smooth_toggle
+                        label="Smooth"
+                        shortcut="[S]"
+                    />
+                    <MenuItem
+                        active=histogram_enabled
+                        on_click=on_histogram_toggle
+                        label="Histogram"
+                        shortcut="[H]"
+                    />
 
-                    // Cycles section
-                    <div class="px-3 py-2 text-xs text-gray-400 uppercase tracking-wider border-t border-b border-gray-800">
-                        "Cycles"
-                    </div>
-                    <div class="px-4 py-2 text-sm text-gray-300 flex items-center justify-between">
-                        <div class="flex items-center gap-3">
-                            <button
-                                class="text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-                                on:click=move |_| on_cycle_down.call(())
-                                prop:disabled=move || (cycle_count.get() <= 1)
-                            >
-                                "◀"
-                            </button>
-                            <span class="min-w-8 text-center font-mono">{move || cycle_count.get()}</span>
-                            <button
-                                class="text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-                                on:click=move |_| on_cycle_up.call(())
-                                prop:disabled=move || (cycle_count.get() >= 1024)
-                            >
-                                "▶"
-                            </button>
-                        </div>
-                        <span class="text-xs text-gray-500">"[↑↓ / ⇧±50]"</span>
-                    </div>
+                    <MenuSection title="Cycles" />
+                    <StepperMenuItem
+                        value=cycle_count
+                        on_decrease=on_cycle_down
+                        on_increase=on_cycle_up
+                        format_value=|v: u32| v.to_string()
+                        is_at_min=cycle_at_min
+                        is_at_max=cycle_at_max
+                        shortcut="[↑↓ / ⇧±50]"
+                    />
 
-                    // Transfer bias section
-                    <div class="px-3 py-2 text-xs text-gray-400 uppercase tracking-wider border-t border-b border-gray-800">
-                        "Bias"
-                    </div>
-                    <div class="px-4 py-2 text-sm text-gray-300 flex items-center justify-between">
-                        <div class="flex items-center gap-3">
-                            <button
-                                class="text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-                                on:click=move |_| on_bias_down.call(())
-                                prop:disabled=move || (transfer_bias.get() <= MIN_TRANSFER_BIAS)
-                            >
-                                "◀"
-                            </button>
-                            <span class="min-w-12 text-center font-mono">{move || format!("{:.1}", transfer_bias.get())}</span>
-                            <button
-                                class="text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-                                on:click=move |_| on_bias_up.call(())
-                                prop:disabled=move || (transfer_bias.get() >= MAX_TRANSFER_BIAS)
-                            >
-                                "▶"
-                            </button>
-                        </div>
-                        <span class="text-xs text-gray-500">"[[ ]]"</span>
-                    </div>
+                    <MenuSection title="Bias" />
+                    <StepperMenuItem
+                        value=transfer_bias
+                        on_decrease=on_bias_down
+                        on_increase=on_bias_up
+                        format_value=|v: f32| format!("{:.1}", v)
+                        is_at_min=bias_at_min
+                        is_at_max=bias_at_max
+                        shortcut="[[ ]]"
+                        value_width="min-w-12"
+                    />
+
+                    <MenuSection title="Debug" />
+                    <MenuItem
+                        active=xray_enabled
+                        on_click=on_xray_toggle
+                        label="X-ray"
+                        shortcut="[X]"
+                    />
                 </div>
             })}
         </div>

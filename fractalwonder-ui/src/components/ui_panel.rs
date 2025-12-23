@@ -1,5 +1,5 @@
 // fractalwonder-ui/src/components/ui_panel.rs
-use crate::components::{DropdownMenu, FullscreenButton, HomeButton, InfoButton, OptionsMenu};
+use crate::components::{FullscreenButton, HomeButton, InfoMenu, OptionsMenu, PaletteMenu};
 use crate::config::FractalConfig;
 use crate::rendering::RenderProgress;
 use fractalwonder_core::{calculate_max_iterations, BigFloat, Viewport};
@@ -62,12 +62,36 @@ pub fn UIPanel(
     /// Callback to toggle x-ray mode
     set_xray_enabled: WriteSignal<bool>,
 ) -> impl IntoView {
-    // Info panel state - lifted here so we can prevent auto-hide when open
+    // Menu open states - lifted here for coordination
     let (is_info_open, set_is_info_open) = create_signal(false);
+    let (is_palette_open, set_is_palette_open) = create_signal(false);
+    let (is_options_open, set_is_options_open) = create_signal(false);
 
-    // Prevent auto-hide when info panel is open
+    // Ensure only one menu is open at a time
     create_effect(move |_| {
         if is_info_open.get() {
+            set_is_palette_open.set(false);
+            set_is_options_open.set(false);
+        }
+    });
+    create_effect(move |_| {
+        if is_palette_open.get() {
+            set_is_info_open.set(false);
+            set_is_options_open.set(false);
+        }
+    });
+    create_effect(move |_| {
+        if is_options_open.get() {
+            set_is_info_open.set(false);
+            set_is_palette_open.set(false);
+        }
+    });
+
+    // Prevent auto-hide when any menu is open
+    let any_menu_open =
+        move || is_info_open.get() || is_palette_open.get() || is_options_open.get();
+    create_effect(move |_| {
+        if any_menu_open() {
             set_is_hovering.set(true);
         }
     });
@@ -80,7 +104,22 @@ pub fn UIPanel(
         }
     };
 
+    // Close all menus
+    let close_all_menus = move || {
+        set_is_info_open.set(false);
+        set_is_palette_open.set(false);
+        set_is_options_open.set(false);
+    };
+
     view! {
+        // Click-outside overlay: closes menus when clicking outside
+        {move || any_menu_open().then(|| view! {
+            <div
+                class="fixed inset-0 z-40"
+                on:click=move |_| close_all_menus()
+            />
+        })}
+
         <div
             class=move || format!(
                 "fixed inset-x-0 bottom-0 z-50 transition-opacity duration-300 {}",
@@ -88,8 +127,8 @@ pub fn UIPanel(
             )
             on:mouseenter=move |_| set_is_hovering.set(true)
             on:mouseleave=move |_| {
-                // Don't set hovering to false if info panel is open
-                if !is_info_open.get() {
+                // Don't set hovering to false if any menu is open
+                if !any_menu_open() {
                     set_is_hovering.set(false)
                 }
             }
@@ -97,20 +136,22 @@ pub fn UIPanel(
             <div class="flex items-center justify-between px-4 py-3 bg-black/50 backdrop-blur-sm">
                 // Left section: info button, home button, and menus
                 <div class="flex items-center space-x-2">
-                    <InfoButton
+                    <InfoMenu
                         is_open=is_info_open
                         set_is_open=set_is_info_open
-                        xray_enabled=xray_enabled
-                        set_xray_enabled=set_xray_enabled
                     />
                     <HomeButton on_click=on_home_click />
-                    <DropdownMenu
+                    <PaletteMenu
+                        is_open=is_palette_open
+                        set_is_open=set_is_palette_open
                         label="Palette".to_string()
                         options=palette_options
                         selected_id=selected_palette_id
                         on_select=move |id| on_palette_select.call(id)
                     />
                     <OptionsMenu
+                        is_open=is_options_open
+                        set_is_open=set_is_options_open
                         shading_enabled=shading_enabled
                         on_shading_toggle=on_shading_toggle
                         smooth_enabled=smooth_enabled
@@ -125,6 +166,8 @@ pub fn UIPanel(
                         on_bias_down=on_bias_down
                         use_gpu=use_gpu
                         on_gpu_toggle=on_gpu_toggle
+                        xray_enabled=xray_enabled.into()
+                        on_xray_toggle=Callback::new(move |_| set_xray_enabled.update(|v| *v = !*v))
                     />
                 </div>
 

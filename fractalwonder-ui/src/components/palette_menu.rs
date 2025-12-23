@@ -1,17 +1,24 @@
+use crate::components::MenuItem;
 use leptos::*;
 
 #[component]
-pub fn DropdownMenu<F>(
+pub fn PaletteMenu<F>(
+    /// Menu open state
+    is_open: ReadSignal<bool>,
+    /// Set menu open state
+    set_is_open: WriteSignal<bool>,
+    /// Button label
     label: String,
-    options: Signal<Vec<(String, String)>>, // (id, display_name)
+    /// Options to display (id, display_name)
+    options: Signal<Vec<(String, String)>>,
+    /// Currently selected option ID
     selected_id: Signal<String>,
+    /// Callback when an option is selected
     on_select: F,
 ) -> impl IntoView
 where
     F: Fn(String) + 'static + Copy,
 {
-    let (is_open, set_is_open) = create_signal(false);
-
     view! {
         <div class="relative">
             <button
@@ -30,24 +37,16 @@ where
                         children=move |(id, name)| {
                             let id_for_selected = id.clone();
                             let id_for_click = id.clone();
-                            let is_selected = move || selected_id.get() == id_for_selected;
+                            let is_selected = Signal::derive(move || selected_id.get() == id_for_selected);
                             view! {
-                                <button
-                                    class=move || format!(
-                                        "w-full text-left px-4 py-2 text-sm transition-colors {}",
-                                        if is_selected() {
-                                            "bg-white/20 text-white"
-                                        } else {
-                                            "text-gray-300 hover:bg-white/10 hover:text-white"
-                                        }
-                                    )
-                                    on:click=move |_| {
+                                <MenuItem
+                                    active=is_selected
+                                    label=name
+                                    on_click=Callback::new(move |_| {
                                         on_select(id_for_click.clone());
                                         set_is_open.set(false);
-                                    }
-                                >
-                                    {name}
-                                </button>
+                                    })
+                                />
                             }
                         }
                     />
