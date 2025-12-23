@@ -2149,7 +2149,7 @@ mod tests {
         let orbit = ReferenceOrbit::compute(&c_ref, 500);
 
         // Test several delta values
-        let test_deltas = [(0.1, 0.05), (0.01, 0.01), (-0.05, 0.1)];
+        let test_deltas = [(0.1, 0.05), (0.01, 0.01), (-0.05, 0.1), (0.5, 0.0)];
 
         for (dx, dy) in test_deltas {
             let delta_hdr = HDRComplex {
@@ -2170,6 +2170,11 @@ mod tests {
                 "Escaped mismatch for delta ({}, {})",
                 dx, dy
             );
+            assert_eq!(
+                original.glitched, generic.glitched,
+                "Glitched mismatch for delta ({}, {})",
+                dx, dy
+            );
         }
     }
 
@@ -2184,7 +2189,7 @@ mod tests {
         );
         let orbit = ReferenceOrbit::compute(&c_ref, 500);
 
-        let test_deltas = [(0.1, 0.05), (0.01, 0.01)];
+        let test_deltas = [(0.1, 0.05), (0.01, 0.01), (-0.05, 0.1), (0.5, 0.0)];
 
         for (dx, dy) in test_deltas {
             let delta_re = BigFloat::with_precision(dx, precision);
@@ -2212,6 +2217,11 @@ mod tests {
             assert_eq!(
                 original.escaped, generic.escaped,
                 "Escaped mismatch for delta ({}, {})",
+                dx, dy
+            );
+            assert_eq!(
+                original.glitched, generic.glitched,
+                "Glitched mismatch for delta ({}, {})",
                 dx, dy
             );
         }
