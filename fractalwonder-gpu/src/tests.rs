@@ -1,7 +1,7 @@
 //! Tests for GPU renderer - verifies GPU output matches CPU perturbation.
 
 use crate::{GpuAvailability, GpuContext};
-use fractalwonder_compute::{compute_pixel_perturbation_hdr, ReferenceOrbit};
+use fractalwonder_compute::{compute_pixel_perturbation, ReferenceOrbit};
 use fractalwonder_core::{
     calculate_max_iterations, BigFloat, ComputeData, HDRComplex, HDRFloat, MandelbrotData,
 };
@@ -352,7 +352,7 @@ fn gpu_orbit_precision_matches_cpu() {
                 };
 
                 let cpu_result =
-                    compute_pixel_perturbation_hdr(&orbit, delta_c, max_iter, tau_sq as f64);
+                    compute_pixel_perturbation(&orbit, delta_c, max_iter, tau_sq as f64);
 
                 let diff = (gpu_data.iterations as i32 - cpu_result.iterations as i32).abs();
                 total_diff += diff as i64;
