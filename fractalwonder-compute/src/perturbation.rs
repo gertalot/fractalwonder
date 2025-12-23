@@ -777,6 +777,125 @@ pub fn compute_pixel_perturbation(
     }
 }
 
+use fractalwonder_core::ComplexDelta;
+
+/// Generic perturbation iteration for any ComplexDelta type.
+///
+/// Computes the Mandelbrot iteration using perturbation theory with
+/// the provided delta type. The compiler monomorphizes this into
+/// type-specific code with zero runtime overhead.
+pub fn compute_pixel_perturbation_generic<D: ComplexDelta>(
+    orbit: &ReferenceOrbit,
+    delta_c: D,
+    max_iterations: u32,
+    tau_sq: f64,
+) -> MandelbrotData {
+    let orbit_len = orbit.orbit.len();
+    if orbit_len == 0 {
+        return MandelbrotData {
+            iterations: 0,
+            max_iterations,
+            escaped: false,
+            glitched: true,
+            final_z_norm_sq: 0.0,
+            final_z_re: 0.0,
+            final_z_im: 0.0,
+            final_derivative_re: 0.0,
+            final_derivative_im: 0.0,
+        };
+    }
+
+    // Check if reference escaped at iteration 0
+    let reference_escaped = orbit.escaped_at.is_some();
+
+    // Initialize deltas with matching precision
+    let mut dz = delta_c.zero();
+    let mut drho = delta_c.zero();
+
+    let mut m: usize = 0;
+    let mut n: u32 = 0;
+    let mut glitched = false;
+
+    while n < max_iterations {
+        // Glitch if we've run past a finite orbit
+        if reference_escaped && m >= orbit_len {
+            glitched = true;
+        }
+
+        // Get Z_m and Der_m with wrap-around
+        let z_m = orbit.orbit[m % orbit_len];
+        let der_m = orbit.derivative[m % orbit_len];
+        let z_m_complex = D::from_f64_pair(z_m.0, z_m.1);
+        let der_m_complex = D::from_f64_pair(der_m.0, der_m.1);
+
+        // Full z = Z_m + δz
+        let z = z_m_complex.add(&dz);
+        let z_norm_sq = z.norm_sq();
+
+        // Full derivative ρ = Der_m + δρ
+        let rho = der_m_complex.add(&drho);
+
+        // Escape check
+        if z_norm_sq > 65536.0 {
+            let (z_re, z_im) = z.to_f64_pair();
+            let (rho_re, rho_im) = rho.to_f64_pair();
+            return MandelbrotData {
+                iterations: n,
+                max_iterations,
+                escaped: true,
+                glitched,
+                final_z_norm_sq: z_norm_sq as f32,
+                final_z_re: z_re as f32,
+                final_z_im: z_im as f32,
+                final_derivative_re: rho_re as f32,
+                final_derivative_im: rho_im as f32,
+            };
+        }
+
+        // Pauldelbrot glitch detection
+        let z_m_norm_sq = z_m.0 * z_m.0 + z_m.1 * z_m.1;
+        if z_m_norm_sq > 1e-20 && z_norm_sq < tau_sq * z_m_norm_sq {
+            glitched = true;
+        }
+
+        // Rebase check
+        let dz_norm_sq = dz.norm_sq();
+        if z_norm_sq < dz_norm_sq {
+            dz = z;
+            drho = rho;
+            m = 0;
+            continue;
+        }
+
+        // Delta iteration: δz' = 2·Z_m·δz + δz² + δc
+        let old_dz = dz.clone();
+        let two_z_dz = z_m_complex.mul(&dz).scale(2.0);
+        let dz_sq = dz.square();
+        dz = two_z_dz.add(&dz_sq).add(&delta_c);
+
+        // Derivative iteration: δρ' = 2·Z_m·δρ + 2·δz·Der_m + 2·δz·δρ
+        let term1 = z_m_complex.mul(&drho).scale(2.0);
+        let term2 = old_dz.mul(&der_m_complex).scale(2.0);
+        let term3 = old_dz.mul(&drho).scale(2.0);
+        drho = term1.add(&term2).add(&term3);
+
+        m += 1;
+        n += 1;
+    }
+
+    MandelbrotData {
+        iterations: max_iterations,
+        max_iterations,
+        escaped: false,
+        glitched,
+        final_z_norm_sq: 0.0,
+        final_z_re: 0.0,
+        final_z_im: 0.0,
+        final_derivative_re: 0.0,
+        final_derivative_im: 0.0,
+    }
+}
+
 /// f64 perturbation with BLA (Bivariate Linear Approximation) iteration skipping.
 /// Uses the BLA table to skip iterations where linear approximation is valid.
 pub fn compute_pixel_perturbation_bla(
@@ -1979,5 +2098,46 @@ mod tests {
                 "Non-escaping pixel with short reference orbit must be glitched"
             );
         }
+    }
+
+    #[test]
+    fn generic_f64_matches_original_escaped() {
+        use fractalwonder_core::{ComplexDelta, F64Complex};
+
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 1000);
+        let delta_c = (0.5, 0.0);
+
+        let original = compute_pixel_perturbation(&orbit, delta_c, 1000, TEST_TAU_SQ);
+        let generic = compute_pixel_perturbation_generic(
+            &orbit,
+            F64Complex::from_f64_pair(delta_c.0, delta_c.1),
+            1000,
+            TEST_TAU_SQ,
+        );
+
+        assert_eq!(original.iterations, generic.iterations);
+        assert_eq!(original.escaped, generic.escaped);
+        assert_eq!(original.glitched, generic.glitched);
+    }
+
+    #[test]
+    fn generic_f64_matches_original_in_set() {
+        use fractalwonder_core::{ComplexDelta, F64Complex};
+
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 500);
+        let delta_c = (0.01, 0.01);
+
+        let original = compute_pixel_perturbation(&orbit, delta_c, 500, TEST_TAU_SQ);
+        let generic = compute_pixel_perturbation_generic(
+            &orbit,
+            F64Complex::from_f64_pair(delta_c.0, delta_c.1),
+            500,
+            TEST_TAU_SQ,
+        );
+
+        assert_eq!(original.iterations, generic.iterations);
+        assert_eq!(original.escaped, generic.escaped);
     }
 }
