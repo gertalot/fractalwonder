@@ -217,8 +217,13 @@ impl GlitchResolver {
             let center_px_y = leaf.bounds.y as f64 + leaf.bounds.height as f64 / 2.0;
 
             // Convert to fractal coordinates
-            let (c_ref_x, c_ref_y) =
-                pixel_to_fractal(center_px_x, center_px_y, viewport, canvas_size, precision_bits);
+            let (c_ref_x, c_ref_y) = pixel_to_fractal(
+                center_px_x,
+                center_px_y,
+                viewport,
+                canvas_size,
+                precision_bits,
+            );
 
             // Compute the reference orbit
             let c_ref = (c_ref_x, c_ref_y);
@@ -234,7 +239,11 @@ impl GlitchResolver {
     /// Get orbits that need to be broadcast to workers.
     ///
     /// Returns Vec of (orbit_id, broadcast_data) for orbits not yet assigned an ID.
-    pub fn orbits_to_broadcast(&mut self, dc_max: f64, bla_enabled: bool) -> Vec<(u32, MainToWorker)> {
+    pub fn orbits_to_broadcast(
+        &mut self,
+        dc_max: f64,
+        bla_enabled: bool,
+    ) -> Vec<(u32, MainToWorker)> {
         let mut broadcasts = Vec::new();
 
         let cells_without_id: Vec<CellKey> = self
