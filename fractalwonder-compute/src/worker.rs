@@ -93,10 +93,17 @@ impl Renderer for MandelbrotRendererWrapper {
 }
 
 fn post_message(msg: &WorkerToMain) {
-    if let Ok(json) = serde_json::to_string(msg) {
-        let global: web_sys::DedicatedWorkerGlobalScope =
-            js_sys::global().dyn_into().expect("Not in worker context");
-        let _ = global.post_message(&JsValue::from_str(&json));
+    match serde_json::to_string(msg) {
+        Ok(json) => {
+            let global: web_sys::DedicatedWorkerGlobalScope =
+                js_sys::global().dyn_into().expect("Not in worker context");
+            let _ = global.post_message(&JsValue::from_str(&json));
+        }
+        Err(e) => {
+            web_sys::console::error_1(
+                &format!("[Worker] Failed to serialize message: {}", e).into(),
+            );
+        }
     }
 }
 

@@ -5,6 +5,16 @@
 
 use fractalwonder_core::{BigFloat, HDRComplex, HDRFloat, MandelbrotData};
 
+/// Sanitize f32 value: replace infinity/NaN with 0.0 to ensure JSON serialization succeeds.
+#[inline]
+fn sanitize_f32(v: f32) -> f32 {
+    if v.is_finite() {
+        v
+    } else {
+        0.0
+    }
+}
+
 /// A pre-computed reference orbit for perturbation rendering.
 #[derive(Clone)]
 pub struct ReferenceOrbit {
@@ -141,8 +151,8 @@ pub fn compute_pixel_perturbation_hdr_bla(
                 final_z_norm_sq: z_mag_sq as f32,
                 final_z_re: z_re.to_f64() as f32,
                 final_z_im: z_im.to_f64() as f32,
-                final_derivative_re: rho_re.to_f64() as f32,
-                final_derivative_im: rho_im.to_f64() as f32,
+                final_derivative_re: sanitize_f32(rho_re.to_f64() as f32),
+                final_derivative_im: sanitize_f32(rho_im.to_f64() as f32),
             };
         }
 
@@ -342,8 +352,8 @@ pub fn compute_pixel_perturbation<D: ComplexDelta>(
                 final_z_norm_sq: z_norm_sq as f32,
                 final_z_re: z_re as f32,
                 final_z_im: z_im as f32,
-                final_derivative_re: rho_re as f32,
-                final_derivative_im: rho_im as f32,
+                final_derivative_re: sanitize_f32(rho_re as f32),
+                final_derivative_im: sanitize_f32(rho_im as f32),
             };
         }
 
