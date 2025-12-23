@@ -1,11 +1,11 @@
 // fractalwonder-compute/src/worker.rs
 use crate::{
-    compute_pixel_perturbation, compute_pixel_perturbation_bigfloat,
-    compute_pixel_perturbation_hdr, compute_pixel_perturbation_hdr_bla, BlaTable,
+    compute_pixel_perturbation_generic, compute_pixel_perturbation_hdr_bla, BlaTable,
     MandelbrotRenderer, ReferenceOrbit, Renderer, TestImageRenderer,
 };
 use fractalwonder_core::{
-    BigFloat, ComputeData, HDRComplex, HDRFloat, MainToWorker, Viewport, WorkerToMain,
+    BigFloat, BigFloatComplex, ComplexDelta, ComputeData, F64Complex, HDRComplex, HDRFloat,
+    MainToWorker, Viewport, WorkerToMain,
 };
 use js_sys::Date;
 use std::cell::RefCell;
@@ -397,8 +397,12 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     let mut delta_c = delta_c_row;
 
                     for _px in 0..tile.width {
-                        let result =
-                            compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq);
+                        let result = compute_pixel_perturbation_generic(
+                            &orbit,
+                            F64Complex::from_f64_pair(delta_c.0, delta_c.1),
+                            max_iterations,
+                            tau_sq,
+                        );
                         data.push(ComputeData::Mandelbrot(result));
 
                         delta_c.0 += delta_step.0;
@@ -434,7 +438,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                                 )
                             } else {
                                 // Fallback if table wasn't built
-                                compute_pixel_perturbation_hdr(
+                                compute_pixel_perturbation_generic(
                                     &orbit,
                                     delta_c,
                                     max_iterations,
@@ -442,7 +446,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                                 )
                             }
                         } else {
-                            compute_pixel_perturbation_hdr(&orbit, delta_c, max_iterations, tau_sq)
+                            compute_pixel_perturbation_generic(&orbit, delta_c, max_iterations, tau_sq)
                         };
                         data.push(ComputeData::Mandelbrot(result));
 
@@ -460,10 +464,9 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     let mut delta_c_re = delta_c_row_re.clone();
 
                     for _px in 0..tile.width {
-                        let result = compute_pixel_perturbation_bigfloat(
+                        let result = compute_pixel_perturbation_generic(
                             &orbit,
-                            &delta_c_re,
-                            &delta_c_row_im,
+                            BigFloatComplex::new(delta_c_re.clone(), delta_c_row_im.clone()),
                             max_iterations,
                             tau_sq,
                         );
