@@ -23,14 +23,20 @@ where
         <div class="relative">
             <button
                 class="text-white hover:text-gray-200 hover:bg-white/10 rounded-lg px-3 py-2 transition-colors flex items-center gap-2"
-                on:click=move |_| set_is_open.update(|v| *v = !*v)
+                on:click=move |e| {
+                    e.stop_propagation();
+                    set_is_open.update(|v| *v = !*v);
+                }
             >
                 <span class="text-sm">{label.clone()}</span>
                 <span class="text-xs opacity-70">"▾"</span>
             </button>
 
             {move || is_open.get().then(|| view! {
-                <div class="absolute bottom-full mb-2 left-0 min-w-40 bg-black/70 backdrop-blur-sm border border-gray-800 rounded-lg overflow-hidden">
+                <div
+                    class="absolute bottom-full mb-2 left-0 min-w-40 bg-black/70 backdrop-blur-sm border border-gray-800 rounded-lg overflow-hidden"
+                    on:click=|e| e.stop_propagation()
+                >
                     <For
                         each=move || options.get()
                         key=|(id, _)| id.clone()

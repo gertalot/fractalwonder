@@ -27,13 +27,19 @@ pub fn InfoMenu(is_open: ReadSignal<bool>, set_is_open: WriteSignal<bool>) -> im
         <div class="relative">
             <button
                 class="text-white hover:text-gray-200 hover:bg-white/10 rounded-full p-2 transition-colors"
-                on:click=move |_| set_is_open.update(|v| *v = !*v)
+                on:click=move |e| {
+                    e.stop_propagation();
+                    set_is_open.update(|v| *v = !*v);
+                }
             >
                 <InfoIcon />
             </button>
 
             {move || is_open.get().then(|| view! {
-                <div class="absolute bottom-full mb-2 left-0 w-80 bg-black/70 backdrop-blur-sm border border-gray-800 rounded-lg p-4 text-white">
+                <div
+                    class="absolute bottom-full mb-2 left-0 w-80 bg-black/70 backdrop-blur-sm border border-gray-800 rounded-lg p-4 text-white"
+                    on:click=|e| e.stop_propagation()
+                >
                     <h3 class="font-medium mb-2">"Fractal Wonder"</h3>
                     <p class="text-sm text-gray-300 mb-3">
                         "Use mouse/touch to pan and zoom."

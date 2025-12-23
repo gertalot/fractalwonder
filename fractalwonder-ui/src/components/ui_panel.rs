@@ -87,13 +87,16 @@ pub fn UIPanel(
         }
     });
 
-    // Prevent auto-hide when any menu is open
+    // Check if any menu is open
     let any_menu_open =
         move || is_info_open.get() || is_palette_open.get() || is_options_open.get();
+
+    // Track mouse position over the panel (separate from menu state)
+    let (is_mouse_over, set_is_mouse_over) = create_signal(false);
+
+    // Derive is_hovering for parent: blocks auto-hide when mouse over panel OR menu open
     create_effect(move |_| {
-        if any_menu_open() {
-            set_is_hovering.set(true);
-        }
+        set_is_hovering.set(is_mouse_over.get() || any_menu_open());
     });
 
     let opacity_class = move || {
@@ -112,7 +115,7 @@ pub fn UIPanel(
     };
 
     view! {
-        // Click-outside overlay: closes menus when clicking outside
+        // Fullscreen overlay: closes menus when clicking outside (canvas, etc.)
         {move || any_menu_open().then(|| view! {
             <div
                 class="fixed inset-0 z-40"
@@ -125,13 +128,9 @@ pub fn UIPanel(
                 "fixed inset-x-0 bottom-0 z-50 transition-opacity duration-300 {}",
                 opacity_class()
             )
-            on:mouseenter=move |_| set_is_hovering.set(true)
-            on:mouseleave=move |_| {
-                // Don't set hovering to false if any menu is open
-                if !any_menu_open() {
-                    set_is_hovering.set(false)
-                }
-            }
+            on:mouseenter=move |_| set_is_mouse_over.set(true)
+            on:mouseleave=move |_| set_is_mouse_over.set(false)
+            on:click=move |_| close_all_menus()
         >
             <div class="flex items-center justify-between px-4 py-3 bg-black/50 backdrop-blur-sm">
                 // Left section: info button, home button, and menus
