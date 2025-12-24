@@ -317,27 +317,174 @@ Based on Tailwind's spacing scale (0.25rem base):
 - Duration: 150ms (default), 300ms (panels)
 - Timing: `cubic-bezier(0.4, 0, 0.2, 1)` (Tailwind default)
 
-## Mapping to Existing Rust Types
+## Rust Implementation Architecture
 
-The mockup data structures map to existing Rust types in `settings.rs`:
+This section defines the Rust data model for the palette editor, based on architectural decisions made during design review.
 
-| Mockup | Rust Type | Notes |
-|--------|-----------|-------|
-| `palette.histogram` | `ColorOptions.histogram_enabled` | Direct mapping |
-| `palette.smooth` | `ColorOptions.smooth_enabled` | Direct mapping |
-| `palette.use3D` | `ColorOptions.shading_enabled` | Direct mapping |
-| `palette.stops` | `Palette` | Needs gradient stop representation |
-| `palette.transferCurve` | `transfer_bias` | Currently simple power function; mockup uses curve |
-| `palette.falloffCurve` | `ShadingSettings.distance_falloff` | Currently single value; mockup uses curve |
-| `palette.lighting.*` | `ShadingSettings.*` | Direct mapping (convert degrees to radians) |
+### Design Principles
 
-### Required Extensions
+1. **Unified Palette struct** - A palette is a complete "coloring recipe" containing gradient, curves, lighting, and flags
+2. **Data model stores what code needs** - RGB arrays (not hex strings), radians (not degrees)
+3. **Cubic interpolating splines** - Curves store control points only; spline coefficients computed at evaluation time
+4. **Factory shadowing** - User edits save to localStorage and shadow factory defaults by ID
 
-To fully implement this UI, the Rust types may need:
+### Core Data Structures
 
-1. **Gradient stops representation** - Currently palettes are predefined; need runtime-editable gradient stops
-2. **Transfer curve points** - Replace simple `transfer_bias: f32` with control points
-3. **Falloff curve points** - Replace simple `distance_falloff: f64` with control points
+```rust
+/// A control point on a curve (transfer or falloff)
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CurvePoint {
+    pub x: f64,  // 0.0-1.0, input
+    pub y: f64,  // 0.0-1.0, output
+}
+
+/// A cubic interpolating spline through control points
+/// Curve passes exactly through each point (like Photoshop Curves)
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Curve {
+    pub points: Vec<CurvePoint>,  // sorted by x, min 2 points
+}
+
+/// A color stop in the gradient
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ColorStop {
+    pub position: f64,     // 0.0-1.0, position along gradient
+    pub color: [u8; 3],    // RGB
+}
+
+/// Color gradient with stops and midpoints
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Gradient {
+    pub stops: Vec<ColorStop>,    // min 2, sorted by position
+    pub midpoints: Vec<f64>,      // len = stops.len() - 1, each 0.0-1.0 (default 0.5)
+}
+// midpoints[i] controls blend center between stops[i] and stops[i+1]
+
+/// Blinn-Phong lighting parameters
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LightingParams {
+    pub ambient: f64,      // 0.0-1.0
+    pub diffuse: f64,      // 0.0-1.0
+    pub specular: f64,     // 0.0-1.0
+    pub shininess: f64,    // 1-128
+    pub strength: f64,     // 0.0-2.0
+    pub azimuth: f64,      // radians (UI converts to/from degrees)
+    pub elevation: f64,    // radians (UI converts to/from degrees)
+}
+
+/// A complete palette configuration - the unified "coloring recipe"
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Palette {
+    pub id: String,                    // unique identifier, used for shadowing
+    pub name: String,                  // display name
+    pub gradient: Gradient,            // color stops + midpoints
+    pub transfer_curve: Curve,         // maps iteration → palette position
+    pub histogram_enabled: bool,       // histogram equalization
+    pub smooth_enabled: bool,          // smooth iteration coloring
+    pub shading_enabled: bool,         // 3D lighting toggle
+    pub falloff_curve: Curve,          // 3D lighting falloff
+    pub lighting: LightingParams,      // Blinn-Phong params
+}
+```
+
+### Runtime Settings (Separate from Palette)
+
+These settings are not persisted with the palette:
+
+```rust
+pub struct RenderSettings {
+    pub cycle_count: u32,    // default 1, range 1-1024
+    pub use_gpu: bool,       // GPU vs CPU rendering
+    pub xray_enabled: bool,  // debug: highlight glitched pixels
+}
+```
+
+### LUT Generation
+
+The `Gradient` generates a pre-computed 4096-entry lookup table using OKLAB interpolation:
+
+```rust
+impl Gradient {
+    /// Generate LUT with OKLAB interpolation and midpoint handling
+    pub fn to_lut(&self) -> Vec<[u8; 3]> {
+        // For each LUT position t in [0, 1]:
+        // 1. Find which segment t falls in (based on stop positions)
+        // 2. Apply midpoint bias to get adjusted interpolation factor
+        // 3. Interpolate colors in OKLAB space
+    }
+}
+```
+
+### Curve Evaluation
+
+Curves use cubic interpolating splines (like Photoshop Curves):
+
+```rust
+impl Curve {
+    /// Evaluate curve at position x using cubic spline interpolation
+    pub fn evaluate(&self, x: f64) -> f64;
+
+    /// Linear curve (identity function, default)
+    pub fn linear() -> Self {
+        Self { points: vec![
+            CurvePoint { x: 0.0, y: 0.0 },
+            CurvePoint { x: 1.0, y: 1.0 },
+        ]}
+    }
+}
+```
+
+### Persistence and Factory Shadowing
+
+Palettes are persisted to localStorage using `web_sys::Storage` and `serde_json`:
+
+```rust
+impl Palette {
+    /// Save to localStorage (shadows factory default)
+    pub fn save(&self) -> Result<(), JsValue> {
+        let storage = window()?.local_storage().ok()??;
+        let json = serde_json::to_string(self)?;
+        storage.set_item(&format!("palette:{}", self.id), &json)
+    }
+
+    /// Load from localStorage, returns None if not found
+    pub fn load(id: &str) -> Option<Self> {
+        let storage = window()?.local_storage().ok()??;
+        let json = storage.get_item(&format!("palette:{id}")).ok()??;
+        serde_json::from_str(&json).ok()
+    }
+
+    /// Delete from localStorage (resets to factory default)
+    pub fn delete(id: &str);
+
+    /// Get palette by ID: localStorage first, then factory default
+    pub fn get(id: &str) -> Option<Self> {
+        Self::load(id).or_else(|| {
+            Self::factory_defaults().into_iter().find(|p| p.id == id)
+        })
+    }
+
+    /// Factory default palettes (built into binary)
+    pub fn factory_defaults() -> Vec<Palette>;
+}
+```
+
+### Refactoring Map
+
+| Old Structure | New Structure | Notes |
+|---------------|---------------|-------|
+| `Palette` (LUT only) | `PaletteLut` | Internal, generated from `Gradient` |
+| `PaletteEntry` | Removed | `Palette` now has id/name |
+| `ColorOptions.palette_id` | Use `Palette` directly | |
+| `ColorOptions.histogram_enabled` | `Palette.histogram_enabled` | |
+| `ColorOptions.smooth_enabled` | `Palette.smooth_enabled` | |
+| `ColorOptions.shading_enabled` | `Palette.shading_enabled` | |
+| `ColorOptions.transfer_bias` | `Palette.transfer_curve` | Power function → spline curve |
+| `ColorOptions.cycle_count` | `RenderSettings.cycle_count` | Separate, default 1 |
+| `ColorOptions.use_gpu` | `RenderSettings.use_gpu` | Separate |
+| `ShadingSettings` | `Palette.lighting` + `Palette.falloff_curve` | |
+| `ShadingSettings.distance_falloff` | `Palette.falloff_curve` | Single value → spline curve |
+| `palettes()` function | `Palette::factory_defaults()` | |
 
 ## Implementation Notes
 
