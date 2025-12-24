@@ -23,7 +23,17 @@ pub struct Gradient {
 
 impl Gradient {
     /// Create a gradient from color stops with default midpoints (0.5).
-    pub fn new(stops: Vec<ColorStop>) -> Self {
+    /// Stops are sorted by position. Requires at least one stop.
+    pub fn new(mut stops: Vec<ColorStop>) -> Self {
+        assert!(
+            !stops.is_empty(),
+            "Gradient must have at least one color stop"
+        );
+        stops.sort_by(|a, b| {
+            a.position
+                .partial_cmp(&b.position)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let midpoint_count = if stops.len() > 1 { stops.len() - 1 } else { 0 };
         Self {
             stops,
@@ -61,6 +71,12 @@ impl Gradient {
     }
 
     fn sample_oklab(&self, oklab_stops: &[(f64, (f64, f64, f64))], t: f64) -> [u8; 3] {
+        debug_assert_eq!(
+            self.midpoints.len(),
+            self.stops.len().saturating_sub(1),
+            "Midpoints length must equal stops length minus 1"
+        );
+
         // Find segment
         let mut seg = 0;
         while seg < oklab_stops.len() - 1 && oklab_stops[seg + 1].0 < t {
@@ -100,7 +116,9 @@ impl Gradient {
 }
 
 /// Apply midpoint bias to interpolation factor.
-/// midpoint=0.5 is linear, <0.5 shifts toward start, >0.5 shifts toward end.
+/// midpoint=0.5 is linear interpolation.
+/// midpoint<0.5: blend center shifts left, making colors transition faster (brighter earlier)
+/// midpoint>0.5: blend center shifts right, making colors transition slower (darker earlier)
 fn apply_midpoint_bias(t: f64, midpoint: f64) -> f64 {
     if (midpoint - 0.5).abs() < 1e-10 {
         return t;
