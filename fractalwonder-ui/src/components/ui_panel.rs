@@ -147,6 +147,14 @@ pub fn UIPanel(
                         options=palette_options
                         selected_id=selected_palette_id
                         on_select=move |id| on_palette_select.call(id)
+                        on_new=Callback::new(|_| {
+                            // TODO: Open PaletteEditor slide-out panel
+                            // See docs/ux-palette-editor/ARCHITECTURE.md
+                        })
+                        on_edit=Callback::new(|_id| {
+                            // TODO: Open PaletteEditor for palette `_id`
+                            // See docs/ux-palette-editor/ARCHITECTURE.md
+                        })
                     />
                     <OptionsMenu
                         is_open=is_options_open
