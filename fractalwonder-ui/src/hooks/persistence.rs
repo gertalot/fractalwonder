@@ -5,7 +5,7 @@
 //! Priority on load: URL hash > localStorage > defaults.
 //! Enables users to continue exploring from their last position and share fractals via URL.
 
-use crate::rendering::colorizers::ColorOptions;
+use crate::rendering::colorizers::RenderSettings;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use flate2::{read::DeflateDecoder, write::DeflateEncoder, Compression};
 use fractalwonder_core::Viewport;
@@ -22,28 +22,45 @@ pub struct PersistedState {
     pub viewport: Viewport,
     /// Selected fractal configuration ID
     pub config_id: String,
-    /// Color options (palette, shading, smooth, cycles)
+    /// Palette ID to load on startup
+    #[serde(default = "default_palette_id")]
+    pub palette_id: String,
+    /// Render settings (cycle_count, use_gpu, xray)
     #[serde(default)]
-    pub color_options: ColorOptions,
+    pub render_settings: RenderSettings,
     /// Schema version for future migrations
     version: u32,
 }
 
-impl PersistedState {
-    const CURRENT_VERSION: u32 = 3;
+fn default_palette_id() -> String {
+    "classic".to_string()
+}
 
-    pub fn new(viewport: Viewport, config_id: String, color_options: ColorOptions) -> Self {
+impl PersistedState {
+    const CURRENT_VERSION: u32 = 4;
+
+    pub fn new(
+        viewport: Viewport,
+        config_id: String,
+        palette_id: String,
+        render_settings: RenderSettings,
+    ) -> Self {
         Self {
             viewport,
             config_id,
-            color_options,
+            palette_id,
+            render_settings,
             version: Self::CURRENT_VERSION,
         }
     }
 
-    /// Create state with default color options.
     pub fn with_defaults(viewport: Viewport, config_id: String) -> Self {
-        Self::new(viewport, config_id, ColorOptions::default())
+        Self::new(
+            viewport,
+            config_id,
+            "classic".to_string(),
+            RenderSettings::default(),
+        )
     }
 }
 
@@ -67,12 +84,12 @@ fn load_from_local_storage() -> Option<PersistedState> {
 
     match serde_json::from_str::<PersistedState>(&json) {
         Ok(state) => {
-            // Accept v1, v2, v3 (migration handled by serde default)
+            // Accept v1, v2, v3, v4 (migration handled by serde default)
             if state.version >= 1 && state.version <= PersistedState::CURRENT_VERSION {
                 log::info!(
                     "Loaded persisted state from localStorage: config={}, palette={}",
                     state.config_id,
-                    state.color_options.palette_id
+                    state.palette_id
                 );
                 Some(state)
             } else {
@@ -298,43 +315,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn persisted_state_with_color_options_roundtrips() {
-        use crate::rendering::colorizers::ColorOptions;
-
+    fn persisted_state_roundtrips() {
         let viewport = fractalwonder_core::Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64);
-        let options = ColorOptions {
-            palette_id: "fire".to_string(),
-            shading_enabled: true,
+        let settings = RenderSettings {
             cycle_count: 64,
-            ..Default::default()
+            use_gpu: false,
+            xray_enabled: true,
         };
 
-        let state =
-            PersistedState::new(viewport.clone(), "mandelbrot".to_string(), options.clone());
+        let state = PersistedState::new(
+            viewport.clone(),
+            "mandelbrot".to_string(),
+            "fire".to_string(),
+            settings.clone(),
+        );
 
         let encoded = encode_state(&state).expect("encoding should succeed");
         let decoded = decode_state(&encoded).expect("decoding should succeed");
 
-        assert_eq!(decoded.color_options.palette_id, "fire");
-        assert!(decoded.color_options.shading_enabled);
-        assert_eq!(decoded.color_options.cycle_count, 64);
-    }
-
-    #[test]
-    fn color_options_persist_through_encode_decode() {
-        use crate::rendering::colorizers::ColorOptions;
-
-        let viewport = fractalwonder_core::Viewport::from_f64(0.0, 0.0, 4.0, 3.0, 64);
-        let options = ColorOptions {
-            palette_id: "fire".to_string(),
-            ..Default::default()
-        };
-        let state = PersistedState::new(viewport, "mandelbrot".to_string(), options);
-
-        let encoded = encode_state(&state).expect("encoding should succeed");
-        let decoded = decode_state(&encoded).expect("decoding should succeed");
-
-        assert_eq!(decoded.color_options.palette_id, "fire");
+        assert_eq!(decoded.palette_id, "fire");
+        assert_eq!(decoded.render_settings.cycle_count, 64);
+        assert!(!decoded.render_settings.use_gpu);
+        assert!(decoded.render_settings.xray_enabled);
     }
 }
 
