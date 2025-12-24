@@ -23,8 +23,14 @@ impl Default for Palette {
             id: "default".to_string(),
             name: "Default".to_string(),
             gradient: Gradient::new(vec![
-                ColorStop { position: 0.0, color: [0, 0, 0] },
-                ColorStop { position: 1.0, color: [255, 255, 255] },
+                ColorStop {
+                    position: 0.0,
+                    color: [0, 0, 0],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [255, 255, 255],
+                },
             ]),
             transfer_curve: Curve::linear(),
             histogram_enabled: false,
@@ -50,6 +56,361 @@ impl Palette {
     /// Apply the falloff curve to a distance value.
     pub fn apply_falloff(&self, t: f64) -> f64 {
         self.falloff_curve.evaluate(t)
+    }
+
+    /// Factory default palettes built into the binary.
+    pub fn factory_defaults() -> Vec<Palette> {
+        vec![
+            Self::classic(),
+            Self::fire(),
+            Self::ocean(),
+            Self::electric(),
+            Self::grayscale(),
+            Self::rainbow(),
+            Self::neon(),
+            Self::twilight(),
+            Self::candy(),
+            Self::inferno(),
+            Self::aurora(),
+        ]
+    }
+
+    fn classic() -> Self {
+        Self {
+            id: "classic".to_string(),
+            name: "Classic".to_string(),
+            gradient: Gradient::new(vec![
+                ColorStop {
+                    position: 0.0,
+                    color: [0, 7, 100],
+                },
+                ColorStop {
+                    position: 0.16,
+                    color: [0, 2, 0],
+                },
+                ColorStop {
+                    position: 0.33,
+                    color: [0, 7, 100],
+                },
+                ColorStop {
+                    position: 0.5,
+                    color: [32, 107, 203],
+                },
+                ColorStop {
+                    position: 0.66,
+                    color: [255, 170, 0],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [237, 255, 255],
+                },
+            ]),
+            ..Self::default()
+        }
+    }
+
+    fn fire() -> Self {
+        Self {
+            id: "fire".to_string(),
+            name: "Fire".to_string(),
+            gradient: Gradient::new(vec![
+                ColorStop {
+                    position: 0.0,
+                    color: [0, 0, 0],
+                },
+                ColorStop {
+                    position: 0.2,
+                    color: [128, 0, 0],
+                },
+                ColorStop {
+                    position: 0.4,
+                    color: [255, 0, 0],
+                },
+                ColorStop {
+                    position: 0.6,
+                    color: [255, 128, 0],
+                },
+                ColorStop {
+                    position: 0.8,
+                    color: [255, 255, 0],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [255, 255, 255],
+                },
+            ]),
+            ..Self::default()
+        }
+    }
+
+    fn ocean() -> Self {
+        Self {
+            id: "ocean".to_string(),
+            name: "Ocean".to_string(),
+            gradient: Gradient::new(vec![
+                ColorStop {
+                    position: 0.0,
+                    color: [0, 0, 64],
+                },
+                ColorStop {
+                    position: 0.25,
+                    color: [0, 64, 128],
+                },
+                ColorStop {
+                    position: 0.5,
+                    color: [0, 128, 192],
+                },
+                ColorStop {
+                    position: 0.75,
+                    color: [64, 192, 255],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [255, 255, 255],
+                },
+            ]),
+            ..Self::default()
+        }
+    }
+
+    fn electric() -> Self {
+        Self {
+            id: "electric".to_string(),
+            name: "Electric".to_string(),
+            gradient: Gradient::new(vec![
+                ColorStop {
+                    position: 0.0,
+                    color: [32, 0, 64],
+                },
+                ColorStop {
+                    position: 0.2,
+                    color: [64, 0, 128],
+                },
+                ColorStop {
+                    position: 0.4,
+                    color: [0, 0, 255],
+                },
+                ColorStop {
+                    position: 0.6,
+                    color: [0, 255, 255],
+                },
+                ColorStop {
+                    position: 0.8,
+                    color: [0, 255, 0],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [255, 255, 0],
+                },
+            ]),
+            ..Self::default()
+        }
+    }
+
+    fn grayscale() -> Self {
+        Self {
+            id: "grayscale".to_string(),
+            name: "Grayscale".to_string(),
+            gradient: Gradient::new(vec![
+                ColorStop {
+                    position: 0.0,
+                    color: [0, 0, 0],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [255, 255, 255],
+                },
+            ]),
+            ..Self::default()
+        }
+    }
+
+    fn rainbow() -> Self {
+        Self {
+            id: "rainbow".to_string(),
+            name: "Rainbow".to_string(),
+            gradient: Gradient::new(vec![
+                ColorStop {
+                    position: 0.0,
+                    color: [255, 0, 0],
+                },
+                ColorStop {
+                    position: 0.17,
+                    color: [255, 127, 0],
+                },
+                ColorStop {
+                    position: 0.33,
+                    color: [255, 255, 0],
+                },
+                ColorStop {
+                    position: 0.5,
+                    color: [0, 255, 0],
+                },
+                ColorStop {
+                    position: 0.67,
+                    color: [0, 0, 255],
+                },
+                ColorStop {
+                    position: 0.83,
+                    color: [75, 0, 130],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [148, 0, 211],
+                },
+            ]),
+            ..Self::default()
+        }
+    }
+
+    fn neon() -> Self {
+        Self {
+            id: "neon".to_string(),
+            name: "Neon".to_string(),
+            gradient: Gradient::new(vec![
+                ColorStop {
+                    position: 0.0,
+                    color: [255, 0, 255],
+                },
+                ColorStop {
+                    position: 0.33,
+                    color: [0, 255, 255],
+                },
+                ColorStop {
+                    position: 0.67,
+                    color: [255, 255, 0],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [255, 0, 255],
+                },
+            ]),
+            ..Self::default()
+        }
+    }
+
+    fn twilight() -> Self {
+        Self {
+            id: "twilight".to_string(),
+            name: "Twilight".to_string(),
+            gradient: Gradient::new(vec![
+                ColorStop {
+                    position: 0.0,
+                    color: [255, 100, 50],
+                },
+                ColorStop {
+                    position: 0.2,
+                    color: [200, 50, 150],
+                },
+                ColorStop {
+                    position: 0.4,
+                    color: [80, 80, 220],
+                },
+                ColorStop {
+                    position: 0.6,
+                    color: [50, 150, 255],
+                },
+                ColorStop {
+                    position: 0.8,
+                    color: [150, 200, 150],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [255, 100, 50],
+                },
+            ]),
+            ..Self::default()
+        }
+    }
+
+    fn candy() -> Self {
+        Self {
+            id: "candy".to_string(),
+            name: "Candy".to_string(),
+            gradient: Gradient::new(vec![
+                ColorStop {
+                    position: 0.0,
+                    color: [255, 180, 200],
+                },
+                ColorStop {
+                    position: 0.25,
+                    color: [200, 180, 255],
+                },
+                ColorStop {
+                    position: 0.5,
+                    color: [180, 255, 220],
+                },
+                ColorStop {
+                    position: 0.75,
+                    color: [255, 240, 180],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [255, 180, 200],
+                },
+            ]),
+            ..Self::default()
+        }
+    }
+
+    fn inferno() -> Self {
+        Self {
+            id: "inferno".to_string(),
+            name: "Inferno".to_string(),
+            gradient: Gradient::new(vec![
+                ColorStop {
+                    position: 0.0,
+                    color: [5, 0, 10],
+                },
+                ColorStop {
+                    position: 0.25,
+                    color: [100, 10, 10],
+                },
+                ColorStop {
+                    position: 0.5,
+                    color: [255, 100, 0],
+                },
+                ColorStop {
+                    position: 0.75,
+                    color: [255, 180, 50],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [200, 150, 100],
+                },
+            ]),
+            ..Self::default()
+        }
+    }
+
+    fn aurora() -> Self {
+        Self {
+            id: "aurora".to_string(),
+            name: "Aurora".to_string(),
+            gradient: Gradient::new(vec![
+                ColorStop {
+                    position: 0.0,
+                    color: [50, 255, 100],
+                },
+                ColorStop {
+                    position: 0.25,
+                    color: [50, 200, 255],
+                },
+                ColorStop {
+                    position: 0.5,
+                    color: [150, 80, 255],
+                },
+                ColorStop {
+                    position: 0.75,
+                    color: [100, 200, 100],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [50, 255, 100],
+                },
+            ]),
+            ..Self::default()
+        }
     }
 }
 
@@ -85,5 +446,20 @@ mod tests {
         let parsed: Palette = serde_json::from_str(&json).unwrap();
         assert_eq!(palette.id, parsed.id);
         assert_eq!(palette.name, parsed.name);
+    }
+
+    #[test]
+    fn factory_defaults_contains_classic() {
+        let palettes = Palette::factory_defaults();
+        assert!(palettes.iter().any(|p| p.id == "classic"));
+    }
+
+    #[test]
+    fn factory_defaults_all_have_unique_ids() {
+        let palettes = Palette::factory_defaults();
+        let mut ids: Vec<_> = palettes.iter().map(|p| &p.id).collect();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), palettes.len());
     }
 }
