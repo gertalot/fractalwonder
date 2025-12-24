@@ -1,6 +1,7 @@
 pub mod color_space;
 pub mod colorizer;
 pub mod curve;
+pub mod gradient;
 pub mod palette;
 pub mod pipeline;
 pub mod settings;
@@ -11,6 +12,7 @@ use fractalwonder_core::ComputeData;
 
 pub use colorizer::{Colorizer, ColorizerKind};
 pub use curve::{Curve, CurvePoint};
+pub use gradient::{ColorStop, Gradient};
 pub use palette::Palette;
 pub use pipeline::ColorPipeline;
 pub use settings::{apply_transfer_bias, ColorOptions, ShadingSettings};
