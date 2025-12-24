@@ -9,10 +9,7 @@ use wasm_bindgen::JsValue;
 #[cfg(target_arch = "wasm32")]
 use web_sys::window;
 
-/// Embedded factory palettes JSON (fallback for tests and offline).
-const EMBEDDED_FACTORY_PALETTES: &str = include_str!("../../../../assets/factory_palettes.json");
-
-/// Cached factory palettes (loaded once, either from fetch or embedded).
+/// Cached factory palettes (loaded from /assets/factory_palettes.json).
 static FACTORY_PALETTES: OnceLock<Vec<Palette>> = OnceLock::new();
 
 /// A complete palette configuration.
@@ -72,21 +69,17 @@ impl Palette {
 
     /// Factory default palettes.
     ///
-    /// Returns cached palettes if already loaded, otherwise parses from embedded JSON.
-    /// For async loading from static asset, call `load_factory_defaults()` first.
+    /// Returns cached palettes. Must call `load_factory_defaults()` first.
     pub fn factory_defaults() -> Vec<Palette> {
         FACTORY_PALETTES
-            .get_or_init(|| {
-                serde_json::from_str(EMBEDDED_FACTORY_PALETTES)
-                    .expect("embedded factory_palettes.json is invalid")
-            })
-            .clone()
+            .get()
+            .cloned()
+            .expect("factory_defaults() called before load_factory_defaults()")
     }
 
     /// Load factory palettes from static asset (WASM only).
     ///
     /// Fetches `/fractalwonder/assets/factory_palettes.json` and caches the result.
-    /// Falls back to embedded JSON on fetch failure.
     #[cfg(target_arch = "wasm32")]
     pub async fn load_factory_defaults() -> Result<(), String> {
         use wasm_bindgen::JsCast;
@@ -100,49 +93,32 @@ impl Palette {
         let window = web_sys::window().ok_or("no window")?;
         let url = "/fractalwonder/assets/factory_palettes.json";
 
-        // Fetch the JSON file
         let resp_value = JsFuture::from(window.fetch_with_str(url))
             .await
             .map_err(|e| format!("fetch error: {:?}", e))?;
 
-        let resp: web_sys::Response = resp_value
-            .dyn_into()
-            .map_err(|_| "response cast error")?;
+        let resp: web_sys::Response = resp_value.dyn_into().map_err(|_| "response cast error")?;
 
         if !resp.ok() {
-            // Fall back to embedded
-            let _ = FACTORY_PALETTES.get_or_init(|| {
-                serde_json::from_str(EMBEDDED_FACTORY_PALETTES)
-                    .expect("embedded factory_palettes.json is invalid")
-            });
-            return Err(format!("HTTP {}", resp.status()));
+            return Err(format!("HTTP {} fetching {}", resp.status(), url));
         }
 
         let json_value = JsFuture::from(resp.text().map_err(|_| "text() error")?)
             .await
             .map_err(|e| format!("text error: {:?}", e))?;
 
-        let json_str = json_value
-            .as_string()
-            .ok_or("response not a string")?;
+        let json_str = json_value.as_string().ok_or("response not a string")?;
 
-        let palettes: Vec<Palette> = serde_json::from_str(&json_str)
-            .map_err(|e| format!("JSON parse error: {}", e))?;
+        let palettes: Vec<Palette> =
+            serde_json::from_str(&json_str).map_err(|e| format!("JSON parse error: {}", e))?;
 
-        // Cache the result (ignore if already set by another call)
         let _ = FACTORY_PALETTES.set(palettes);
-
         Ok(())
     }
 
-    /// Non-WASM stub for load_factory_defaults.
+    /// Non-WASM stub for load_factory_defaults (no-op, filesystem loading happens lazily).
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn load_factory_defaults() -> Result<(), String> {
-        // Just initialize from embedded JSON
-        let _ = FACTORY_PALETTES.get_or_init(|| {
-            serde_json::from_str(EMBEDDED_FACTORY_PALETTES)
-                .expect("embedded factory_palettes.json is invalid")
-        });
         Ok(())
     }
 
@@ -207,6 +183,19 @@ impl Palette {
 mod tests {
     use super::*;
 
+    /// Load factory palettes from filesystem for tests.
+    fn init_factory_palettes() {
+        let _ = FACTORY_PALETTES.get_or_init(|| {
+            let path = concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../assets/factory_palettes.json"
+            );
+            let json =
+                std::fs::read_to_string(path).expect("failed to read assets/factory_palettes.json");
+            serde_json::from_str(&json).expect("invalid factory_palettes.json")
+        });
+    }
+
     #[test]
     fn palette_default_has_valid_gradient() {
         let palette = Palette::default();
@@ -240,6 +229,7 @@ mod tests {
     #[test]
     #[ignore] // Run with: cargo test print_factory_json -- --ignored --nocapture
     fn print_factory_json() {
+        init_factory_palettes();
         let palettes = Palette::factory_defaults();
         let json = serde_json::to_string_pretty(&palettes).unwrap();
         println!("\n{}", json);
@@ -247,12 +237,14 @@ mod tests {
 
     #[test]
     fn factory_defaults_contains_classic() {
+        init_factory_palettes();
         let palettes = Palette::factory_defaults();
         assert!(palettes.iter().any(|p| p.id == "classic"));
     }
 
     #[test]
     fn factory_defaults_all_have_unique_ids() {
+        init_factory_palettes();
         let palettes = Palette::factory_defaults();
         let mut ids: Vec<_> = palettes.iter().map(|p| &p.id).collect();
         ids.sort();
@@ -262,6 +254,7 @@ mod tests {
 
     #[test]
     fn palette_get_returns_factory_default() {
+        init_factory_palettes();
         let palette = Palette::get("classic");
         assert!(palette.is_some());
         assert_eq!(palette.unwrap().id, "classic");
@@ -269,6 +262,7 @@ mod tests {
 
     #[test]
     fn palette_get_returns_none_for_unknown() {
+        init_factory_palettes();
         let palette = Palette::get("nonexistent");
         assert!(palette.is_none());
     }
