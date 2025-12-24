@@ -1,7 +1,7 @@
 //! Colorizer trait for mapping compute data to colors.
 
 use super::smooth_iteration::SmoothIterationContext;
-use super::{ColorOptions, PaletteLut, SmoothIterationColorizer};
+use super::{Palette, PaletteLut, RenderSettings, SmoothIterationColorizer};
 use fractalwonder_core::ComputeData;
 
 /// A colorizer algorithm with optional pre/post-processing stages.
@@ -11,38 +11,31 @@ use fractalwonder_core::ComputeData;
 /// 2. `colorize` - map each pixel to a color using context and palette
 /// 3. `postprocess` - modify pixel buffer in place (e.g., slope shading)
 pub trait Colorizer {
-    /// Data passed from preprocess to colorize/postprocess.
     type Context: Default;
 
-    /// Analyze all pixels, build context.
-    /// Default: no-op, returns `Default::default()`.
-    fn preprocess(&self, _data: &[ComputeData], _options: &ColorOptions) -> Self::Context {
+    fn preprocess(&self, _data: &[ComputeData], _palette: &Palette) -> Self::Context {
         Self::Context::default()
     }
 
-    /// Map a single pixel to a color.
-    /// Palette is passed separately so callers can cache it.
     fn colorize(
         &self,
         data: &ComputeData,
         context: &Self::Context,
-        options: &ColorOptions,
-        palette: &PaletteLut,
+        palette: &Palette,
+        lut: &PaletteLut,
+        render_settings: &RenderSettings,
         index: usize,
     ) -> [u8; 4];
 
-    /// Modify pixel buffer in place.
-    /// Default: no-op.
     #[allow(clippy::too_many_arguments)]
     fn postprocess(
         &self,
         _pixels: &mut [[u8; 4]],
         _data: &[ComputeData],
         _context: &Self::Context,
-        _options: &ColorOptions,
+        _palette: &Palette,
         _width: usize,
         _height: usize,
-        _zoom_level: f64,
     ) {
     }
 }
@@ -61,29 +54,27 @@ impl Default for ColorizerKind {
 }
 
 impl ColorizerKind {
-    /// Run the full colorization pipeline: preprocess → colorize → postprocess.
     #[allow(clippy::too_many_arguments)]
     pub fn run_pipeline(
         &self,
         data: &[ComputeData],
-        options: &ColorOptions,
-        palette: &PaletteLut,
+        palette: &Palette,
+        lut: &PaletteLut,
+        render_settings: &RenderSettings,
         width: usize,
         height: usize,
-        zoom_level: f64,
         xray_enabled: bool,
     ) -> Vec<[u8; 4]> {
         match self {
             Self::SmoothIteration(c) => {
-                let ctx = c.preprocess(data, options);
+                let ctx = c.preprocess(data, palette);
                 let mut pixels: Vec<[u8; 4]> = data
                     .iter()
                     .enumerate()
-                    .map(|(i, d)| c.colorize(d, &ctx, options, palette, i))
+                    .map(|(i, d)| c.colorize(d, &ctx, palette, lut, render_settings, i))
                     .collect();
-                c.postprocess(&mut pixels, data, &ctx, options, width, height, zoom_level);
+                c.postprocess(&mut pixels, data, &ctx, palette, width, height);
 
-                // Apply xray coloring to glitched pixels
                 if xray_enabled {
                     apply_xray_to_glitched(&mut pixels, data);
                 }
@@ -93,65 +84,60 @@ impl ColorizerKind {
         }
     }
 
-    /// Colorize a single pixel. For progressive rendering, pass default context.
     pub fn colorize(
         &self,
         data: &ComputeData,
-        options: &ColorOptions,
-        palette: &PaletteLut,
+        palette: &Palette,
+        lut: &PaletteLut,
+        render_settings: &RenderSettings,
     ) -> [u8; 4] {
         match self {
             Self::SmoothIteration(c) => c.colorize(
                 data,
                 &SmoothIterationContext::default(),
-                options,
                 palette,
+                lut,
+                render_settings,
                 0,
             ),
         }
     }
 
-    /// Colorize a single pixel using a cached histogram from a previous render.
-    /// Computes fresh smooth iteration value for the new data, but uses the cached
-    /// sorted_smooth for histogram-based percentile lookup.
     pub fn colorize_with_cached_histogram(
         &self,
         data: &ComputeData,
         cached_context: &SmoothIterationContext,
-        options: &ColorOptions,
-        palette: &PaletteLut,
+        palette: &Palette,
+        lut: &PaletteLut,
+        render_settings: &RenderSettings,
     ) -> [u8; 4] {
         match self {
             Self::SmoothIteration(c) => {
-                c.colorize_with_histogram(data, cached_context, options, palette)
+                c.colorize_with_histogram(data, cached_context, palette, lut, render_settings)
             }
         }
     }
 
-    /// Create a precomputed context from data for caching.
-    /// Returns None if histogram is disabled (no expensive computation needed).
     pub fn create_context(
         &self,
         data: &[ComputeData],
-        options: &ColorOptions,
+        palette: &Palette,
     ) -> SmoothIterationContext {
         match self {
-            Self::SmoothIteration(c) => c.preprocess(data, options),
+            Self::SmoothIteration(c) => c.preprocess(data, palette),
         }
     }
 
-    /// Run the colorization pipeline using a pre-computed context.
-    /// Skips the preprocess step, using the cached context instead.
     #[allow(clippy::too_many_arguments)]
     pub fn run_pipeline_with_context(
         &self,
         data: &[ComputeData],
         context: &SmoothIterationContext,
-        options: &ColorOptions,
-        palette: &PaletteLut,
+        palette: &Palette,
+        lut: &PaletteLut,
+        render_settings: &RenderSettings,
         width: usize,
         height: usize,
-        zoom_level: f64,
         xray_enabled: bool,
     ) -> Vec<[u8; 4]> {
         match self {
@@ -159,19 +145,10 @@ impl ColorizerKind {
                 let mut pixels: Vec<[u8; 4]> = data
                     .iter()
                     .enumerate()
-                    .map(|(i, d)| c.colorize(d, context, options, palette, i))
+                    .map(|(i, d)| c.colorize(d, context, palette, lut, render_settings, i))
                     .collect();
-                c.postprocess(
-                    &mut pixels,
-                    data,
-                    context,
-                    options,
-                    width,
-                    height,
-                    zoom_level,
-                );
+                c.postprocess(&mut pixels, data, context, palette, width, height);
 
-                // Apply xray coloring to glitched pixels
                 if xray_enabled {
                     apply_xray_to_glitched(&mut pixels, data);
                 }
@@ -202,14 +179,20 @@ fn apply_xray_to_glitched(pixels: &mut [[u8; 4]], data: &[ComputeData]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rendering::colorizers::SmoothIterationColorizer;
+    use crate::rendering::colorizers::{
+        Palette, PaletteLut, RenderSettings, SmoothIterationColorizer,
+    };
     use fractalwonder_core::MandelbrotData;
 
     #[test]
     fn colorizer_kind_runs_pipeline() {
+        use futures::executor::block_on;
+
+        block_on(Palette::factory_defaults()); // ensure loaded
+        let palette = block_on(Palette::get("classic")).unwrap();
+        let lut = PaletteLut::from_palette(&palette);
+        let render_settings = RenderSettings::default();
         let colorizer = ColorizerKind::SmoothIteration(SmoothIterationColorizer);
-        let options = ColorOptions::default();
-        let palette = options.palette();
 
         let data = vec![
             ComputeData::Mandelbrot(MandelbrotData {
@@ -236,13 +219,10 @@ mod tests {
             }),
         ];
 
-        let pixels = colorizer.run_pipeline(&data, &options, &palette, 2, 1, 1.0, false);
+        let pixels = colorizer.run_pipeline(&data, &palette, &lut, &render_settings, 2, 1, false);
 
         assert_eq!(pixels.len(), 2);
-        // First pixel: escaped, should have some color (with cycling, not necessarily mid-gray)
-        // Just verify it's not black (interior) and alpha is 255
-        assert_eq!(pixels[0][3], 255, "Alpha should be 255");
-        // Second pixel: interior should be black
+        assert_eq!(pixels[0][3], 255);
         assert_eq!(pixels[1], [0, 0, 0, 255]);
     }
 }

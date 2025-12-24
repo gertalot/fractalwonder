@@ -1,6 +1,6 @@
 //! Derivative-based 3D lighting using Blinn-Phong shading model.
 
-use super::ShadingSettings;
+use super::Palette;
 use fractalwonder_core::{ComputeData, MandelbrotData};
 
 /// Check if a compute data point is interior (didn't escape).
@@ -54,52 +54,46 @@ fn compute_normal(m: &MandelbrotData) -> Option<(f64, f64, f64)> {
 }
 
 /// Apply Blinn-Phong shading to compute final shade value.
-fn blinn_phong(normal: (f64, f64, f64), light: (f64, f64, f64), settings: &ShadingSettings) -> f64 {
+fn blinn_phong(normal: (f64, f64, f64), light: (f64, f64, f64), palette: &Palette) -> f64 {
     let (nx, ny, nz) = normal;
     let (lx, ly, lz) = light;
 
-    // Diffuse: N · L
     let n_dot_l = (nx * lx + ny * ly + nz * lz).max(0.0);
 
-    // View direction: straight down (0, 0, 1)
     let vz = 1.0;
 
-    // Half vector: H = normalize(L + V)
     let hx = lx;
     let hy = ly;
     let hz = lz + vz;
     let h_len = (hx * hx + hy * hy + hz * hz).sqrt();
     let (hx, hy, hz) = (hx / h_len, hy / h_len, hz / h_len);
 
-    // Specular: (N · H)^shininess
     let n_dot_h = (nx * hx + ny * hy + nz * hz).max(0.0);
-    let specular = n_dot_h.powf(settings.shininess);
+    let specular = n_dot_h.powf(palette.lighting.shininess);
 
-    // Combine
-    settings.ambient + settings.diffuse * n_dot_l + settings.specular * specular
+    palette.lighting.ambient
+        + palette.lighting.diffuse * n_dot_l
+        + palette.lighting.specular * specular
 }
 
 /// Apply derivative-based Blinn-Phong shading to a pixel buffer.
 pub fn apply_slope_shading(
     pixels: &mut [[u8; 4]],
     data: &[ComputeData],
-    _smooth_iters: &[f64], // Not used in derivative-based approach
-    settings: &ShadingSettings,
+    palette: &Palette,
     width: usize,
     height: usize,
-    _zoom_level: f64, // Not needed - derivative is zoom-independent
 ) {
-    if !settings.enabled {
+    if !palette.shading_enabled {
         return;
     }
 
-    let light = light_direction(settings.light_azimuth, settings.light_elevation);
+    let light = light_direction(palette.lighting.azimuth, palette.lighting.elevation);
 
     for y in 0..height {
         for x in 0..width {
             let idx = y * width + x;
 
-            // Skip interior pixels
             if is_interior(&data[idx]) {
                 continue;
             }
@@ -109,30 +103,25 @@ pub fn apply_slope_shading(
                 _ => continue,
             };
 
-            // Compute normal from derivative
             let normal = match compute_normal(m) {
                 Some(n) => n,
-                None => continue, // Skip if degenerate
+                None => continue,
             };
 
-            // Compute Blinn-Phong shade
-            let raw_shade = blinn_phong(normal, light, settings);
+            let raw_shade = blinn_phong(normal, light, palette);
 
-            // Calculate distance factor: stronger effect far from set, weaker near boundary
-            // normalized_iter: 0.0 = escaped immediately (far), 1.0 = near set boundary
-            // Higher distance_falloff = more aggressive suppression near set boundary
+            // Distance factor using falloff curve
             let normalized_iter = if m.max_iterations > 0 {
                 (m.iterations as f64) / (m.max_iterations as f64)
             } else {
                 0.0
             };
-            let distance_factor = (1.0 - normalized_iter).powf(settings.distance_falloff);
+            // x=0 is near set boundary, x=1 is far from set
+            let distance_from_set = 1.0 - normalized_iter;
+            let distance_factor = palette.apply_falloff(distance_from_set);
 
-            // Apply strength and distance modulation
-            // shade of 1.0 = no change, deviations are amplified by strength * distance_factor
-            let shade = 1.0 + (raw_shade - 1.0) * settings.strength * distance_factor;
+            let shade = 1.0 + (raw_shade - 1.0) * palette.lighting.strength * distance_factor;
 
-            // Apply shade to pixel
             pixels[idx] = apply_shade(pixels[idx], shade);
         }
     }
@@ -149,6 +138,23 @@ fn apply_shade(base: [u8; 4], shade: f64) -> [u8; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rendering::colorizers::{LightingParams, Palette};
+
+    fn test_palette() -> Palette {
+        Palette {
+            shading_enabled: true,
+            lighting: LightingParams {
+                ambient: 0.15,
+                diffuse: 0.7,
+                specular: 0.3,
+                shininess: 32.0,
+                strength: 1.0,
+                azimuth: 0.0,
+                elevation: std::f64::consts::FRAC_PI_4,
+            },
+            ..Palette::default()
+        }
+    }
 
     #[test]
     fn light_direction_horizontal() {
@@ -182,43 +188,25 @@ mod tests {
         let normal = compute_normal(&m);
         assert!(normal.is_some());
         let (nx, ny, nz) = normal.unwrap();
-        // Should be normalized
         let len = (nx * nx + ny * ny + nz * nz).sqrt();
         assert!((len - 1.0).abs() < 0.01);
     }
 
-    /// Create test settings with predictable values for unit tests.
-    fn test_settings() -> ShadingSettings {
-        ShadingSettings {
-            enabled: true,
-            light_azimuth: 0.0,
-            light_elevation: std::f64::consts::FRAC_PI_4,
-            ambient: 0.15,
-            diffuse: 0.7,
-            specular: 0.3,
-            shininess: 32.0,
-            strength: 1.0,
-            distance_falloff: 0.0,
-        }
-    }
-
     #[test]
     fn blinn_phong_facing_light() {
-        let normal = (0.0, 0.0, 1.0); // Pointing straight up
-        let light = (0.0, 0.0, 1.0); // Light from above
-        let settings = test_settings();
-        let shade = blinn_phong(normal, light, &settings);
-        // Should be bright (ambient + diffuse + specular)
+        let normal = (0.0, 0.0, 1.0);
+        let light = (0.0, 0.0, 1.0);
+        let palette = test_palette();
+        let shade = blinn_phong(normal, light, &palette);
         assert!(shade > 0.8, "shade = {}", shade);
     }
 
     #[test]
     fn blinn_phong_away_from_light() {
-        let normal = (0.0, 0.0, 1.0); // Pointing up
-        let light = (0.0, 0.0, -1.0); // Light from below
-        let settings = test_settings();
-        let shade = blinn_phong(normal, light, &settings);
-        // Should be dark (ambient only, no diffuse/specular)
+        let normal = (0.0, 0.0, 1.0);
+        let light = (0.0, 0.0, -1.0);
+        let palette = test_palette();
+        let shade = blinn_phong(normal, light, &palette);
         assert!(shade < 0.3, "shade = {}", shade);
     }
 }
