@@ -132,10 +132,12 @@ impl ParallelRenderer {
 
     /// Set x-ray mode enabled state.
     pub fn set_xray_enabled(&self, enabled: bool) {
-        self.pipeline.borrow_mut().set_render_settings(RenderSettings {
-            xray_enabled: enabled,
-            ..self.pipeline.borrow().render_settings().clone()
-        });
+        self.pipeline
+            .borrow_mut()
+            .set_render_settings(RenderSettings {
+                xray_enabled: enabled,
+                ..self.pipeline.borrow().render_settings().clone()
+            });
     }
 
     /// Re-colorize all stored tiles using full pipeline (no recompute).
@@ -152,8 +154,7 @@ impl ParallelRenderer {
 
         // Run pipeline on full image (builds fresh histogram, applies shading)
         let mut pipeline = self.pipeline.borrow_mut();
-        let final_pixels =
-            pipeline.colorize_final(&full_buffer, width as usize, height as usize);
+        let final_pixels = pipeline.colorize_final(&full_buffer, width as usize, height as usize);
 
         // Draw full frame
         let pixel_bytes: Vec<u8> = final_pixels.into_iter().flatten().collect();
@@ -565,11 +566,8 @@ fn schedule_row_set(
                         let full_buffer = gpu_result_buffer_spawn.borrow();
 
                         let mut pipeline = pipeline_spawn.borrow_mut();
-                        let final_pixels = pipeline.colorize_final(
-                            &full_buffer,
-                            width as usize,
-                            height as usize,
-                        );
+                        let final_pixels =
+                            pipeline.colorize_final(&full_buffer, width as usize, height as usize);
 
                         (final_pixels, full_buffer.clone())
                     };

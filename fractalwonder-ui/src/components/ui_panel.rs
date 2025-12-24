@@ -39,12 +39,6 @@ pub fn UIPanel(
     on_cycle_up: Callback<()>,
     /// Callback to decrease cycles
     on_cycle_down: Callback<()>,
-    /// Current transfer bias
-    transfer_bias: Signal<f32>,
-    /// Callback to increase bias
-    on_bias_up: Callback<()>,
-    /// Callback to decrease bias
-    on_bias_down: Callback<()>,
     /// GPU rendering enabled
     use_gpu: Signal<bool>,
     /// Callback to toggle GPU
@@ -168,9 +162,6 @@ pub fn UIPanel(
                         cycle_count=cycle_count
                         on_cycle_up=on_cycle_up
                         on_cycle_down=on_cycle_down
-                        transfer_bias=transfer_bias
-                        on_bias_up=on_bias_up
-                        on_bias_down=on_bias_down
                         use_gpu=use_gpu
                         on_gpu_toggle=on_gpu_toggle
                         xray_enabled=xray_enabled.into()

@@ -8,7 +8,7 @@ use crate::config::{default_config, get_config};
 use crate::hooks::{
     load_state, save_state, use_hashchange_listener, use_ui_visibility, PersistedState,
 };
-use crate::rendering::colorizers::palettes;
+use crate::rendering::colorizers::Palette;
 use crate::rendering::RenderProgress;
 
 #[component]
@@ -21,9 +21,13 @@ pub fn App() -> impl IntoView {
         .as_ref()
         .map(|s| s.config_id.clone())
         .unwrap_or_else(|| "mandelbrot".to_string());
-    let initial_color_options = persisted
+    let initial_palette_id = persisted
         .as_ref()
-        .map(|s| s.color_options.clone())
+        .map(|s| s.palette_id.clone())
+        .unwrap_or_else(|| "classic".to_string());
+    let initial_render_settings = persisted
+        .as_ref()
+        .map(|s| s.render_settings.clone())
         .unwrap_or_default();
     let persisted_viewport = persisted.map(|s| s.viewport);
 
@@ -44,18 +48,39 @@ pub fn App() -> impl IntoView {
     let config =
         create_memo(move |_| get_config(&selected_config_id.get()).unwrap_or_else(default_config));
 
-    // Color options state
-    let (color_options, set_color_options) = create_signal(initial_color_options);
+    // Palette and render settings state
+    let (palette, set_palette) = create_signal(Palette::default());
+    let (render_settings, set_render_settings) = create_signal(initial_render_settings);
+    let (palette_id, set_palette_id) = create_signal(initial_palette_id.clone());
+
+    // Load initial palette asynchronously
+    create_effect(move |_| {
+        let id = palette_id.get();
+        spawn_local(async move {
+            Palette::factory_defaults().await; // ensure loaded
+            if let Some(pal) = Palette::get(&id).await {
+                set_palette.set(pal);
+            }
+        });
+    });
 
     // Derive individual signals for UI components
-    let palette_id = create_memo(move |_| color_options.get().palette_id.clone());
-    let shading_enabled = create_memo(move |_| color_options.get().shading_enabled);
-    let smooth_enabled = create_memo(move |_| color_options.get().smooth_enabled);
-    let cycle_count = create_memo(move |_| color_options.get().cycle_count);
+    let shading_enabled = create_memo(move |_| palette.get().shading_enabled);
+    let smooth_enabled = create_memo(move |_| palette.get().smooth_enabled);
+    let histogram_enabled = create_memo(move |_| palette.get().histogram_enabled);
+    let cycle_count = create_memo(move |_| render_settings.get().cycle_count);
 
-    // Palette options for dropdown
+    // Palette options for dropdown (load asynchronously)
+    let (palette_list, set_palette_list) = create_signal(Vec::<Palette>::new());
+    create_effect(move |_| {
+        spawn_local(async move {
+            let palettes = Palette::factory_defaults().await;
+            set_palette_list.set(palettes);
+        });
+    });
     let palette_options = Signal::derive(move || {
-        palettes()
+        palette_list
+            .get()
             .iter()
             .map(|p| (p.id.to_string(), p.name.to_string()))
             .collect::<Vec<_>>()
@@ -144,18 +169,19 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    // Persist state to localStorage when viewport or color options change
+    // Persist state to localStorage when viewport, palette, or render settings change
     create_effect(move |_| {
         let vp = viewport.get();
         let config_id = selected_config_id.get();
-        let options = color_options.get();
+        let pal_id = palette_id.get();
+        let settings = render_settings.get();
 
         // Skip saving if viewport hasn't been initialized yet
         if vp.width.to_f64() == 4.0 && vp.height.to_f64() == 3.0 {
             return;
         }
 
-        let state = PersistedState::new(vp, config_id, options);
+        let state = PersistedState::new(vp, config_id, pal_id, settings);
         save_state(&state);
     });
 
@@ -167,8 +193,9 @@ pub fn App() -> impl IntoView {
             // Fit the persisted viewport to the current canvas size
             let fitted = fit_viewport_to_canvas(&state.viewport, size);
             set_viewport.set(fitted);
-            set_color_options.set(state.color_options.clone());
-            log::info!("Restored viewport and color options from URL hash change");
+            set_palette_id.set(state.palette_id.clone());
+            set_render_settings.set(state.render_settings.clone());
+            log::info!("Restored viewport, palette, and render settings from URL hash change");
         }
     });
 
@@ -261,9 +288,9 @@ pub fn App() -> impl IntoView {
                 }
                 "3" => {
                     // Toggle 3D shading
-                    set_color_options.update(|opts| {
-                        opts.shading_enabled = !opts.shading_enabled;
-                        let msg = if opts.shading_enabled {
+                    set_palette.update(|pal| {
+                        pal.shading_enabled = !pal.shading_enabled;
+                        let msg = if pal.shading_enabled {
                             "3D: On"
                         } else {
                             "3D: Off"
@@ -273,9 +300,9 @@ pub fn App() -> impl IntoView {
                 }
                 "s" | "S" => {
                     // Toggle smooth iteration
-                    set_color_options.update(|opts| {
-                        opts.smooth_enabled = !opts.smooth_enabled;
-                        let msg = if opts.smooth_enabled {
+                    set_palette.update(|pal| {
+                        pal.smooth_enabled = !pal.smooth_enabled;
+                        let msg = if pal.smooth_enabled {
                             "Smooth: On"
                         } else {
                             "Smooth: Off"
@@ -285,9 +312,9 @@ pub fn App() -> impl IntoView {
                 }
                 "h" | "H" => {
                     // Toggle histogram equalization
-                    set_color_options.update(|opts| {
-                        opts.histogram_enabled = !opts.histogram_enabled;
-                        let msg = if opts.histogram_enabled {
+                    set_palette.update(|pal| {
+                        pal.histogram_enabled = !pal.histogram_enabled;
+                        let msg = if pal.histogram_enabled {
                             "Histogram: On"
                         } else {
                             "Histogram: Off"
@@ -297,63 +324,61 @@ pub fn App() -> impl IntoView {
                 }
                 "ArrowLeft" => {
                     // Previous palette
-                    let opts = palettes();
-                    let current_id = color_options.get_untracked().palette_id;
-                    let current_idx = opts.iter().position(|p| p.id == current_id).unwrap_or(0);
+                    let palettes = palette_list.get_untracked();
+                    let current_id = palette_id.get_untracked();
+                    let current_idx = palettes
+                        .iter()
+                        .position(|p| p.id == current_id)
+                        .unwrap_or(0);
                     let new_idx = if current_idx == 0 {
-                        opts.len() - 1
+                        palettes.len() - 1
                     } else {
                         current_idx - 1
                     };
-                    let new_palette = &opts[new_idx];
-                    set_color_options.update(|o| o.palette_id = new_palette.id.to_string());
-                    set_toast_message.set(Some(format!("Palette: {}", new_palette.name)));
+                    if let Some(new_palette) = palettes.get(new_idx) {
+                        set_palette_id.set(new_palette.id.clone());
+                        set_toast_message.set(Some(format!("Palette: {}", new_palette.name)));
+                    }
                 }
                 "ArrowRight" => {
                     // Next palette
-                    let opts = palettes();
-                    let current_id = color_options.get_untracked().palette_id;
-                    let current_idx = opts.iter().position(|p| p.id == current_id).unwrap_or(0);
-                    let new_idx = (current_idx + 1) % opts.len();
-                    let new_palette = &opts[new_idx];
-                    set_color_options.update(|o| o.palette_id = new_palette.id.to_string());
-                    set_toast_message.set(Some(format!("Palette: {}", new_palette.name)));
+                    let palettes = palette_list.get_untracked();
+                    let current_id = palette_id.get_untracked();
+                    let current_idx = palettes
+                        .iter()
+                        .position(|p| p.id == current_id)
+                        .unwrap_or(0);
+                    let new_idx = (current_idx + 1) % palettes.len();
+                    if let Some(new_palette) = palettes.get(new_idx) {
+                        set_palette_id.set(new_palette.id.clone());
+                        set_toast_message.set(Some(format!("Palette: {}", new_palette.name)));
+                    }
                 }
                 "ArrowUp" => {
                     // Increase cycle count (Shift = +50, otherwise +1)
                     let amount = if e.shift_key() { 50 } else { 1 };
-                    set_color_options.update(|opts| {
-                        opts.cycle_up_by(amount);
-                        set_toast_message.set(Some(format!("Cycles: {}", opts.cycle_count)));
+                    set_render_settings.update(|settings| {
+                        settings.cycle_up_by(amount);
+                        set_toast_message.set(Some(format!("Cycles: {}", settings.cycle_count)));
                     });
                 }
                 "ArrowDown" => {
                     // Decrease cycle count (Shift = -50, otherwise -1)
                     let amount = if e.shift_key() { 50 } else { 1 };
-                    set_color_options.update(|opts| {
-                        opts.cycle_down_by(amount);
-                        set_toast_message.set(Some(format!("Cycles: {}", opts.cycle_count)));
-                    });
-                }
-                "[" | "BracketLeft" => {
-                    // Decrease transfer bias (more glow)
-                    set_color_options.update(|opts| {
-                        opts.bias_down();
-                        set_toast_message.set(Some(format!("Bias: {:.1}", opts.transfer_bias)));
-                    });
-                }
-                "]" | "BracketRight" => {
-                    // Increase transfer bias (less glow)
-                    set_color_options.update(|opts| {
-                        opts.bias_up();
-                        set_toast_message.set(Some(format!("Bias: {:.1}", opts.transfer_bias)));
+                    set_render_settings.update(|settings| {
+                        settings.cycle_down_by(amount);
+                        set_toast_message.set(Some(format!("Cycles: {}", settings.cycle_count)));
                     });
                 }
                 "g" | "G" => {
                     // Toggle GPU rendering
-                    set_color_options.update(|opts| {
-                        opts.use_gpu = !opts.use_gpu;
-                        let msg = if opts.use_gpu { "GPU: On" } else { "GPU: Off" };
+                    set_render_settings.update(|settings| {
+                        settings.use_gpu = !settings.use_gpu;
+                        let msg = if settings.use_gpu {
+                            "GPU: On"
+                        } else {
+                            "GPU: Off"
+                        };
                         set_toast_message.set(Some(msg.to_string()));
                     });
                 }
@@ -393,7 +418,8 @@ pub fn App() -> impl IntoView {
             cancel_trigger=cancel_trigger
             subdivide_trigger=subdivide_trigger
             xray_enabled=xray_enabled
-            color_options=color_options.into()
+            palette=palette.into()
+            render_settings=render_settings.into()
         />
         <UIPanel
             viewport=viewport.into()
@@ -403,27 +429,28 @@ pub fn App() -> impl IntoView {
             palette_options=palette_options
             selected_palette_id=Signal::derive(move || palette_id.get())
             on_palette_select=Callback::new(move |id: String| {
-                let name = palettes()
+                let palettes = palette_list.get_untracked();
+                let name = palettes
                     .iter()
                     .find(|p| p.id == id)
-                    .map(|p| p.name)
+                    .map(|p| p.name.as_str())
                     .unwrap_or("Unknown");
-                set_color_options.update(|o| o.palette_id = id);
+                set_palette_id.set(id);
                 set_toast_message.set(Some(format!("Palette: {}", name)));
             })
             shading_enabled=Signal::derive(move || shading_enabled.get())
             on_shading_toggle=Callback::new(move |_| {
-                set_color_options.update(|opts| {
-                    opts.shading_enabled = !opts.shading_enabled;
-                    let msg = if opts.shading_enabled { "3D: On" } else { "3D: Off" };
+                set_palette.update(|pal| {
+                    pal.shading_enabled = !pal.shading_enabled;
+                    let msg = if pal.shading_enabled { "3D: On" } else { "3D: Off" };
                     set_toast_message.set(Some(msg.to_string()));
                 });
             })
             smooth_enabled=Signal::derive(move || smooth_enabled.get())
             on_smooth_toggle=Callback::new(move |_| {
-                set_color_options.update(|opts| {
-                    opts.smooth_enabled = !opts.smooth_enabled;
-                    let msg = if opts.smooth_enabled {
+                set_palette.update(|pal| {
+                    pal.smooth_enabled = !pal.smooth_enabled;
+                    let msg = if pal.smooth_enabled {
                         "Smooth: On"
                     } else {
                         "Smooth: Off"
@@ -431,11 +458,11 @@ pub fn App() -> impl IntoView {
                     set_toast_message.set(Some(msg.to_string()));
                 });
             })
-            histogram_enabled=Signal::derive(move || color_options.get().histogram_enabled)
+            histogram_enabled=Signal::derive(move || histogram_enabled.get())
             on_histogram_toggle=Callback::new(move |_| {
-                set_color_options.update(|opts| {
-                    opts.histogram_enabled = !opts.histogram_enabled;
-                    let msg = if opts.histogram_enabled {
+                set_palette.update(|pal| {
+                    pal.histogram_enabled = !pal.histogram_enabled;
+                    let msg = if pal.histogram_enabled {
                         "Histogram: On"
                     } else {
                         "Histogram: Off"
@@ -445,35 +472,22 @@ pub fn App() -> impl IntoView {
             })
             cycle_count=Signal::derive(move || cycle_count.get())
             on_cycle_up=Callback::new(move |_| {
-                set_color_options.update(|opts| {
-                    opts.cycle_up();
-                    set_toast_message.set(Some(format!("Cycles: {}", opts.cycle_count)));
+                set_render_settings.update(|settings| {
+                    settings.cycle_up();
+                    set_toast_message.set(Some(format!("Cycles: {}", settings.cycle_count)));
                 });
             })
             on_cycle_down=Callback::new(move |_| {
-                set_color_options.update(|opts| {
-                    opts.cycle_down();
-                    set_toast_message.set(Some(format!("Cycles: {}", opts.cycle_count)));
+                set_render_settings.update(|settings| {
+                    settings.cycle_down();
+                    set_toast_message.set(Some(format!("Cycles: {}", settings.cycle_count)));
                 });
             })
-            transfer_bias=Signal::derive(move || color_options.get().transfer_bias)
-            on_bias_up=Callback::new(move |_| {
-                set_color_options.update(|opts| {
-                    opts.bias_up();
-                    set_toast_message.set(Some(format!("Bias: {:.1}", opts.transfer_bias)));
-                });
-            })
-            on_bias_down=Callback::new(move |_| {
-                set_color_options.update(|opts| {
-                    opts.bias_down();
-                    set_toast_message.set(Some(format!("Bias: {:.1}", opts.transfer_bias)));
-                });
-            })
-            use_gpu=Signal::derive(move || color_options.get().use_gpu)
+            use_gpu=Signal::derive(move || render_settings.get().use_gpu)
             on_gpu_toggle=Callback::new(move |_| {
-                set_color_options.update(|opts| {
-                    opts.use_gpu = !opts.use_gpu;
-                    let msg = if opts.use_gpu { "GPU: On" } else { "GPU: Off" };
+                set_render_settings.update(|settings| {
+                    settings.use_gpu = !settings.use_gpu;
+                    let msg = if settings.use_gpu { "GPU: On" } else { "GPU: Off" };
                     set_toast_message.set(Some(msg.to_string()));
                 });
             })

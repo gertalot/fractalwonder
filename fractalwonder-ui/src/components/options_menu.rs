@@ -1,7 +1,6 @@
 //! Options dropdown menu with grouped sections for Effects and Cycles.
 
 use crate::components::{Menu, MenuItem, MenuSection, StepperMenuItem};
-use crate::rendering::colorizers::settings::{MAX_TRANSFER_BIAS, MIN_TRANSFER_BIAS};
 use leptos::*;
 
 #[component]
@@ -28,12 +27,6 @@ pub fn OptionsMenu(
     on_cycle_up: Callback<()>,
     /// Callback to decrease cycles
     on_cycle_down: Callback<()>,
-    /// Current transfer bias
-    transfer_bias: Signal<f32>,
-    /// Callback to increase bias
-    on_bias_up: Callback<()>,
-    /// Callback to decrease bias
-    on_bias_down: Callback<()>,
     /// GPU rendering enabled state
     use_gpu: Signal<bool>,
     /// Callback when GPU toggle is clicked
@@ -46,8 +39,6 @@ pub fn OptionsMenu(
     // Derived signals for stepper bounds
     let cycle_at_min = Signal::derive(move || cycle_count.get() <= 1);
     let cycle_at_max = Signal::derive(move || cycle_count.get() >= 1024);
-    let bias_at_min = Signal::derive(move || transfer_bias.get() <= MIN_TRANSFER_BIAS);
-    let bias_at_max = Signal::derive(move || transfer_bias.get() >= MAX_TRANSFER_BIAS);
 
     view! {
         <Menu is_open=is_open set_is_open=set_is_open label="Options">
@@ -88,18 +79,6 @@ pub fn OptionsMenu(
                 is_at_min=cycle_at_min
                 is_at_max=cycle_at_max
                 shortcut="[↑↓ / ⇧±50]"
-            />
-
-            <MenuSection title="Bias" />
-            <StepperMenuItem
-                value=transfer_bias
-                on_decrease=on_bias_down
-                on_increase=on_bias_up
-                format_value=|v: f32| format!("{:.1}", v)
-                is_at_min=bias_at_min
-                is_at_max=bias_at_max
-                shortcut="[[ ]]"
-                value_width="min-w-12"
             />
 
             <MenuSection title="Debug" />
