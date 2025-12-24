@@ -2,11 +2,18 @@
 
 use super::{ColorStop, Curve, Gradient, LightingParams};
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
 #[cfg(target_arch = "wasm32")]
 use web_sys::window;
+
+/// Embedded factory palettes JSON (fallback for tests and offline).
+const EMBEDDED_FACTORY_PALETTES: &str = include_str!("../../../../assets/factory_palettes.json");
+
+/// Cached factory palettes (loaded once, either from fetch or embedded).
+static FACTORY_PALETTES: OnceLock<Vec<Palette>> = OnceLock::new();
 
 /// A complete palette configuration.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -63,487 +70,80 @@ impl Palette {
         self.falloff_curve.evaluate(t)
     }
 
-    /// Factory default palettes built into the binary.
+    /// Factory default palettes.
+    ///
+    /// Returns cached palettes if already loaded, otherwise parses from embedded JSON.
+    /// For async loading from static asset, call `load_factory_defaults()` first.
     pub fn factory_defaults() -> Vec<Palette> {
-        vec![
-            Self::classic(),
-            Self::fire(),
-            Self::ocean(),
-            Self::electric(),
-            Self::grayscale(),
-            Self::rainbow(),
-            Self::neon(),
-            Self::twilight(),
-            Self::candy(),
-            Self::inferno(),
-            Self::aurora(),
-        ]
+        FACTORY_PALETTES
+            .get_or_init(|| {
+                serde_json::from_str(EMBEDDED_FACTORY_PALETTES)
+                    .expect("embedded factory_palettes.json is invalid")
+            })
+            .clone()
     }
 
-    fn classic() -> Self {
-        Self {
-            id: "classic".to_string(),
-            name: "Classic".to_string(),
-            gradient: Gradient::new(vec![
-                ColorStop {
-                    position: 0.0,
-                    color: [0, 7, 100],
-                },
-                ColorStop {
-                    position: 0.16,
-                    color: [0, 2, 0],
-                },
-                ColorStop {
-                    position: 0.33,
-                    color: [0, 7, 100],
-                },
-                ColorStop {
-                    position: 0.5,
-                    color: [32, 107, 203],
-                },
-                ColorStop {
-                    position: 0.66,
-                    color: [255, 170, 0],
-                },
-                ColorStop {
-                    position: 1.0,
-                    color: [237, 255, 255],
-                },
-            ]),
-            ..Self::default()
+    /// Load factory palettes from static asset (WASM only).
+    ///
+    /// Fetches `/fractalwonder/assets/factory_palettes.json` and caches the result.
+    /// Falls back to embedded JSON on fetch failure.
+    #[cfg(target_arch = "wasm32")]
+    pub async fn load_factory_defaults() -> Result<(), String> {
+        use wasm_bindgen::JsCast;
+        use wasm_bindgen_futures::JsFuture;
+
+        // Already loaded?
+        if FACTORY_PALETTES.get().is_some() {
+            return Ok(());
         }
+
+        let window = web_sys::window().ok_or("no window")?;
+        let url = "/fractalwonder/assets/factory_palettes.json";
+
+        // Fetch the JSON file
+        let resp_value = JsFuture::from(window.fetch_with_str(url))
+            .await
+            .map_err(|e| format!("fetch error: {:?}", e))?;
+
+        let resp: web_sys::Response = resp_value
+            .dyn_into()
+            .map_err(|_| "response cast error")?;
+
+        if !resp.ok() {
+            // Fall back to embedded
+            let _ = FACTORY_PALETTES.get_or_init(|| {
+                serde_json::from_str(EMBEDDED_FACTORY_PALETTES)
+                    .expect("embedded factory_palettes.json is invalid")
+            });
+            return Err(format!("HTTP {}", resp.status()));
+        }
+
+        let json_value = JsFuture::from(resp.text().map_err(|_| "text() error")?)
+            .await
+            .map_err(|e| format!("text error: {:?}", e))?;
+
+        let json_str = json_value
+            .as_string()
+            .ok_or("response not a string")?;
+
+        let palettes: Vec<Palette> = serde_json::from_str(&json_str)
+            .map_err(|e| format!("JSON parse error: {}", e))?;
+
+        // Cache the result (ignore if already set by another call)
+        let _ = FACTORY_PALETTES.set(palettes);
+
+        Ok(())
     }
 
-    fn fire() -> Self {
-        Self {
-            id: "fire".to_string(),
-            name: "Fire".to_string(),
-            gradient: Gradient::new(vec![
-                ColorStop {
-                    position: 0.0,
-                    color: [0, 0, 0],
-                },
-                ColorStop {
-                    position: 0.2,
-                    color: [128, 0, 0],
-                },
-                ColorStop {
-                    position: 0.4,
-                    color: [255, 0, 0],
-                },
-                ColorStop {
-                    position: 0.6,
-                    color: [255, 128, 0],
-                },
-                ColorStop {
-                    position: 0.8,
-                    color: [255, 255, 0],
-                },
-                ColorStop {
-                    position: 1.0,
-                    color: [255, 255, 255],
-                },
-            ]),
-            ..Self::default()
-        }
-    }
-
-    fn ocean() -> Self {
-        Self {
-            id: "ocean".to_string(),
-            name: "Ocean".to_string(),
-            gradient: Gradient::new(vec![
-                ColorStop {
-                    position: 0.0,
-                    color: [0, 0, 64],
-                },
-                ColorStop {
-                    position: 0.25,
-                    color: [0, 64, 128],
-                },
-                ColorStop {
-                    position: 0.5,
-                    color: [0, 128, 192],
-                },
-                ColorStop {
-                    position: 0.75,
-                    color: [64, 192, 255],
-                },
-                ColorStop {
-                    position: 1.0,
-                    color: [255, 255, 255],
-                },
-            ]),
-            ..Self::default()
-        }
-    }
-
-    fn electric() -> Self {
-        Self {
-            id: "electric".to_string(),
-            name: "Electric".to_string(),
-            gradient: Gradient::new(vec![
-                ColorStop {
-                    position: 0.0,
-                    color: [32, 0, 64],
-                },
-                ColorStop {
-                    position: 0.2,
-                    color: [64, 0, 128],
-                },
-                ColorStop {
-                    position: 0.4,
-                    color: [0, 0, 255],
-                },
-                ColorStop {
-                    position: 0.6,
-                    color: [0, 255, 255],
-                },
-                ColorStop {
-                    position: 0.8,
-                    color: [0, 255, 0],
-                },
-                ColorStop {
-                    position: 1.0,
-                    color: [255, 255, 0],
-                },
-            ]),
-            ..Self::default()
-        }
-    }
-
-    fn grayscale() -> Self {
-        Self {
-            id: "grayscale".to_string(),
-            name: "Grayscale".to_string(),
-            gradient: Gradient::new(vec![
-                ColorStop {
-                    position: 0.0,
-                    color: [0, 0, 0],
-                },
-                ColorStop {
-                    position: 1.0,
-                    color: [255, 255, 255],
-                },
-            ]),
-            ..Self::default()
-        }
-    }
-
-    fn rainbow() -> Self {
-        Self {
-            id: "rainbow".to_string(),
-            name: "Rainbow".to_string(),
-            gradient: Gradient::new(vec![
-                ColorStop {
-                    position: 0.0,
-                    color: [255, 0, 0],
-                },
-                ColorStop {
-                    position: 0.17,
-                    color: [255, 127, 0],
-                },
-                ColorStop {
-                    position: 0.33,
-                    color: [255, 255, 0],
-                },
-                ColorStop {
-                    position: 0.5,
-                    color: [0, 255, 0],
-                },
-                ColorStop {
-                    position: 0.67,
-                    color: [0, 0, 255],
-                },
-                ColorStop {
-                    position: 0.83,
-                    color: [75, 0, 130],
-                },
-                ColorStop {
-                    position: 1.0,
-                    color: [148, 0, 211],
-                },
-            ]),
-            ..Self::default()
-        }
-    }
-
-    fn neon() -> Self {
-        Self {
-            id: "neon".to_string(),
-            name: "Neon".to_string(),
-            gradient: Gradient::new(vec![
-                ColorStop {
-                    position: 0.0,
-                    color: [255, 0, 255],
-                },
-                ColorStop {
-                    position: 0.33,
-                    color: [0, 255, 255],
-                },
-                ColorStop {
-                    position: 0.67,
-                    color: [255, 255, 0],
-                },
-                ColorStop {
-                    position: 1.0,
-                    color: [255, 0, 255],
-                },
-            ]),
-            ..Self::default()
-        }
-    }
-
-    fn twilight() -> Self {
-        Self {
-            id: "twilight".to_string(),
-            name: "Twilight".to_string(),
-            gradient: Gradient::new(vec![
-                ColorStop {
-                    position: 0.0,
-                    color: [255, 100, 50],
-                },
-                ColorStop {
-                    position: 0.111,
-                    color: [255, 50, 100],
-                },
-                ColorStop {
-                    position: 0.222,
-                    color: [200, 50, 150],
-                },
-                ColorStop {
-                    position: 0.333,
-                    color: [150, 50, 200],
-                },
-                ColorStop {
-                    position: 0.444,
-                    color: [80, 80, 220],
-                },
-                ColorStop {
-                    position: 0.556,
-                    color: [50, 150, 255],
-                },
-                ColorStop {
-                    position: 0.667,
-                    color: [80, 200, 200],
-                },
-                ColorStop {
-                    position: 0.778,
-                    color: [150, 200, 150],
-                },
-                ColorStop {
-                    position: 0.889,
-                    color: [200, 180, 100],
-                },
-                ColorStop {
-                    position: 1.0,
-                    color: [255, 100, 50],
-                },
-            ]),
-            ..Self::default()
-        }
-    }
-
-    fn candy() -> Self {
-        Self {
-            id: "candy".to_string(),
-            name: "Candy".to_string(),
-            gradient: Gradient::new(vec![
-                ColorStop {
-                    position: 0.0,
-                    color: [255, 180, 200],
-                },
-                ColorStop {
-                    position: 0.143,
-                    color: [200, 180, 255],
-                },
-                ColorStop {
-                    position: 0.286,
-                    color: [180, 220, 255],
-                },
-                ColorStop {
-                    position: 0.429,
-                    color: [180, 255, 220],
-                },
-                ColorStop {
-                    position: 0.571,
-                    color: [220, 255, 180],
-                },
-                ColorStop {
-                    position: 0.714,
-                    color: [255, 240, 180],
-                },
-                ColorStop {
-                    position: 0.857,
-                    color: [255, 200, 180],
-                },
-                ColorStop {
-                    position: 1.0,
-                    color: [255, 180, 200],
-                },
-            ]),
-            ..Self::default()
-        }
-    }
-
-    fn inferno() -> Self {
-        Self {
-            id: "inferno".to_string(),
-            name: "Inferno".to_string(),
-            gradient: Gradient::new(vec![
-                ColorStop {
-                    position: 0.0,
-                    color: [5, 0, 10],
-                },
-                ColorStop {
-                    position: 0.04,
-                    color: [200, 150, 100],
-                },
-                ColorStop {
-                    position: 0.08,
-                    color: [5, 0, 10],
-                },
-                ColorStop {
-                    position: 0.12,
-                    color: [200, 150, 100],
-                },
-                ColorStop {
-                    position: 0.16,
-                    color: [5, 0, 10],
-                },
-                ColorStop {
-                    position: 0.20,
-                    color: [200, 150, 100],
-                },
-                ColorStop {
-                    position: 0.24,
-                    color: [5, 0, 10],
-                },
-                ColorStop {
-                    position: 0.28,
-                    color: [200, 150, 100],
-                },
-                ColorStop {
-                    position: 0.32,
-                    color: [5, 0, 10],
-                },
-                ColorStop {
-                    position: 0.36,
-                    color: [200, 150, 100],
-                },
-                ColorStop {
-                    position: 0.40,
-                    color: [5, 0, 10],
-                },
-                ColorStop {
-                    position: 0.44,
-                    color: [200, 150, 100],
-                },
-                ColorStop {
-                    position: 0.48,
-                    color: [5, 0, 10],
-                },
-                ColorStop {
-                    position: 0.52,
-                    color: [200, 150, 100],
-                },
-                ColorStop {
-                    position: 0.56,
-                    color: [5, 0, 10],
-                },
-                ColorStop {
-                    position: 0.60,
-                    color: [200, 150, 100],
-                },
-                ColorStop {
-                    position: 0.64,
-                    color: [5, 0, 10],
-                },
-                ColorStop {
-                    position: 0.68,
-                    color: [200, 150, 100],
-                },
-                ColorStop {
-                    position: 0.72,
-                    color: [5, 0, 10],
-                },
-                ColorStop {
-                    position: 0.76,
-                    color: [40, 0, 20],
-                },
-                ColorStop {
-                    position: 0.80,
-                    color: [100, 10, 10],
-                },
-                ColorStop {
-                    position: 0.84,
-                    color: [180, 40, 0],
-                },
-                ColorStop {
-                    position: 0.88,
-                    color: [255, 100, 0],
-                },
-                ColorStop {
-                    position: 0.92,
-                    color: [255, 180, 50],
-                },
-                ColorStop {
-                    position: 0.96,
-                    color: [200, 150, 100],
-                },
-                ColorStop {
-                    position: 1.0,
-                    color: [255, 255, 255],
-                },
-            ]),
-            ..Self::default()
-        }
-    }
-
-    fn aurora() -> Self {
-        Self {
-            id: "aurora".to_string(),
-            name: "Aurora".to_string(),
-            gradient: Gradient::new(vec![
-                ColorStop {
-                    position: 0.0,
-                    color: [50, 255, 100],
-                },
-                ColorStop {
-                    position: 0.125,
-                    color: [50, 255, 180],
-                },
-                ColorStop {
-                    position: 0.25,
-                    color: [50, 200, 255],
-                },
-                ColorStop {
-                    position: 0.375,
-                    color: [80, 120, 255],
-                },
-                ColorStop {
-                    position: 0.5,
-                    color: [150, 80, 255],
-                },
-                ColorStop {
-                    position: 0.625,
-                    color: [200, 100, 200],
-                },
-                ColorStop {
-                    position: 0.75,
-                    color: [150, 150, 150],
-                },
-                ColorStop {
-                    position: 0.875,
-                    color: [100, 200, 100],
-                },
-                ColorStop {
-                    position: 1.0,
-                    color: [50, 255, 100],
-                },
-            ]),
-            ..Self::default()
-        }
+    /// Non-WASM stub for load_factory_defaults.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn load_factory_defaults() -> Result<(), String> {
+        // Just initialize from embedded JSON
+        let _ = FACTORY_PALETTES.get_or_init(|| {
+            serde_json::from_str(EMBEDDED_FACTORY_PALETTES)
+                .expect("embedded factory_palettes.json is invalid")
+        });
+        Ok(())
     }
 
     /// Save palette to localStorage.
@@ -635,6 +235,14 @@ mod tests {
         let parsed: Palette = serde_json::from_str(&json).unwrap();
         assert_eq!(palette.id, parsed.id);
         assert_eq!(palette.name, parsed.name);
+    }
+
+    #[test]
+    #[ignore] // Run with: cargo test print_factory_json -- --ignored --nocapture
+    fn print_factory_json() {
+        let palettes = Palette::factory_defaults();
+        let json = serde_json::to_string_pretty(&palettes).unwrap();
+        println!("\n{}", json);
     }
 
     #[test]
