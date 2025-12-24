@@ -3,6 +3,17 @@ use crate::components::Menu;
 use leptos::*;
 
 #[component]
+fn InfoIcon() -> impl IntoView {
+    view! {
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="16" x2="12" y2="12"/>
+            <circle cx="12" cy="8" r="0.5" fill="currentColor"/>
+        </svg>
+    }
+}
+
+#[component]
 fn GithubIcon() -> impl IntoView {
     view! {
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -14,7 +25,7 @@ fn GithubIcon() -> impl IntoView {
 #[component]
 pub fn InfoMenu(is_open: ReadSignal<bool>, set_is_open: WriteSignal<bool>) -> impl IntoView {
     view! {
-        <Menu is_open=is_open set_is_open=set_is_open label="Info">
+        <Menu is_open=is_open set_is_open=set_is_open icon=|| view! { <InfoIcon /> }>
             <div class="p-4 text-white">
                 <h3 class="font-medium mb-2">"Fractal Wonder"</h3>
                 <p class="text-sm text-gray-300 mb-3">

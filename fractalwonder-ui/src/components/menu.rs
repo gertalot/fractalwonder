@@ -168,6 +168,7 @@ pub fn MenuSection(
 
 /// A dropdown menu with toggle button and dropdown content.
 /// Provides consistent styling and behavior for all menus.
+/// Either `label` or `icon` should be provided; icon takes precedence.
 #[component]
 pub fn Menu(
     /// Menu open state
@@ -175,22 +176,40 @@ pub fn Menu(
     /// Set menu open state
     set_is_open: WriteSignal<bool>,
     /// Button label (displayed with dropdown chevron)
-    #[prop(into)]
-    label: String,
+    #[prop(optional, into)]
+    label: Option<String>,
+    /// Optional icon to display instead of label
+    #[prop(optional, into)]
+    icon: Option<ViewFn>,
     /// Dropdown content
     children: ChildrenFn,
 ) -> impl IntoView {
+    let button_class = if icon.is_some() {
+        "text-white hover:text-gray-200 hover:bg-white/10 rounded-full p-2 transition-colors"
+    } else {
+        "text-white hover:text-gray-200 hover:bg-white/10 rounded-lg px-3 py-2 transition-colors flex items-center gap-2"
+    };
+
     view! {
         <div class="relative">
             <button
-                class="text-white hover:text-gray-200 hover:bg-white/10 rounded-lg px-3 py-2 transition-colors flex items-center gap-2"
+                class=button_class
                 on:click=move |e| {
                     e.stop_propagation();
                     set_is_open.update(|v| *v = !*v);
                 }
             >
-                <span class="text-sm">{label}</span>
-                <span class="text-xs opacity-70">"▾"</span>
+                {match (icon, label) {
+                    (Some(icon_fn), _) => icon_fn.run().into_view(),
+                    (None, Some(text)) => view! {
+                        <span class="text-sm">{text}</span>
+                        <span class="text-xs opacity-70">"▾"</span>
+                    }.into_view(),
+                    (None, None) => view! {
+                        <span class="text-sm">"Menu"</span>
+                        <span class="text-xs opacity-70">"▾"</span>
+                    }.into_view(),
+                }}
             </button>
 
             <Show when=move || is_open.get()>
