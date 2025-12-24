@@ -1,7 +1,7 @@
 // fractalwonder-ui/src/components/interactive_canvas.rs
 use crate::config::FractalConfig;
 use crate::hooks::use_canvas_interaction;
-use crate::rendering::colorizers::ColorOptions;
+use crate::rendering::colorizers::{Palette, RenderSettings};
 use crate::rendering::ParallelRenderer;
 use fractalwonder_core::{apply_pixel_transform_to_viewport, Viewport};
 use leptos::*;
@@ -31,9 +31,12 @@ pub fn InteractiveCanvas(
     /// X-ray mode enabled signal
     #[prop(optional)]
     xray_enabled: Option<ReadSignal<bool>>,
-    /// Color options signal
+    /// Palette signal
     #[prop(optional)]
-    color_options: Option<Signal<ColorOptions>>,
+    palette: Option<Signal<Palette>>,
+    /// Render settings signal
+    #[prop(optional)]
+    render_settings: Option<Signal<RenderSettings>>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
@@ -108,17 +111,33 @@ pub fn InteractiveCanvas(
         });
     }
 
-    // Watch for color options changes - update renderer and recolorize (or re-render for GPU toggle)
-    if let Some(options_signal) = color_options {
-        create_effect(move |prev: Option<ColorOptions>| {
-            let options = options_signal.get();
+    // Watch for palette changes - update renderer and recolorize
+    if let Some(palette_signal) = palette {
+        create_effect(move |prev: Option<Palette>| {
+            let pal = palette_signal.get();
 
-            renderer.with_value(|r| r.set_color_options(&options));
+            renderer.with_value(|r| r.set_palette(pal.clone()));
+
+            // Recolorize when palette changes (not on initial mount)
+            if prev.is_some() && prev.as_ref() != Some(&pal) {
+                renderer.with_value(|r| r.recolorize());
+            }
+
+            pal
+        });
+    }
+
+    // Watch for render settings changes - update renderer and recolorize (or re-render for GPU toggle)
+    if let Some(settings_signal) = render_settings {
+        create_effect(move |prev: Option<RenderSettings>| {
+            let settings = settings_signal.get();
+
+            renderer.with_value(|r| r.set_render_settings(settings.clone()));
 
             // Check if this is not the initial mount
-            if let Some(prev_opts) = prev.as_ref() {
+            if let Some(prev_settings) = prev.as_ref() {
                 // If use_gpu changed, trigger a full re-render
-                if prev_opts.use_gpu != options.use_gpu {
+                if prev_settings.use_gpu != settings.use_gpu {
                     let vp = viewport.get_untracked();
                     let size = canvas_size.get_untracked();
                     if size.0 > 0 && size.1 > 0 {
@@ -127,13 +146,13 @@ pub fn InteractiveCanvas(
                             renderer.with_value(|r| r.render(&vp, canvas));
                         }
                     }
-                } else if prev_opts != &options {
-                    // Other options changed - just recolorize
+                } else if prev_settings != &settings {
+                    // Other settings changed - just recolorize
                     renderer.with_value(|r| r.recolorize());
                 }
             }
 
-            options
+            settings
         });
     }
 
