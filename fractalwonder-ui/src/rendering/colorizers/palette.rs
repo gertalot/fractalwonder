@@ -13,9 +13,11 @@ use web_sys::window;
 static FACTORY_PALETTES: OnceLock<Vec<Palette>> = OnceLock::new();
 
 /// A complete palette configuration.
+///
+/// The `name` field serves as the unique identifier for palettes.
+/// No two palettes can have the same name.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Palette {
-    pub id: String,
     pub name: String,
     pub gradient: Gradient,
     pub transfer_curve: Curve,
@@ -29,7 +31,6 @@ pub struct Palette {
 impl Default for Palette {
     fn default() -> Self {
         Self {
-            id: "default".to_string(),
             name: "Default".to_string(),
             gradient: Gradient::new(vec![
                 ColorStop {
@@ -134,32 +135,32 @@ impl Palette {
             .ok_or("no localStorage")?;
 
         let json = serde_json::to_string(self).map_err(|e| e.to_string())?;
-        storage.set_item(&format!("palette:{}", self.id), &json)
+        storage.set_item(&format!("palette:{}", self.name), &json)
     }
 
-    /// Load palette from localStorage.
+    /// Load palette from localStorage by name.
     #[cfg(target_arch = "wasm32")]
-    pub fn load(id: &str) -> Option<Self> {
+    pub fn load(name: &str) -> Option<Self> {
         let storage = window()?.local_storage().ok()??;
-        let json = storage.get_item(&format!("palette:{id}")).ok()??;
+        let json = storage.get_item(&format!("palette:{name}")).ok()??;
         serde_json::from_str(&json).ok()
     }
 
-    /// Delete palette from localStorage.
+    /// Delete palette from localStorage by name.
     #[cfg(target_arch = "wasm32")]
-    pub fn delete(id: &str) {
+    pub fn delete(name: &str) {
         if let Some(storage) = window().and_then(|w| w.local_storage().ok().flatten()) {
-            let _ = storage.remove_item(&format!("palette:{id}"));
+            let _ = storage.remove_item(&format!("palette:{name}"));
         }
     }
 
-    /// Get palette by ID: localStorage first, then factory default.
+    /// Get palette by name: localStorage first, then factory default.
     #[cfg(target_arch = "wasm32")]
-    pub async fn get(id: &str) -> Option<Self> {
-        Self::load(id).or_else(|| {
+    pub async fn get(name: &str) -> Option<Self> {
+        Self::load(name).or_else(|| {
             FACTORY_PALETTES
                 .get()
-                .and_then(|p| p.iter().find(|p| p.id == id).cloned())
+                .and_then(|p| p.iter().find(|p| p.name == name).cloned())
         })
     }
 
@@ -170,20 +171,20 @@ impl Palette {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn load(_id: &str) -> Option<Self> {
+    pub fn load(_name: &str) -> Option<Self> {
         None // No localStorage in tests
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn delete(_id: &str) {
+    pub fn delete(_name: &str) {
         // No-op in tests
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn get(id: &str) -> Option<Self> {
+    pub async fn get(name: &str) -> Option<Self> {
         FACTORY_PALETTES
             .get()
-            .and_then(|p| p.iter().find(|p| p.id == id).cloned())
+            .and_then(|p| p.iter().find(|p| p.name == name).cloned())
     }
 }
 
@@ -241,7 +242,6 @@ mod tests {
         let palette = Palette::default();
         let json = serde_json::to_string(&palette).unwrap();
         let parsed: Palette = serde_json::from_str(&json).unwrap();
-        assert_eq!(palette.id, parsed.id);
         assert_eq!(palette.name, parsed.name);
     }
 
@@ -256,24 +256,24 @@ mod tests {
     #[test]
     fn factory_defaults_contains_classic() {
         let palettes = block_on(Palette::factory_defaults());
-        assert!(palettes.iter().any(|p| p.id == "classic"));
+        assert!(palettes.iter().any(|p| p.name == "Classic"));
     }
 
     #[test]
-    fn factory_defaults_all_have_unique_ids() {
+    fn factory_defaults_all_have_unique_names() {
         let palettes = block_on(Palette::factory_defaults());
-        let mut ids: Vec<_> = palettes.iter().map(|p| &p.id).collect();
-        ids.sort();
-        ids.dedup();
-        assert_eq!(ids.len(), palettes.len());
+        let mut names: Vec<_> = palettes.iter().map(|p| &p.name).collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), palettes.len());
     }
 
     #[test]
     fn palette_get_returns_factory_default() {
         block_on(Palette::factory_defaults()); // ensure loaded
-        let palette = block_on(Palette::get("classic"));
+        let palette = block_on(Palette::get("Classic"));
         assert!(palette.is_some());
-        assert_eq!(palette.unwrap().id, "classic");
+        assert_eq!(palette.unwrap().name, "Classic");
     }
 
     #[test]

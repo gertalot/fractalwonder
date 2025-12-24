@@ -22,9 +22,9 @@ pub struct PersistedState {
     pub viewport: Viewport,
     /// Selected fractal configuration ID
     pub config_id: String,
-    /// Palette ID to load on startup
-    #[serde(default = "default_palette_id")]
-    pub palette_id: String,
+    /// Palette name to load on startup (unique identifier)
+    #[serde(default = "default_palette_name", alias = "palette_id")]
+    pub palette_name: String,
     /// Render settings (cycle_count, use_gpu, xray)
     #[serde(default)]
     pub render_settings: RenderSettings,
@@ -32,8 +32,8 @@ pub struct PersistedState {
     version: u32,
 }
 
-fn default_palette_id() -> String {
-    "classic".to_string()
+fn default_palette_name() -> String {
+    "Classic".to_string()
 }
 
 impl PersistedState {
@@ -42,13 +42,13 @@ impl PersistedState {
     pub fn new(
         viewport: Viewport,
         config_id: String,
-        palette_id: String,
+        palette_name: String,
         render_settings: RenderSettings,
     ) -> Self {
         Self {
             viewport,
             config_id,
-            palette_id,
+            palette_name,
             render_settings,
             version: Self::CURRENT_VERSION,
         }
@@ -58,7 +58,7 @@ impl PersistedState {
         Self::new(
             viewport,
             config_id,
-            "classic".to_string(),
+            "Classic".to_string(),
             RenderSettings::default(),
         )
     }
@@ -89,7 +89,7 @@ fn load_from_local_storage() -> Option<PersistedState> {
                 log::info!(
                     "Loaded persisted state from localStorage: config={}, palette={}",
                     state.config_id,
-                    state.palette_id
+                    state.palette_name
                 );
                 Some(state)
             } else {
@@ -326,14 +326,14 @@ mod tests {
         let state = PersistedState::new(
             viewport.clone(),
             "mandelbrot".to_string(),
-            "fire".to_string(),
+            "Fire".to_string(),
             settings.clone(),
         );
 
         let encoded = encode_state(&state).expect("encoding should succeed");
         let decoded = decode_state(&encoded).expect("decoding should succeed");
 
-        assert_eq!(decoded.palette_id, "fire");
+        assert_eq!(decoded.palette_name, "Fire");
         assert_eq!(decoded.render_settings.cycle_count, 64);
         assert!(!decoded.render_settings.use_gpu);
         assert!(decoded.render_settings.xray_enabled);

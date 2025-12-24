@@ -132,11 +132,12 @@ impl ParallelRenderer {
 
     /// Set x-ray mode enabled state.
     pub fn set_xray_enabled(&self, enabled: bool) {
+        let current = self.pipeline.borrow().render_settings().clone();
         self.pipeline
             .borrow_mut()
             .set_render_settings(RenderSettings {
                 xray_enabled: enabled,
-                ..self.pipeline.borrow().render_settings().clone()
+                ..current
             });
     }
 

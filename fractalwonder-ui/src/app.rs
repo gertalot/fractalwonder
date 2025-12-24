@@ -23,8 +23,8 @@ pub fn App() -> impl IntoView {
         .unwrap_or_else(|| "mandelbrot".to_string());
     let initial_palette_id = persisted
         .as_ref()
-        .map(|s| s.palette_id.clone())
-        .unwrap_or_else(|| "classic".to_string());
+        .map(|s| s.palette_name.clone())
+        .unwrap_or_else(|| "Classic".to_string());
     let initial_render_settings = persisted
         .as_ref()
         .map(|s| s.render_settings.clone())
@@ -64,10 +64,7 @@ pub fn App() -> impl IntoView {
         });
     });
 
-    // Derive individual signals for UI components
-    let shading_enabled = create_memo(move |_| palette.get().shading_enabled);
-    let smooth_enabled = create_memo(move |_| palette.get().smooth_enabled);
-    let histogram_enabled = create_memo(move |_| palette.get().histogram_enabled);
+    // Derive cycle_count for UI display
     let cycle_count = create_memo(move |_| render_settings.get().cycle_count);
 
     // Palette options for dropdown (load asynchronously)
@@ -82,7 +79,7 @@ pub fn App() -> impl IntoView {
         palette_list
             .get()
             .iter()
-            .map(|p| (p.id.to_string(), p.name.to_string()))
+            .map(|p| (p.name.clone(), p.name.clone()))
             .collect::<Vec<_>>()
     });
 
@@ -193,7 +190,7 @@ pub fn App() -> impl IntoView {
             // Fit the persisted viewport to the current canvas size
             let fitted = fit_viewport_to_canvas(&state.viewport, size);
             set_viewport.set(fitted);
-            set_palette_id.set(state.palette_id.clone());
+            set_palette_id.set(state.palette_name.clone());
             set_render_settings.set(state.render_settings.clone());
             log::info!("Restored viewport, palette, and render settings from URL hash change");
         }
@@ -286,49 +283,13 @@ pub fn App() -> impl IntoView {
                         set_subdivide_trigger.update(|v| *v = v.wrapping_add(1));
                     }
                 }
-                "3" => {
-                    // Toggle 3D shading
-                    set_palette.update(|pal| {
-                        pal.shading_enabled = !pal.shading_enabled;
-                        let msg = if pal.shading_enabled {
-                            "3D: On"
-                        } else {
-                            "3D: Off"
-                        };
-                        set_toast_message.set(Some(msg.to_string()));
-                    });
-                }
-                "s" | "S" => {
-                    // Toggle smooth iteration
-                    set_palette.update(|pal| {
-                        pal.smooth_enabled = !pal.smooth_enabled;
-                        let msg = if pal.smooth_enabled {
-                            "Smooth: On"
-                        } else {
-                            "Smooth: Off"
-                        };
-                        set_toast_message.set(Some(msg.to_string()));
-                    });
-                }
-                "h" | "H" => {
-                    // Toggle histogram equalization
-                    set_palette.update(|pal| {
-                        pal.histogram_enabled = !pal.histogram_enabled;
-                        let msg = if pal.histogram_enabled {
-                            "Histogram: On"
-                        } else {
-                            "Histogram: Off"
-                        };
-                        set_toast_message.set(Some(msg.to_string()));
-                    });
-                }
                 "ArrowLeft" => {
                     // Previous palette
                     let palettes = palette_list.get_untracked();
-                    let current_id = palette_id.get_untracked();
+                    let current_name = palette_id.get_untracked();
                     let current_idx = palettes
                         .iter()
-                        .position(|p| p.id == current_id)
+                        .position(|p| p.name == current_name)
                         .unwrap_or(0);
                     let new_idx = if current_idx == 0 {
                         palettes.len() - 1
@@ -336,21 +297,21 @@ pub fn App() -> impl IntoView {
                         current_idx - 1
                     };
                     if let Some(new_palette) = palettes.get(new_idx) {
-                        set_palette_id.set(new_palette.id.clone());
+                        set_palette_id.set(new_palette.name.clone());
                         set_toast_message.set(Some(format!("Palette: {}", new_palette.name)));
                     }
                 }
                 "ArrowRight" => {
                     // Next palette
                     let palettes = palette_list.get_untracked();
-                    let current_id = palette_id.get_untracked();
+                    let current_name = palette_id.get_untracked();
                     let current_idx = palettes
                         .iter()
-                        .position(|p| p.id == current_id)
+                        .position(|p| p.name == current_name)
                         .unwrap_or(0);
                     let new_idx = (current_idx + 1) % palettes.len();
                     if let Some(new_palette) = palettes.get(new_idx) {
-                        set_palette_id.set(new_palette.id.clone());
+                        set_palette_id.set(new_palette.name.clone());
                         set_toast_message.set(Some(format!("Palette: {}", new_palette.name)));
                     }
                 }
@@ -428,47 +389,9 @@ pub fn App() -> impl IntoView {
             on_home_click=on_home_click
             palette_options=palette_options
             selected_palette_id=Signal::derive(move || palette_id.get())
-            on_palette_select=Callback::new(move |id: String| {
-                let palettes = palette_list.get_untracked();
-                let name = palettes
-                    .iter()
-                    .find(|p| p.id == id)
-                    .map(|p| p.name.as_str())
-                    .unwrap_or("Unknown");
-                set_palette_id.set(id);
+            on_palette_select=Callback::new(move |name: String| {
+                set_palette_id.set(name.clone());
                 set_toast_message.set(Some(format!("Palette: {}", name)));
-            })
-            shading_enabled=Signal::derive(move || shading_enabled.get())
-            on_shading_toggle=Callback::new(move |_| {
-                set_palette.update(|pal| {
-                    pal.shading_enabled = !pal.shading_enabled;
-                    let msg = if pal.shading_enabled { "3D: On" } else { "3D: Off" };
-                    set_toast_message.set(Some(msg.to_string()));
-                });
-            })
-            smooth_enabled=Signal::derive(move || smooth_enabled.get())
-            on_smooth_toggle=Callback::new(move |_| {
-                set_palette.update(|pal| {
-                    pal.smooth_enabled = !pal.smooth_enabled;
-                    let msg = if pal.smooth_enabled {
-                        "Smooth: On"
-                    } else {
-                        "Smooth: Off"
-                    };
-                    set_toast_message.set(Some(msg.to_string()));
-                });
-            })
-            histogram_enabled=Signal::derive(move || histogram_enabled.get())
-            on_histogram_toggle=Callback::new(move |_| {
-                set_palette.update(|pal| {
-                    pal.histogram_enabled = !pal.histogram_enabled;
-                    let msg = if pal.histogram_enabled {
-                        "Histogram: On"
-                    } else {
-                        "Histogram: Off"
-                    };
-                    set_toast_message.set(Some(msg.to_string()));
-                });
             })
             cycle_count=Signal::derive(move || cycle_count.get())
             on_cycle_up=Callback::new(move |_| {

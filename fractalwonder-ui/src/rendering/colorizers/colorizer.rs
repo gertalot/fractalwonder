@@ -189,7 +189,7 @@ mod tests {
         use futures::executor::block_on;
 
         block_on(Palette::factory_defaults()); // ensure loaded
-        let palette = block_on(Palette::get("classic")).unwrap();
+        let palette = block_on(Palette::get("Classic")).unwrap();
         let lut = PaletteLut::from_palette(&palette);
         let render_settings = RenderSettings::default();
         let colorizer = ColorizerKind::SmoothIteration(SmoothIterationColorizer);

@@ -1,4 +1,5 @@
-//! Options dropdown menu with grouped sections for Effects and Cycles.
+//! Options dropdown menu with renderer settings and cycles.
+//! Note: 3D, Smooth, Histogram are palette properties, not options.
 
 use crate::components::{Menu, MenuItem, MenuSection, StepperMenuItem};
 use leptos::*;
@@ -9,18 +10,6 @@ pub fn OptionsMenu(
     is_open: ReadSignal<bool>,
     /// Set menu open state
     set_is_open: WriteSignal<bool>,
-    /// 3D shading enabled state
-    shading_enabled: Signal<bool>,
-    /// Callback when 3D is toggled
-    on_shading_toggle: Callback<()>,
-    /// Smooth iteration enabled state
-    smooth_enabled: Signal<bool>,
-    /// Callback when smooth is toggled
-    on_smooth_toggle: Callback<()>,
-    /// Histogram equalization enabled state
-    histogram_enabled: Signal<bool>,
-    /// Callback when histogram is toggled
-    on_histogram_toggle: Callback<()>,
     /// Current cycle count
     cycle_count: Signal<u32>,
     /// Callback to increase cycles
@@ -48,26 +37,6 @@ pub fn OptionsMenu(
                 on_click=on_gpu_toggle
                 label="Use GPU"
                 shortcut="[G]"
-            />
-
-            <MenuSection title="Effects" />
-            <MenuItem
-                active=shading_enabled
-                on_click=on_shading_toggle
-                label="3D"
-                shortcut="[3]"
-            />
-            <MenuItem
-                active=smooth_enabled
-                on_click=on_smooth_toggle
-                label="Smooth"
-                shortcut="[S]"
-            />
-            <MenuItem
-                active=histogram_enabled
-                on_click=on_histogram_toggle
-                label="Histogram"
-                shortcut="[H]"
             />
 
             <MenuSection title="Cycles" />
