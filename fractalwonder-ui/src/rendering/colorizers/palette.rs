@@ -299,20 +299,36 @@ impl Palette {
                     color: [255, 100, 50],
                 },
                 ColorStop {
-                    position: 0.2,
+                    position: 0.111,
+                    color: [255, 50, 100],
+                },
+                ColorStop {
+                    position: 0.222,
                     color: [200, 50, 150],
                 },
                 ColorStop {
-                    position: 0.4,
+                    position: 0.333,
+                    color: [150, 50, 200],
+                },
+                ColorStop {
+                    position: 0.444,
                     color: [80, 80, 220],
                 },
                 ColorStop {
-                    position: 0.6,
+                    position: 0.556,
                     color: [50, 150, 255],
                 },
                 ColorStop {
-                    position: 0.8,
+                    position: 0.667,
+                    color: [80, 200, 200],
+                },
+                ColorStop {
+                    position: 0.778,
                     color: [150, 200, 150],
+                },
+                ColorStop {
+                    position: 0.889,
+                    color: [200, 180, 100],
                 },
                 ColorStop {
                     position: 1.0,
@@ -333,16 +349,28 @@ impl Palette {
                     color: [255, 180, 200],
                 },
                 ColorStop {
-                    position: 0.25,
+                    position: 0.143,
                     color: [200, 180, 255],
                 },
                 ColorStop {
-                    position: 0.5,
+                    position: 0.286,
+                    color: [180, 220, 255],
+                },
+                ColorStop {
+                    position: 0.429,
                     color: [180, 255, 220],
                 },
                 ColorStop {
-                    position: 0.75,
+                    position: 0.571,
+                    color: [220, 255, 180],
+                },
+                ColorStop {
+                    position: 0.714,
                     color: [255, 240, 180],
+                },
+                ColorStop {
+                    position: 0.857,
+                    color: [255, 200, 180],
                 },
                 ColorStop {
                     position: 1.0,
@@ -363,20 +391,104 @@ impl Palette {
                     color: [5, 0, 10],
                 },
                 ColorStop {
-                    position: 0.25,
+                    position: 0.04,
+                    color: [200, 150, 100],
+                },
+                ColorStop {
+                    position: 0.08,
+                    color: [5, 0, 10],
+                },
+                ColorStop {
+                    position: 0.12,
+                    color: [200, 150, 100],
+                },
+                ColorStop {
+                    position: 0.16,
+                    color: [5, 0, 10],
+                },
+                ColorStop {
+                    position: 0.20,
+                    color: [200, 150, 100],
+                },
+                ColorStop {
+                    position: 0.24,
+                    color: [5, 0, 10],
+                },
+                ColorStop {
+                    position: 0.28,
+                    color: [200, 150, 100],
+                },
+                ColorStop {
+                    position: 0.32,
+                    color: [5, 0, 10],
+                },
+                ColorStop {
+                    position: 0.36,
+                    color: [200, 150, 100],
+                },
+                ColorStop {
+                    position: 0.40,
+                    color: [5, 0, 10],
+                },
+                ColorStop {
+                    position: 0.44,
+                    color: [200, 150, 100],
+                },
+                ColorStop {
+                    position: 0.48,
+                    color: [5, 0, 10],
+                },
+                ColorStop {
+                    position: 0.52,
+                    color: [200, 150, 100],
+                },
+                ColorStop {
+                    position: 0.56,
+                    color: [5, 0, 10],
+                },
+                ColorStop {
+                    position: 0.60,
+                    color: [200, 150, 100],
+                },
+                ColorStop {
+                    position: 0.64,
+                    color: [5, 0, 10],
+                },
+                ColorStop {
+                    position: 0.68,
+                    color: [200, 150, 100],
+                },
+                ColorStop {
+                    position: 0.72,
+                    color: [5, 0, 10],
+                },
+                ColorStop {
+                    position: 0.76,
+                    color: [40, 0, 20],
+                },
+                ColorStop {
+                    position: 0.80,
                     color: [100, 10, 10],
                 },
                 ColorStop {
-                    position: 0.5,
+                    position: 0.84,
+                    color: [180, 40, 0],
+                },
+                ColorStop {
+                    position: 0.88,
                     color: [255, 100, 0],
                 },
                 ColorStop {
-                    position: 0.75,
+                    position: 0.92,
                     color: [255, 180, 50],
                 },
                 ColorStop {
-                    position: 1.0,
+                    position: 0.96,
                     color: [200, 150, 100],
+                },
+                ColorStop {
+                    position: 1.0,
+                    color: [255, 255, 255],
                 },
             ]),
             ..Self::default()
@@ -393,15 +505,31 @@ impl Palette {
                     color: [50, 255, 100],
                 },
                 ColorStop {
+                    position: 0.125,
+                    color: [50, 255, 180],
+                },
+                ColorStop {
                     position: 0.25,
                     color: [50, 200, 255],
+                },
+                ColorStop {
+                    position: 0.375,
+                    color: [80, 120, 255],
                 },
                 ColorStop {
                     position: 0.5,
                     color: [150, 80, 255],
                 },
                 ColorStop {
+                    position: 0.625,
+                    color: [200, 100, 200],
+                },
+                ColorStop {
                     position: 0.75,
+                    color: [150, 150, 150],
+                },
+                ColorStop {
+                    position: 0.875,
                     color: [100, 200, 100],
                 },
                 ColorStop {
