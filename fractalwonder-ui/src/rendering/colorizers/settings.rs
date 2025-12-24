@@ -1,7 +1,7 @@
 //! Color settings for the colorization pipeline.
 
 use super::palettes;
-use super::Palette;
+use super::PaletteLut;
 use serde::{Deserialize, Serialize};
 
 /// Default transfer bias (1.0 = linear, no bias).
@@ -176,12 +176,12 @@ impl ColorOptions {
     }
 
     /// Get the palette for this options.
-    pub fn palette(&self) -> Palette {
+    pub fn palette(&self) -> PaletteLut {
         palettes()
             .into_iter()
             .find(|p| p.id == self.palette_id)
             .map(|p| p.palette)
-            .unwrap_or_else(Palette::ultra_fractal)
+            .unwrap_or_else(PaletteLut::ultra_fractal)
     }
 
     /// Get shading settings.

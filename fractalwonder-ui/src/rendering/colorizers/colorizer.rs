@@ -1,7 +1,7 @@
 //! Colorizer trait for mapping compute data to colors.
 
 use super::smooth_iteration::SmoothIterationContext;
-use super::{ColorOptions, Palette, SmoothIterationColorizer};
+use super::{ColorOptions, PaletteLut, SmoothIterationColorizer};
 use fractalwonder_core::ComputeData;
 
 /// A colorizer algorithm with optional pre/post-processing stages.
@@ -27,7 +27,7 @@ pub trait Colorizer {
         data: &ComputeData,
         context: &Self::Context,
         options: &ColorOptions,
-        palette: &Palette,
+        palette: &PaletteLut,
         index: usize,
     ) -> [u8; 4];
 
@@ -67,7 +67,7 @@ impl ColorizerKind {
         &self,
         data: &[ComputeData],
         options: &ColorOptions,
-        palette: &Palette,
+        palette: &PaletteLut,
         width: usize,
         height: usize,
         zoom_level: f64,
@@ -98,7 +98,7 @@ impl ColorizerKind {
         &self,
         data: &ComputeData,
         options: &ColorOptions,
-        palette: &Palette,
+        palette: &PaletteLut,
     ) -> [u8; 4] {
         match self {
             Self::SmoothIteration(c) => c.colorize(
@@ -119,7 +119,7 @@ impl ColorizerKind {
         data: &ComputeData,
         cached_context: &SmoothIterationContext,
         options: &ColorOptions,
-        palette: &Palette,
+        palette: &PaletteLut,
     ) -> [u8; 4] {
         match self {
             Self::SmoothIteration(c) => {
@@ -148,7 +148,7 @@ impl ColorizerKind {
         data: &[ComputeData],
         context: &SmoothIterationContext,
         options: &ColorOptions,
-        palette: &Palette,
+        palette: &PaletteLut,
         width: usize,
         height: usize,
         zoom_level: f64,

@@ -1,6 +1,6 @@
 //! Unified colorization pipeline with histogram caching.
 
-use super::{ColorOptions, ColorizerKind, Palette, SmoothIterationContext};
+use super::{ColorOptions, ColorizerKind, PaletteLut, SmoothIterationContext};
 use fractalwonder_core::ComputeData;
 
 /// Unified colorization pipeline.
@@ -10,7 +10,7 @@ use fractalwonder_core::ComputeData;
 pub struct ColorPipeline {
     colorizer: ColorizerKind,
     options: ColorOptions,
-    palette: Palette,
+    palette: PaletteLut,
     cached_context: Option<SmoothIterationContext>,
     xray_enabled: bool,
 }

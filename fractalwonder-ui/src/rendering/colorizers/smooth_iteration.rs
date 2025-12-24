@@ -117,7 +117,7 @@ impl Colorizer for SmoothIterationColorizer {
         data: &ComputeData,
         context: &Self::Context,
         options: &ColorOptions,
-        palette: &super::Palette,
+        palette: &super::PaletteLut,
         index: usize,
     ) -> [u8; 4] {
         match data {
@@ -167,7 +167,7 @@ impl SmoothIterationColorizer {
         data: &ComputeData,
         cached_context: &SmoothIterationContext,
         options: &ColorOptions,
-        palette: &super::Palette,
+        palette: &super::PaletteLut,
     ) -> [u8; 4] {
         match data {
             ComputeData::Mandelbrot(m) => {
@@ -186,7 +186,7 @@ impl SmoothIterationColorizer {
         smooth: f64,
         context: &SmoothIterationContext,
         options: &ColorOptions,
-        palette: &super::Palette,
+        palette: &super::PaletteLut,
     ) -> [u8; 4] {
         // Interior points are black
         if !data.escaped {

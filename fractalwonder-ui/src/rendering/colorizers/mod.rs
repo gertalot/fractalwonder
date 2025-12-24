@@ -4,6 +4,7 @@ pub mod curve;
 pub mod gradient;
 pub mod lighting_params;
 pub mod palette;
+pub mod palette_lut;
 pub mod pipeline;
 pub mod settings;
 pub mod shading;
@@ -16,6 +17,7 @@ pub use curve::{Curve, CurvePoint};
 pub use gradient::{ColorStop, Gradient};
 pub use lighting_params::LightingParams;
 pub use palette::Palette;
+pub use palette_lut::PaletteLut;
 pub use pipeline::ColorPipeline;
 pub use settings::{apply_transfer_bias, ColorOptions, ShadingSettings};
 pub use shading::apply_slope_shading;
@@ -26,7 +28,7 @@ pub use smooth_iteration::{SmoothIterationColorizer, SmoothIterationContext};
 pub struct PaletteEntry {
     pub id: &'static str,
     pub name: &'static str,
-    pub palette: Palette,
+    pub palette: PaletteLut,
 }
 
 /// Get all available color palettes.
@@ -35,62 +37,62 @@ pub fn palettes() -> Vec<PaletteEntry> {
         PaletteEntry {
             id: "classic",
             name: "Classic",
-            palette: Palette::ultra_fractal(),
+            palette: PaletteLut::ultra_fractal(),
         },
         PaletteEntry {
             id: "fire",
             name: "Fire",
-            palette: Palette::fire(),
+            palette: PaletteLut::fire(),
         },
         PaletteEntry {
             id: "ocean",
             name: "Ocean",
-            palette: Palette::ocean(),
+            palette: PaletteLut::ocean(),
         },
         PaletteEntry {
             id: "electric",
             name: "Electric",
-            palette: Palette::electric(),
+            palette: PaletteLut::electric(),
         },
         PaletteEntry {
             id: "grayscale",
             name: "Grayscale",
-            palette: Palette::grayscale(),
+            palette: PaletteLut::grayscale(),
         },
         PaletteEntry {
             id: "rainbow",
             name: "Rainbow",
-            palette: Palette::rainbow(),
+            palette: PaletteLut::rainbow(),
         },
         PaletteEntry {
             id: "neon",
             name: "Neon",
-            palette: Palette::neon(),
+            palette: PaletteLut::neon(),
         },
         PaletteEntry {
             id: "twilight",
             name: "Twilight",
-            palette: Palette::twilight(),
+            palette: PaletteLut::twilight(),
         },
         PaletteEntry {
             id: "candy",
             name: "Candy",
-            palette: Palette::candy(),
+            palette: PaletteLut::candy(),
         },
         PaletteEntry {
             id: "inferno",
             name: "Inferno",
-            palette: Palette::inferno(),
+            palette: PaletteLut::inferno(),
         },
         PaletteEntry {
             id: "stripey_inferno",
             name: "Stripey Inferno",
-            palette: Palette::stripey_inferno(),
+            palette: PaletteLut::stripey_inferno(),
         },
         PaletteEntry {
             id: "aurora",
             name: "Aurora",
-            palette: Palette::aurora(),
+            palette: PaletteLut::aurora(),
         },
     ]
 }
@@ -100,7 +102,7 @@ pub fn palettes() -> Vec<PaletteEntry> {
 pub fn colorize_with_palette(
     data: &ComputeData,
     options: &ColorOptions,
-    palette: &Palette,
+    palette: &PaletteLut,
     colorizer: &ColorizerKind,
     xray_enabled: bool,
 ) -> [u8; 4] {
