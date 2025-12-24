@@ -18,6 +18,7 @@ no_autoreload = false
 [serve.headers]
 Cross-Origin-Opener-Policy = "same-origin"
 Cross-Origin-Embedder-Policy = "require-corp"
+Cache-Control = "no-cache, no-store, must-revalidate"
 
 [tools]
 tailwindcss = "4.1.10"

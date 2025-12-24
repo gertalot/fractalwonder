@@ -111,13 +111,15 @@ pub fn apply_slope_shading(
             let raw_shade = blinn_phong(normal, light, palette);
 
             // Distance factor using falloff curve
-            let normalized_iter = if m.max_iterations > 0 {
-                (m.iterations as f64) / (m.max_iterations as f64)
+            // Logarithmic normalization spreads iteration values evenly across the range,
+            // since iteration counts grow logarithmically as you approach the boundary
+            let log_normalized_iter = if m.max_iterations > 1 && m.iterations > 0 {
+                (m.iterations as f64 + 1.0).ln() / (m.max_iterations as f64 + 1.0).ln()
             } else {
                 0.0
             };
             // x=0 is near set boundary, x=1 is far from set
-            let distance_from_set = 1.0 - normalized_iter;
+            let distance_from_set = 1.0 - log_normalized_iter;
             let distance_factor = palette.apply_falloff(distance_from_set);
 
             let shade = 1.0 + (raw_shade - 1.0) * palette.lighting.strength * distance_factor;

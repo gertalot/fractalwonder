@@ -10,7 +10,7 @@ pub mod shading;
 pub mod smooth_iteration;
 
 pub use colorizer::{Colorizer, ColorizerKind};
-pub use curve::{Curve, CurvePoint};
+pub use curve::{Curve, CurvePoint, CurveScale};
 pub use gradient::{ColorStop, Gradient};
 pub use lighting_params::LightingParams;
 pub use palette::{Palette, PaletteLut};

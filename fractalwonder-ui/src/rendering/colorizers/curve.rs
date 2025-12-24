@@ -2,6 +2,20 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Scale mode for curve evaluation.
+///
+/// - `Linear`: Output equals curve value directly (y = curve(x))
+/// - `Log`: Applies power function to output for aggressive falloff (y = curve(x)^10)
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CurveScale {
+    /// Linear scale: output equals curve value directly
+    Linear,
+    /// Log scale: applies power of 10 to output for aggressive falloff
+    #[default]
+    Log,
+}
+
 /// A control point on a curve.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CurvePoint {
@@ -21,13 +35,17 @@ pub struct CurvePoint {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Curve {
     pub points: Vec<CurvePoint>,
+    /// Scale mode for curve output (default: Log for aggressive falloff)
+    #[serde(default)]
+    pub scale: CurveScale,
 }
 
 impl Curve {
-    /// Create a linear (identity) curve.
+    /// Create a linear (identity) curve with default (Log) scale.
     pub fn linear() -> Self {
         Self {
             points: vec![CurvePoint { x: 0.0, y: 0.0 }, CurvePoint { x: 1.0, y: 1.0 }],
+            scale: CurveScale::default(),
         }
     }
 
@@ -201,6 +219,7 @@ mod tests {
                 CurvePoint { x: 0.5, y: 0.8 },
                 CurvePoint { x: 1.0, y: 1.0 },
             ],
+            scale: CurveScale::Linear,
         };
         assert!((curve.evaluate(0.5) - 0.8).abs() < 0.001);
     }
@@ -214,6 +233,7 @@ mod tests {
                 CurvePoint { x: 0.5, y: 1.0 },
                 CurvePoint { x: 1.0, y: 0.0 },
             ],
+            scale: CurveScale::Linear,
         };
         // At x=0.25, cubic spline should give value > 0.5 (curves up to peak)
         // Linear would give exactly 0.5

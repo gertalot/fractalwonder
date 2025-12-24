@@ -1,6 +1,6 @@
 //! Unified Palette struct containing gradient, curves, lighting, and flags.
 
-use super::{ColorStop, Curve, Gradient, LightingParams};
+use super::{ColorStop, Curve, CurveScale, Gradient, LightingParams};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
@@ -64,8 +64,15 @@ impl Palette {
     }
 
     /// Apply the falloff curve to a distance value.
+    ///
+    /// When scale is Log, applies power of 10 to the curve output for aggressive
+    /// falloff near the set boundary (matching the original implementation behavior).
     pub fn apply_falloff(&self, t: f64) -> f64 {
-        self.falloff_curve.evaluate(t)
+        let y = self.falloff_curve.evaluate(t);
+        match self.falloff_curve.scale {
+            CurveScale::Linear => y,
+            CurveScale::Log => y.powf(10.0),
+        }
     }
 
     /// Factory default palettes.
