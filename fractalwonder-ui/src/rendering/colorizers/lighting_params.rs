@@ -28,22 +28,7 @@ impl Default for LightingParams {
     }
 }
 
-impl LightingParams {
-    /// Convert to the existing ShadingSettings format.
-    pub fn to_shading_settings(&self, enabled: bool) -> super::ShadingSettings {
-        super::ShadingSettings {
-            enabled,
-            light_azimuth: self.azimuth,
-            light_elevation: self.elevation,
-            ambient: self.ambient,
-            diffuse: self.diffuse,
-            specular: self.specular,
-            shininess: self.shininess,
-            strength: self.strength,
-            distance_falloff: 10.0, // Default, will be replaced by falloff curve
-        }
-    }
-}
+impl LightingParams {}
 
 #[cfg(test)]
 mod tests {

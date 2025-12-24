@@ -9,8 +9,6 @@ pub mod render_settings;
 pub mod shading;
 pub mod smooth_iteration;
 
-use fractalwonder_core::ComputeData;
-
 pub use colorizer::{Colorizer, ColorizerKind};
 pub use curve::{Curve, CurvePoint};
 pub use gradient::{ColorStop, Gradient};

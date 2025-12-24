@@ -2,7 +2,7 @@ use crate::config::FractalConfig;
 use crate::rendering::canvas_utils::{
     draw_full_frame, draw_pixels_to_canvas, get_2d_context, performance_now,
 };
-use crate::rendering::colorizers::{ColorOptions, ColorPipeline};
+use crate::rendering::colorizers::{ColorPipeline, Palette, RenderSettings};
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
 use crate::rendering::RenderProgress;
 use crate::workers::{OrbitCompleteData, TileResult, WorkerPool};
@@ -53,7 +53,10 @@ impl ParallelRenderer {
         let canvas_size: Rc<Cell<(u32, u32)>> = Rc::new(Cell::new((0, 0)));
         let render_generation: Rc<Cell<u32>> = Rc::new(Cell::new(0));
         let gpu_result_buffer: Rc<RefCell<Vec<ComputeData>>> = Rc::new(RefCell::new(Vec::new()));
-        let pipeline = Rc::new(RefCell::new(ColorPipeline::new(ColorOptions::default())));
+        let pipeline = Rc::new(RefCell::new(ColorPipeline::new(
+            Palette::default(),
+            RenderSettings::default(),
+        )));
 
         let ctx_clone = Rc::clone(&canvas_ctx);
         let results_clone = Rc::clone(&tile_results);
@@ -88,20 +91,11 @@ impl ParallelRenderer {
         let canvas_ctx_complete = Rc::clone(&canvas_ctx);
         let canvas_size_complete = Rc::clone(&canvas_size);
         let current_viewport: Rc<RefCell<Option<Viewport>>> = Rc::new(RefCell::new(None));
-        let current_viewport_complete = Rc::clone(&current_viewport);
         let pipeline_complete = Rc::clone(&pipeline);
         worker_pool.borrow().set_render_complete_callback(move || {
             let ctx_ref = canvas_ctx_complete.borrow();
             let Some(ctx) = ctx_ref.as_ref() else {
                 return;
-            };
-
-            // Compute zoom level from stored viewport
-            let zoom_level = if let Some(ref viewport) = *current_viewport_complete.borrow() {
-                let reference_width = config.default_viewport(viewport.precision_bits()).width;
-                reference_width.to_f64() / viewport.width.to_f64()
-            } else {
-                1.0
             };
 
             // Assemble all tiles into a single full-image buffer
@@ -112,7 +106,7 @@ impl ParallelRenderer {
             // Run full pipeline (builds histogram, applies shading, updates cache)
             let mut pipeline = pipeline_complete.borrow_mut();
             let final_pixels =
-                pipeline.colorize_final(&full_buffer, width as usize, height as usize, zoom_level);
+                pipeline.colorize_final(&full_buffer, width as usize, height as usize);
 
             // Draw full frame
             let pixel_bytes: Vec<u8> = final_pixels.into_iter().flatten().collect();
@@ -138,7 +132,10 @@ impl ParallelRenderer {
 
     /// Set x-ray mode enabled state.
     pub fn set_xray_enabled(&self, enabled: bool) {
-        self.pipeline.borrow_mut().set_xray(enabled);
+        self.pipeline.borrow_mut().set_render_settings(RenderSettings {
+            xray_enabled: enabled,
+            ..self.pipeline.borrow().render_settings().clone()
+        });
     }
 
     /// Re-colorize all stored tiles using full pipeline (no recompute).
@@ -146,17 +143,6 @@ impl ParallelRenderer {
         let ctx_ref = self.canvas_ctx.borrow();
         let Some(ctx) = ctx_ref.as_ref() else {
             return;
-        };
-
-        // Compute zoom level from stored viewport
-        let zoom_level = if let Some(ref viewport) = *self.current_viewport.borrow() {
-            let reference_width = self
-                .config
-                .default_viewport(viewport.precision_bits())
-                .width;
-            reference_width.to_f64() / viewport.width.to_f64()
-        } else {
-            1.0
         };
 
         // Assemble all tiles into a single full-image buffer for unified histogram
@@ -167,7 +153,7 @@ impl ParallelRenderer {
         // Run pipeline on full image (builds fresh histogram, applies shading)
         let mut pipeline = self.pipeline.borrow_mut();
         let final_pixels =
-            pipeline.colorize_final(&full_buffer, width as usize, height as usize, zoom_level);
+            pipeline.colorize_final(&full_buffer, width as usize, height as usize);
 
         // Draw full frame
         let pixel_bytes: Vec<u8> = final_pixels.into_iter().flatten().collect();
@@ -187,9 +173,12 @@ impl ParallelRenderer {
         self.worker_pool.borrow_mut().subdivide_glitched_cells();
     }
 
-    /// Set color options from UI.
-    pub fn set_color_options(&self, new_options: &ColorOptions) {
-        self.pipeline.borrow_mut().set_options(new_options.clone());
+    pub fn set_palette(&self, palette: Palette) {
+        self.pipeline.borrow_mut().set_palette(palette);
+    }
+
+    pub fn set_render_settings(&self, settings: RenderSettings) {
+        self.pipeline.borrow_mut().set_render_settings(settings);
     }
 
     pub fn render(&self, viewport: &Viewport, canvas: &HtmlCanvasElement) {
@@ -227,7 +216,7 @@ impl ParallelRenderer {
 
         // Start render with GPU perturbation or CPU fallback
         // Check runtime use_gpu option (user-controllable) AND config gpu_enabled (fractal type)
-        let use_gpu = self.config.gpu_enabled && self.pipeline.borrow().options().use_gpu;
+        let use_gpu = self.config.gpu_enabled && self.pipeline.borrow().render_settings().use_gpu;
         let use_progressive = self.config.gpu_progressive_row_sets > 0;
         if use_gpu && use_progressive {
             // Use progressive GPU rendering (row-sets / venetian blinds pattern)
@@ -574,17 +563,12 @@ fn schedule_row_set(
                 if is_final {
                     let (final_pixels, full_buffer_clone) = {
                         let full_buffer = gpu_result_buffer_spawn.borrow();
-                        let reference_width = config
-                            .default_viewport(viewport_spawn.precision_bits())
-                            .width;
-                        let zoom_level = reference_width.to_f64() / viewport_spawn.width.to_f64();
 
                         let mut pipeline = pipeline_spawn.borrow_mut();
                         let final_pixels = pipeline.colorize_final(
                             &full_buffer,
                             width as usize,
                             height as usize,
-                            zoom_level,
                         );
 
                         (final_pixels, full_buffer.clone())
