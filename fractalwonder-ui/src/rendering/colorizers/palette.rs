@@ -187,6 +187,29 @@ impl Palette {
     }
 }
 
+/// Pre-computed lookup table for fast color sampling.
+/// Generated from a Palette's gradient.
+pub struct PaletteLut {
+    lut: Vec<[u8; 3]>,
+}
+
+impl PaletteLut {
+    /// Create from a Palette.
+    pub fn from_palette(palette: &Palette) -> Self {
+        Self {
+            lut: palette.to_lut(),
+        }
+    }
+
+    /// Sample the palette at position t ∈ [0,1].
+    #[inline]
+    pub fn sample(&self, t: f64) -> [u8; 3] {
+        let t = t.clamp(0.0, 1.0);
+        let index = ((t * 4095.0) as usize).min(4095);
+        self.lut[index]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +281,14 @@ mod tests {
         block_on(Palette::factory_defaults()); // ensure loaded
         let palette = block_on(Palette::get("nonexistent"));
         assert!(palette.is_none());
+    }
+
+    #[test]
+    fn palette_lut_from_palette_samples_correctly() {
+        let palette = Palette::default();
+        let lut = PaletteLut::from_palette(&palette);
+        // Default palette is black to white
+        assert_eq!(lut.sample(0.0), [0, 0, 0]);
+        assert_eq!(lut.sample(1.0), [255, 255, 255]);
     }
 }
