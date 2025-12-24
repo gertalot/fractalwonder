@@ -399,6 +399,19 @@ pub struct RenderSettings {
 }
 ```
 
+### Module Structure
+
+The Rust implementation is organized into these modules in `fractalwonder-ui/src/rendering/colorizers/`:
+
+| Module | Purpose |
+|--------|---------|
+| `curve.rs` | CurvePoint, Curve with cubic spline interpolation |
+| `gradient.rs` | ColorStop, Gradient with OKLAB and midpoints |
+| `lighting_params.rs` | LightingParams for Blinn-Phong lighting |
+| `palette.rs` | Unified Palette struct with factory defaults and persistence |
+| `palette_lut.rs` | PaletteLut (formerly Palette) for LUT-based color sampling |
+| `render_settings.rs` | RenderSettings for cycle_count, use_gpu, xray_enabled |
+
 ### LUT Generation
 
 The `Gradient` generates a pre-computed 4096-entry lookup table using OKLAB interpolation:
