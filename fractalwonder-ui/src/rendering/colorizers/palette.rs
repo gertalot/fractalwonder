@@ -3,6 +3,11 @@
 use super::{ColorStop, Curve, Gradient, LightingParams};
 use serde::{Deserialize, Serialize};
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsValue;
+#[cfg(target_arch = "wasm32")]
+use web_sys::window;
+
 /// A complete palette configuration.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Palette {
@@ -540,6 +545,62 @@ impl Palette {
             ..Self::default()
         }
     }
+
+    /// Save palette to localStorage.
+    #[cfg(target_arch = "wasm32")]
+    pub fn save(&self) -> Result<(), JsValue> {
+        let storage = window()
+            .ok_or("no window")?
+            .local_storage()
+            .map_err(|_| "localStorage error")?
+            .ok_or("no localStorage")?;
+
+        let json = serde_json::to_string(self).map_err(|e| e.to_string())?;
+        storage.set_item(&format!("palette:{}", self.id), &json)
+    }
+
+    /// Load palette from localStorage.
+    #[cfg(target_arch = "wasm32")]
+    pub fn load(id: &str) -> Option<Self> {
+        let storage = window()?.local_storage().ok()??;
+        let json = storage.get_item(&format!("palette:{id}")).ok()??;
+        serde_json::from_str(&json).ok()
+    }
+
+    /// Delete palette from localStorage.
+    #[cfg(target_arch = "wasm32")]
+    pub fn delete(id: &str) {
+        if let Some(storage) = window().and_then(|w| w.local_storage().ok().flatten()) {
+            let _ = storage.remove_item(&format!("palette:{id}"));
+        }
+    }
+
+    /// Get palette by ID: localStorage first, then factory default.
+    #[cfg(target_arch = "wasm32")]
+    pub fn get(id: &str) -> Option<Self> {
+        Self::load(id).or_else(|| Self::factory_defaults().into_iter().find(|p| p.id == id))
+    }
+
+    /// Non-WASM stubs for testing.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn save(&self) -> Result<(), String> {
+        Ok(()) // No-op in tests
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load(_id: &str) -> Option<Self> {
+        None // No localStorage in tests
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn delete(_id: &str) {
+        // No-op in tests
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn get(id: &str) -> Option<Self> {
+        Self::factory_defaults().into_iter().find(|p| p.id == id)
+    }
 }
 
 #[cfg(test)]
@@ -589,5 +650,18 @@ mod tests {
         ids.sort();
         ids.dedup();
         assert_eq!(ids.len(), palettes.len());
+    }
+
+    #[test]
+    fn palette_get_returns_factory_default() {
+        let palette = Palette::get("classic");
+        assert!(palette.is_some());
+        assert_eq!(palette.unwrap().id, "classic");
+    }
+
+    #[test]
+    fn palette_get_returns_none_for_unknown() {
+        let palette = Palette::get("nonexistent");
+        assert!(palette.is_none());
     }
 }
