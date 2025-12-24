@@ -11,6 +11,13 @@ pub struct CurvePoint {
 
 /// A cubic interpolating spline through control points.
 /// The curve passes exactly through each point.
+///
+/// # Performance Notes
+///
+/// Spline coefficients are computed on each `evaluate()` call in O(n) time.
+/// For typical use cases (2-5 control points), this is negligible and acceptable.
+/// If evaluating the same curve thousands of times in a tight loop, consider
+/// caching coefficients by moving them to a separate cached structure.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Curve {
     pub points: Vec<CurvePoint>,
@@ -25,6 +32,18 @@ impl Curve {
     }
 
     /// Evaluate the curve at position x using cubic spline interpolation.
+    ///
+    /// # Performance
+    ///
+    /// This method recomputes spline coefficients on each call, resulting in O(n)
+    /// complexity where n is the number of control points. The coefficient
+    /// computation involves solving a tridiagonal linear system using the Thomas
+    /// algorithm.
+    ///
+    /// For typical curves (2-5 control points), this overhead is negligible
+    /// (microseconds) and the simplicity of not caching coefficients is preferable.
+    /// Curves remain valid even if control points are modified, since coefficients
+    /// are always recomputed from the current points.
     pub fn evaluate(&self, x: f64) -> f64 {
         let x = x.clamp(0.0, 1.0);
 
