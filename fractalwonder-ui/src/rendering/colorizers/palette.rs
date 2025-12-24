@@ -69,57 +69,59 @@ impl Palette {
 
     /// Factory default palettes.
     ///
-    /// Returns cached palettes. Must call `load_factory_defaults()` first.
-    pub fn factory_defaults() -> Vec<Palette> {
-        FACTORY_PALETTES
-            .get()
-            .cloned()
-            .expect("factory_defaults() called before load_factory_defaults()")
-    }
-
-    /// Load factory palettes from static asset (WASM only).
-    ///
-    /// Fetches `/fractalwonder/assets/factory_palettes.json` and caches the result.
+    /// Fetches from server on first call, returns cached on subsequent calls.
     #[cfg(target_arch = "wasm32")]
-    pub async fn load_factory_defaults() -> Result<(), String> {
+    pub async fn factory_defaults() -> Vec<Palette> {
         use wasm_bindgen::JsCast;
         use wasm_bindgen_futures::JsFuture;
 
-        // Already loaded?
-        if FACTORY_PALETTES.get().is_some() {
-            return Ok(());
+        // Already cached? Return it.
+        if let Some(palettes) = FACTORY_PALETTES.get() {
+            return palettes.clone();
         }
 
-        let window = web_sys::window().ok_or("no window")?;
+        // Fetch from server
+        let window = web_sys::window().expect("no window");
         let url = "/fractalwonder/assets/factory_palettes.json";
 
         let resp_value = JsFuture::from(window.fetch_with_str(url))
             .await
-            .map_err(|e| format!("fetch error: {:?}", e))?;
+            .expect("fetch failed");
 
-        let resp: web_sys::Response = resp_value.dyn_into().map_err(|_| "response cast error")?;
+        let resp: web_sys::Response = resp_value.dyn_into().expect("response cast error");
 
         if !resp.ok() {
-            return Err(format!("HTTP {} fetching {}", resp.status(), url));
+            panic!("HTTP {} fetching {}", resp.status(), url);
         }
 
-        let json_value = JsFuture::from(resp.text().map_err(|_| "text() error")?)
+        let json_value = JsFuture::from(resp.text().expect("text() error"))
             .await
-            .map_err(|e| format!("text error: {:?}", e))?;
+            .expect("text error");
 
-        let json_str = json_value.as_string().ok_or("response not a string")?;
+        let json_str = json_value.as_string().expect("response not a string");
 
         let palettes: Vec<Palette> =
-            serde_json::from_str(&json_str).map_err(|e| format!("JSON parse error: {}", e))?;
+            serde_json::from_str(&json_str).expect("invalid factory_palettes.json");
 
-        let _ = FACTORY_PALETTES.set(palettes);
-        Ok(())
+        // Cache and return
+        let _ = FACTORY_PALETTES.set(palettes.clone());
+        palettes
     }
 
-    /// Non-WASM stub for load_factory_defaults (no-op, filesystem loading happens lazily).
+    /// Factory default palettes (non-WASM: loads from filesystem).
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn load_factory_defaults() -> Result<(), String> {
-        Ok(())
+    pub async fn factory_defaults() -> Vec<Palette> {
+        FACTORY_PALETTES
+            .get_or_init(|| {
+                let path = concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../assets/factory_palettes.json"
+                );
+                let json = std::fs::read_to_string(path)
+                    .expect("failed to read assets/factory_palettes.json");
+                serde_json::from_str(&json).expect("invalid factory_palettes.json")
+            })
+            .clone()
     }
 
     /// Save palette to localStorage.
@@ -153,8 +155,12 @@ impl Palette {
 
     /// Get palette by ID: localStorage first, then factory default.
     #[cfg(target_arch = "wasm32")]
-    pub fn get(id: &str) -> Option<Self> {
-        Self::load(id).or_else(|| Self::factory_defaults().into_iter().find(|p| p.id == id))
+    pub async fn get(id: &str) -> Option<Self> {
+        Self::load(id).or_else(|| {
+            FACTORY_PALETTES
+                .get()
+                .and_then(|p| p.iter().find(|p| p.id == id).cloned())
+        })
     }
 
     /// Non-WASM stubs for testing.
@@ -174,27 +180,17 @@ impl Palette {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn get(id: &str) -> Option<Self> {
-        Self::factory_defaults().into_iter().find(|p| p.id == id)
+    pub async fn get(id: &str) -> Option<Self> {
+        FACTORY_PALETTES
+            .get()
+            .and_then(|p| p.iter().find(|p| p.id == id).cloned())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Load factory palettes from filesystem for tests.
-    fn init_factory_palettes() {
-        let _ = FACTORY_PALETTES.get_or_init(|| {
-            let path = concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../assets/factory_palettes.json"
-            );
-            let json =
-                std::fs::read_to_string(path).expect("failed to read assets/factory_palettes.json");
-            serde_json::from_str(&json).expect("invalid factory_palettes.json")
-        });
-    }
+    use futures::executor::block_on;
 
     #[test]
     fn palette_default_has_valid_gradient() {
@@ -229,23 +225,20 @@ mod tests {
     #[test]
     #[ignore] // Run with: cargo test print_factory_json -- --ignored --nocapture
     fn print_factory_json() {
-        init_factory_palettes();
-        let palettes = Palette::factory_defaults();
+        let palettes = block_on(Palette::factory_defaults());
         let json = serde_json::to_string_pretty(&palettes).unwrap();
         println!("\n{}", json);
     }
 
     #[test]
     fn factory_defaults_contains_classic() {
-        init_factory_palettes();
-        let palettes = Palette::factory_defaults();
+        let palettes = block_on(Palette::factory_defaults());
         assert!(palettes.iter().any(|p| p.id == "classic"));
     }
 
     #[test]
     fn factory_defaults_all_have_unique_ids() {
-        init_factory_palettes();
-        let palettes = Palette::factory_defaults();
+        let palettes = block_on(Palette::factory_defaults());
         let mut ids: Vec<_> = palettes.iter().map(|p| &p.id).collect();
         ids.sort();
         ids.dedup();
@@ -254,16 +247,16 @@ mod tests {
 
     #[test]
     fn palette_get_returns_factory_default() {
-        init_factory_palettes();
-        let palette = Palette::get("classic");
+        block_on(Palette::factory_defaults()); // ensure loaded
+        let palette = block_on(Palette::get("classic"));
         assert!(palette.is_some());
         assert_eq!(palette.unwrap().id, "classic");
     }
 
     #[test]
     fn palette_get_returns_none_for_unknown() {
-        init_factory_palettes();
-        let palette = Palette::get("nonexistent");
+        block_on(Palette::factory_defaults()); // ensure loaded
+        let palette = block_on(Palette::get("nonexistent"));
         assert!(palette.is_none());
     }
 }
