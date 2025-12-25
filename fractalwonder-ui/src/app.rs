@@ -3,7 +3,8 @@ use fractalwonder_core::{calculate_precision_bits, fit_viewport_to_canvas, Viewp
 use leptos::*;
 use wasm_bindgen::prelude::Closure;
 
-use crate::components::{CircularProgress, InteractiveCanvas, Toast, UIPanel};
+use crate::components::{CircularProgress, InteractiveCanvas, PaletteEditor, Toast, UIPanel};
+use crate::components::{generate_unique_name, PaletteEditorState};
 use crate::config::{default_config, get_config};
 use crate::hooks::{
     load_state, save_state, use_hashchange_listener, use_ui_visibility, PersistedState,
@@ -49,7 +50,7 @@ pub fn App() -> impl IntoView {
         create_memo(move |_| get_config(&selected_config_id.get()).unwrap_or_else(default_config));
 
     // Palette and render settings state
-    let (palette, set_palette) = create_signal(Palette::default());
+    let palette = create_rw_signal(Palette::default());
     let (render_settings, set_render_settings) = create_signal(initial_render_settings);
     let (palette_id, set_palette_id) = create_signal(initial_palette_id.clone());
 
@@ -59,7 +60,7 @@ pub fn App() -> impl IntoView {
         spawn_local(async move {
             Palette::factory_defaults().await; // ensure loaded
             if let Some(pal) = Palette::get(&id).await {
-                set_palette.set(pal);
+                palette.set(pal);
             }
         });
     });
@@ -81,6 +82,26 @@ pub fn App() -> impl IntoView {
             .iter()
             .map(|p| (p.name.clone(), p.name.clone()))
             .collect::<Vec<_>>()
+    });
+
+    // Palette editor state (None = closed)
+    let editor_state = create_rw_signal(None::<PaletteEditorState>);
+
+    // Factory palette names
+    let factory_names = Signal::derive(move || {
+        palette_list.get().iter().map(|p| p.name.clone()).collect::<Vec<_>>()
+    });
+
+    // All palette names (for now, just factory names)
+    let all_palette_names = factory_names;
+
+    // Render palette: use working_palette when editor is open, else active palette
+    let render_palette = Signal::derive(move || {
+        if let Some(state) = editor_state.get() {
+            state.working_palette.clone()
+        } else {
+            palette.get()
+        }
     });
 
     // Toast message signal
@@ -369,6 +390,31 @@ pub fn App() -> impl IntoView {
         });
     });
 
+    let on_palette_new = Callback::new(move |_: ()| {
+        let names = all_palette_names.get();
+        let new_name = generate_unique_name("Custom", &names);
+        editor_state.set(Some(PaletteEditorState::duplicate(
+            Palette::default(),
+            new_name,
+        )));
+    });
+
+    let on_palette_edit = Callback::new(move |name: String| {
+        let palette_val = palette.get_untracked();
+        let factory = factory_names.get_untracked();
+
+        // If editing a factory palette that hasn't been shadowed, it's a duplicate
+        let is_factory = factory.contains(&name);
+        let state = if is_factory && Palette::load(&name).is_none() {
+            // Factory palette, not shadowed - treat as duplicate (but keep name for shadowing)
+            PaletteEditorState::duplicate(palette_val, name)
+        } else {
+            // Custom palette or shadowed factory - edit mode
+            PaletteEditorState::edit(palette_val)
+        };
+        editor_state.set(Some(state));
+    });
+
     view! {
         <InteractiveCanvas
             viewport=viewport.into()
@@ -379,7 +425,7 @@ pub fn App() -> impl IntoView {
             cancel_trigger=cancel_trigger
             subdivide_trigger=subdivide_trigger
             xray_enabled=xray_enabled
-            palette=palette.into()
+            palette=render_palette
             render_settings=render_settings.into()
         />
         <UIPanel
@@ -420,6 +466,14 @@ pub fn App() -> impl IntoView {
             on_cancel=on_cancel
             xray_enabled=xray_enabled
             set_xray_enabled=set_xray_enabled
+            on_new=on_palette_new
+            on_edit=on_palette_edit
+        />
+        <PaletteEditor
+            state=editor_state
+            active_palette=palette
+            all_palette_names=all_palette_names
+            factory_names=factory_names
         />
         <Toast
             message=Signal::derive(move || toast_message.get())
