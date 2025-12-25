@@ -1,6 +1,8 @@
 //! Slide-out palette editor panel.
 
-use crate::components::{CollapsibleSection, ConfirmDialog, EditMode, GradientEditor, PaletteEditorState};
+use crate::components::{
+    CollapsibleSection, ConfirmDialog, EditMode, GradientEditor, PaletteEditorState,
+};
 use crate::rendering::colorizers::{Gradient, Palette};
 use leptos::*;
 
@@ -89,9 +91,8 @@ pub fn PaletteEditor(
     });
 
     // Derived: current gradient
-    let gradient_signal = Signal::derive(move || {
-        state.get().map(|s| s.working_palette.gradient.clone())
-    });
+    let gradient_signal =
+        Signal::derive(move || state.get().map(|s| s.working_palette.gradient.clone()));
 
     // Callback for gradient changes
     let on_gradient_change = Callback::new(move |new_gradient: Gradient| {
