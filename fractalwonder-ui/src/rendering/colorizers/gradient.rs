@@ -70,6 +70,43 @@ impl Gradient {
             .collect()
     }
 
+    /// Generate a LUT sized to the given width for editor preview.
+    /// Uses the same OKLAB interpolation as `to_lut()`.
+    pub fn to_preview_lut(&self, width: usize) -> Vec<[u8; 3]> {
+        if width == 0 {
+            return vec![];
+        }
+        if self.stops.is_empty() {
+            return vec![[0, 0, 0]; width];
+        }
+        if self.stops.len() == 1 {
+            return vec![self.stops[0].color; width];
+        }
+
+        // Convert stops to OKLAB
+        let oklab_stops: Vec<(f64, (f64, f64, f64))> = self
+            .stops
+            .iter()
+            .map(|stop| {
+                let r = srgb_to_linear(stop.color[0] as f64 / 255.0);
+                let g = srgb_to_linear(stop.color[1] as f64 / 255.0);
+                let b = srgb_to_linear(stop.color[2] as f64 / 255.0);
+                (stop.position, linear_rgb_to_oklab(r, g, b))
+            })
+            .collect();
+
+        (0..width)
+            .map(|i| {
+                let t = if width == 1 {
+                    0.0
+                } else {
+                    i as f64 / (width - 1) as f64
+                };
+                self.sample_oklab(&oklab_stops, t)
+            })
+            .collect()
+    }
+
     fn sample_oklab(&self, oklab_stops: &[(f64, (f64, f64, f64))], t: f64) -> [u8; 3] {
         debug_assert_eq!(
             self.midpoints.len(),
@@ -241,5 +278,48 @@ mod tests {
         assert!(apply_midpoint_bias(0.5, 0.25) > 0.5);
         // Midpoint > 0.5: output < input (darker earlier)
         assert!(apply_midpoint_bias(0.5, 0.75) < 0.5);
+    }
+
+    #[test]
+    fn preview_lut_matches_full_lut_at_endpoints() {
+        let gradient = Gradient::new(vec![
+            ColorStop {
+                position: 0.0,
+                color: [255, 0, 0],
+            },
+            ColorStop {
+                position: 1.0,
+                color: [0, 0, 255],
+            },
+        ]);
+        let preview = gradient.to_preview_lut(100);
+        let full = gradient.to_lut();
+
+        assert_eq!(preview.len(), 100);
+        assert_eq!(preview[0], full[0], "Start colors should match");
+        assert_eq!(preview[99], full[4095], "End colors should match");
+    }
+
+    #[test]
+    fn preview_lut_samples_correctly() {
+        let gradient = Gradient::new(vec![
+            ColorStop {
+                position: 0.0,
+                color: [0, 0, 0],
+            },
+            ColorStop {
+                position: 1.0,
+                color: [255, 255, 255],
+            },
+        ]);
+        let preview = gradient.to_preview_lut(256);
+
+        // Midpoint should be roughly middle gray (OKLAB interpolation may differ from linear)
+        let mid = preview[128];
+        assert!(
+            mid[0] > 50 && mid[0] < 200,
+            "Midpoint R should be mid-range, got {}",
+            mid[0]
+        );
     }
 }
