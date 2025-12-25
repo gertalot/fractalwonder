@@ -126,9 +126,9 @@ pub fn PaletteEditor(
     };
 
     let on_cancel_confirm = move |_| {
-        if let Some(s) = state.get() {
-            active_palette.set(s.source_palette.clone());
-        }
+        // Just close the editor - don't modify active_palette.
+        // The palette signal already has the correct value (the palette that was
+        // active before editing). render_palette will show it once editor closes.
         set_dialog_kind.set(None);
         state.set(None);
     };
