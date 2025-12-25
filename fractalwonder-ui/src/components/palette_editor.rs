@@ -1,7 +1,7 @@
 //! Slide-out palette editor panel.
 
-use crate::components::{CollapsibleSection, ConfirmDialog, EditMode, PaletteEditorState};
-use crate::rendering::colorizers::Palette;
+use crate::components::{CollapsibleSection, ConfirmDialog, EditMode, GradientEditor, PaletteEditorState};
+use crate::rendering::colorizers::{Gradient, Palette};
 use leptos::*;
 
 /// Which confirmation dialog is currently shown (if any).
@@ -86,6 +86,20 @@ pub fn PaletteEditor(
             .get()
             .map(|s| s.working_palette.smooth_enabled)
             .unwrap_or(false)
+    });
+
+    // Derived: current gradient
+    let gradient_signal = Signal::derive(move || {
+        state.get().map(|s| s.working_palette.gradient.clone())
+    });
+
+    // Callback for gradient changes
+    let on_gradient_change = Callback::new(move |new_gradient: Gradient| {
+        state.update(|opt| {
+            if let Some(s) = opt {
+                s.working_palette.gradient = new_gradient;
+            }
+        });
     });
 
     // Sync name_input when state changes
@@ -368,6 +382,12 @@ pub fn PaletteEditor(
                             <span class="text-white text-sm">"Smooth Coloring"</span>
                         </label>
                     </div>
+
+                    // Gradient editor
+                    <GradientEditor
+                        gradient=gradient_signal
+                        _on_change=on_gradient_change
+                    />
                 </CollapsibleSection>
             </div>
         </div>
