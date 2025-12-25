@@ -12,15 +12,87 @@ pub fn GradientEditor(
     /// The gradient to edit (None when editor closed)
     gradient: Signal<Option<Gradient>>,
     /// Called when gradient changes (on mouse release)
-    _on_change: Callback<Gradient>,
+    on_change: Callback<Gradient>,
 ) -> impl IntoView {
     // Internal state
     let selected_stop = create_rw_signal(None::<usize>);
     let zoom = create_rw_signal(1.0_f64);
-    let _is_dragging = create_rw_signal(false);
+    let is_dragging = create_rw_signal(false);
+    let drag_index = create_rw_signal(None::<usize>);
 
     // Canvas ref
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
+
+    // Container ref for drag calculations
+    let container_ref = create_node_ref::<leptos::html::Div>();
+
+    // Handle drag start on a stop
+    let start_drag = move |index: usize, e: web_sys::MouseEvent| {
+        e.prevent_default();
+        is_dragging.set(true);
+        drag_index.set(Some(index));
+        selected_stop.set(Some(index));
+    };
+
+    // Handle mouse move during drag
+    let handle_mouse_move = move |e: web_sys::MouseEvent| {
+        if !is_dragging.get() {
+            return;
+        }
+        let Some(index) = drag_index.get() else { return };
+        let Some(container) = container_ref.get() else { return };
+        let Some(mut grad) = gradient.get() else { return };
+
+        let rect = container.get_bounding_client_rect();
+        let x = e.client_x() as f64 - rect.left();
+        let width = rect.width();
+        let position = (x / width).clamp(0.0, 1.0);
+
+        // Update stop position
+        if index < grad.stops.len() {
+            grad.stops[index].position = position;
+            // Don't call on_change yet - wait for release
+        }
+    };
+
+    // Handle drag end
+    let end_drag = move |_: web_sys::MouseEvent| {
+        if is_dragging.get() {
+            is_dragging.set(false);
+            if let Some(grad) = gradient.get() {
+                // Sort stops by position and call on_change
+                let mut sorted = grad.clone();
+                sorted.stops.sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap());
+                on_change.call(sorted);
+            }
+        }
+        drag_index.set(None);
+    };
+
+    // Document-level mouse handlers for drag
+    create_effect(move |_| {
+        use wasm_bindgen::closure::Closure;
+        use wasm_bindgen::JsCast;
+
+        let window = web_sys::window().expect("window");
+        let document = window.document().expect("document");
+
+        let mousemove_closure = Closure::<dyn Fn(web_sys::MouseEvent)>::new(handle_mouse_move);
+        let mouseup_closure = Closure::<dyn Fn(web_sys::MouseEvent)>::new(end_drag);
+
+        let _ = document.add_event_listener_with_callback(
+            "mousemove",
+            mousemove_closure.as_ref().unchecked_ref(),
+        );
+        let _ = document.add_event_listener_with_callback(
+            "mouseup",
+            mouseup_closure.as_ref().unchecked_ref(),
+        );
+
+        // Leak closures (they live for app lifetime)
+        mousemove_closure.forget();
+        mouseup_closure.forget();
+    });
 
     // Draw gradient when it changes
     create_effect(move |_| {
@@ -102,6 +174,7 @@ pub fn GradientEditor(
                     style="max-width: 100%;"
                 >
                     <div
+                        node_ref=container_ref
                         class="relative"
                         style=move || format!("width: {}%;", zoom.get() * 100.0)
                     >
@@ -141,6 +214,7 @@ pub fn GradientEditor(
                                                     "none"
                                                 }
                                             )
+                                            on:mousedown=move |e| start_drag(index, e)
                                             on:click=move |e| {
                                                 e.stop_propagation();
                                                 selected_stop.set(Some(index));

@@ -387,7 +387,7 @@ pub fn PaletteEditor(
                     // Gradient editor
                     <GradientEditor
                         gradient=gradient_signal
-                        _on_change=on_gradient_change
+                        on_change=on_gradient_change
                     />
                 </CollapsibleSection>
             </div>
