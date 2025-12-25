@@ -1,4 +1,5 @@
 mod circular_progress;
+mod collapsible_section;
 mod confirm_dialog;
 mod fullscreen_button;
 mod home_button;
@@ -13,12 +14,13 @@ mod toast;
 mod ui_panel;
 
 pub use circular_progress::CircularProgress;
+pub use collapsible_section::CollapsibleSection;
 pub use confirm_dialog::ConfirmDialog;
 pub use fullscreen_button::FullscreenButton;
 pub use home_button::HomeButton;
 pub use info_menu::InfoMenu;
 pub use interactive_canvas::InteractiveCanvas;
-pub use menu::{Menu, MenuItem, MenuSection, MenuSeparator, StepperMenuItem};
+pub use menu::{Menu, MenuItem, MenuSection, StepperMenuItem};
 pub use options_menu::OptionsMenu;
 pub use palette_editor::PaletteEditor;
 pub use palette_editor_state::{generate_unique_name, EditMode, PaletteEditorState};
