@@ -105,9 +105,50 @@ pub fn GradientEditor(
                         class="relative"
                         style=move || format!("width: {}%;", zoom.get() * 100.0)
                     >
-                        // Color stops placeholder (above bar)
+                        // Color stops (squares above gradient bar)
                         <div class="relative h-6 mb-1">
-                            // Stops will go here
+                            <For
+                                each=move || {
+                                    gradient
+                                        .get()
+                                        .map(|g| {
+                                            g.stops
+                                                .iter()
+                                                .enumerate()
+                                                .map(|(i, s)| (i, s.position, s.color))
+                                                .collect::<Vec<_>>()
+                                        })
+                                        .unwrap_or_default()
+                                }
+                                key=|(i, _, _)| *i
+                                children=move |(index, position, color)| {
+                                    let is_selected = move || selected_stop.get() == Some(index);
+                                    let color_hex = format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2]);
+
+                                    view! {
+                                        <div
+                                            class="absolute top-0 w-3 h-3 cursor-ew-resize transition-shadow"
+                                            style=move || format!(
+                                                "left: {}%; transform: translateX(-50%); \
+                                                 background-color: {}; \
+                                                 border: 1px solid rgba(255, 255, 255, 0.3); \
+                                                 box-shadow: {};",
+                                                position * 100.0,
+                                                color_hex,
+                                                if is_selected() {
+                                                    "0 0 6px 2px rgba(255, 255, 255, 0.7)"
+                                                } else {
+                                                    "none"
+                                                }
+                                            )
+                                            on:click=move |e| {
+                                                e.stop_propagation();
+                                                selected_stop.set(Some(index));
+                                            }
+                                        />
+                                    }
+                                }
+                            />
                         </div>
 
                         // Gradient bar (canvas)
