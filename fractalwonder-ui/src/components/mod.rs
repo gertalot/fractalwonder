@@ -1,4 +1,5 @@
 mod circular_progress;
+mod confirm_dialog;
 mod fullscreen_button;
 mod home_button;
 mod info_menu;
@@ -11,6 +12,7 @@ mod toast;
 mod ui_panel;
 
 pub use circular_progress::CircularProgress;
+pub use confirm_dialog::ConfirmDialog;
 pub use fullscreen_button::FullscreenButton;
 pub use home_button::HomeButton;
 pub use info_menu::InfoMenu;
