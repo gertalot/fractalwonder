@@ -1,4 +1,4 @@
-use crate::components::{Menu, MenuItem, MenuSeparator};
+use crate::components::{Menu, MenuItem};
 use leptos::*;
 
 #[component]
@@ -15,8 +15,6 @@ pub fn PaletteMenu<F>(
     selected_id: Signal<String>,
     /// Callback when an option is selected
     on_select: F,
-    /// Callback when "New..." is clicked
-    on_new: Callback<()>,
     /// Callback when edit icon is clicked for a palette (receives palette id)
     on_edit: Callback<String>,
 ) -> impl IntoView
@@ -49,15 +47,6 @@ where
                         />
                     }
                 }
-            />
-            <MenuSeparator />
-            <MenuItem
-                active=Signal::derive(|| false)
-                label="New..."
-                on_click=Callback::new(move |_| {
-                    on_new.call(());
-                    set_is_open.set(false);
-                })
             />
         </Menu>
     }

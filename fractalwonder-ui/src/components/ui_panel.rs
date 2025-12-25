@@ -21,8 +21,6 @@ pub fn UIPanel(
     selected_palette_id: Signal<String>,
     /// Callback when palette is selected
     on_palette_select: Callback<String>,
-    /// Callback when "New..." is clicked in palette menu
-    on_new: Callback<()>,
     /// Callback when edit icon is clicked (receives palette name)
     on_edit: Callback<String>,
     /// Cycle count
@@ -133,7 +131,6 @@ pub fn UIPanel(
                         options=palette_options
                         selected_id=selected_palette_id
                         on_select=move |id| on_palette_select.call(id)
-                        on_new=on_new
                         on_edit=on_edit
                     />
                     <OptionsMenu

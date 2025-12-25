@@ -3,7 +3,7 @@ use fractalwonder_core::{calculate_precision_bits, fit_viewport_to_canvas, Viewp
 use leptos::*;
 use wasm_bindgen::prelude::Closure;
 
-use crate::components::{generate_unique_name, PaletteEditorState};
+use crate::components::PaletteEditorState;
 use crate::components::{CircularProgress, InteractiveCanvas, PaletteEditor, Toast, UIPanel};
 use crate::config::{default_config, get_config};
 use crate::hooks::{
@@ -394,15 +394,6 @@ pub fn App() -> impl IntoView {
         });
     });
 
-    let on_palette_new = Callback::new(move |_: ()| {
-        let names = all_palette_names.get();
-        let new_name = generate_unique_name("Custom", &names);
-        editor_state.set(Some(PaletteEditorState::duplicate(
-            Palette::default(),
-            new_name,
-        )));
-    });
-
     let on_palette_edit = Callback::new(move |name: String| {
         let palette_val = palette.get_untracked();
         let factory = factory_names.get_untracked();
@@ -470,7 +461,6 @@ pub fn App() -> impl IntoView {
             on_cancel=on_cancel
             xray_enabled=xray_enabled
             set_xray_enabled=set_xray_enabled
-            on_new=on_palette_new
             on_edit=on_palette_edit
         />
         <PaletteEditor
