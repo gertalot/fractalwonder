@@ -21,6 +21,10 @@ pub fn UIPanel(
     selected_palette_id: Signal<String>,
     /// Callback when palette is selected
     on_palette_select: Callback<String>,
+    /// Callback when "New..." is clicked in palette menu
+    on_new: Callback<()>,
+    /// Callback when edit icon is clicked (receives palette name)
+    on_edit: Callback<String>,
     /// Cycle count
     cycle_count: Signal<u32>,
     /// Callback to increase cycles
@@ -129,14 +133,8 @@ pub fn UIPanel(
                         options=palette_options
                         selected_id=selected_palette_id
                         on_select=move |id| on_palette_select.call(id)
-                        on_new=Callback::new(|_| {
-                            // TODO: Open PaletteEditor slide-out panel
-                            // See docs/ux-palette-editor/ARCHITECTURE.md
-                        })
-                        on_edit=Callback::new(|_id| {
-                            // TODO: Open PaletteEditor for palette `_id`
-                            // See docs/ux-palette-editor/ARCHITECTURE.md
-                        })
+                        on_new=on_new
+                        on_edit=on_edit
                     />
                     <OptionsMenu
                         is_open=is_options_open
