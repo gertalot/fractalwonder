@@ -430,19 +430,24 @@ pub fn App() -> impl IntoView {
     });
 
     let on_palette_edit = Callback::new(move |name: String| {
-        let palette_val = palette.get_untracked();
         let factory = factory_names.get_untracked();
+        let name_for_check = name.clone();
 
-        // If editing a factory palette that hasn't been shadowed, it's a duplicate
-        let is_factory = factory.contains(&name);
-        let state = if is_factory && Palette::load(&name).is_none() {
-            // Factory palette, not shadowed - treat as duplicate (but keep name for shadowing)
-            PaletteEditorState::duplicate(palette_val, name)
-        } else {
-            // Custom palette or shadowed factory - edit mode
-            PaletteEditorState::edit(palette_val)
-        };
-        editor_state.set(Some(state));
+        // Load the palette being edited (not the currently active one)
+        spawn_local(async move {
+            if let Some(palette_val) = Palette::get(&name).await {
+                // If editing a factory palette that hasn't been shadowed, it's a duplicate
+                let is_factory = factory.contains(&name_for_check);
+                let state = if is_factory && Palette::load(&name_for_check).is_none() {
+                    // Factory palette, not shadowed - treat as duplicate (but keep name for shadowing)
+                    PaletteEditorState::duplicate(palette_val, name_for_check)
+                } else {
+                    // Custom palette or shadowed factory - edit mode
+                    PaletteEditorState::edit(palette_val)
+                };
+                editor_state.set(Some(state));
+            }
+        });
     });
 
     view! {
