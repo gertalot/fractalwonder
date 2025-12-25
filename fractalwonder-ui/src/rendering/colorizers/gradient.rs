@@ -50,17 +50,7 @@ impl Gradient {
             return vec![self.stops[0].color; LUT_SIZE];
         }
 
-        // Convert stops to OKLAB
-        let oklab_stops: Vec<(f64, (f64, f64, f64))> = self
-            .stops
-            .iter()
-            .map(|stop| {
-                let r = srgb_to_linear(stop.color[0] as f64 / 255.0);
-                let g = srgb_to_linear(stop.color[1] as f64 / 255.0);
-                let b = srgb_to_linear(stop.color[2] as f64 / 255.0);
-                (stop.position, linear_rgb_to_oklab(r, g, b))
-            })
-            .collect();
+        let oklab_stops = self.stops_to_oklab();
 
         (0..LUT_SIZE)
             .map(|i| {
@@ -83,17 +73,7 @@ impl Gradient {
             return vec![self.stops[0].color; width];
         }
 
-        // Convert stops to OKLAB
-        let oklab_stops: Vec<(f64, (f64, f64, f64))> = self
-            .stops
-            .iter()
-            .map(|stop| {
-                let r = srgb_to_linear(stop.color[0] as f64 / 255.0);
-                let g = srgb_to_linear(stop.color[1] as f64 / 255.0);
-                let b = srgb_to_linear(stop.color[2] as f64 / 255.0);
-                (stop.position, linear_rgb_to_oklab(r, g, b))
-            })
-            .collect();
+        let oklab_stops = self.stops_to_oklab();
 
         (0..width)
             .map(|i| {
@@ -103,6 +83,19 @@ impl Gradient {
                     i as f64 / (width - 1) as f64
                 };
                 self.sample_oklab(&oklab_stops, t)
+            })
+            .collect()
+    }
+
+    /// Convert color stops to OKLAB color space.
+    fn stops_to_oklab(&self) -> Vec<(f64, (f64, f64, f64))> {
+        self.stops
+            .iter()
+            .map(|stop| {
+                let r = srgb_to_linear(stop.color[0] as f64 / 255.0);
+                let g = srgb_to_linear(stop.color[1] as f64 / 255.0);
+                let b = srgb_to_linear(stop.color[2] as f64 / 255.0);
+                (stop.position, linear_rgb_to_oklab(r, g, b))
             })
             .collect()
     }
