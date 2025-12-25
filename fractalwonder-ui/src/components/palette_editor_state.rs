@@ -46,10 +46,9 @@ impl PaletteEditorState {
 
     /// Check if there are unsaved changes.
     ///
-    /// In Duplicate mode, always dirty (new palette doesn't exist yet).
-    /// In Edit mode, dirty if working differs from source.
+    /// Dirty if working palette differs from source palette.
     pub fn is_dirty(&self) -> bool {
-        matches!(self.edit_mode, EditMode::Duplicate) || self.working_palette != self.source_palette
+        self.working_palette != self.source_palette
     }
 
     /// Check if source palette shadows a factory default.
@@ -111,9 +110,15 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_mode_always_dirty() {
+    fn duplicate_with_new_name_is_dirty() {
         let state = PaletteEditorState::duplicate(test_palette("Test"), "Test Copy".to_string());
-        assert!(state.is_dirty());
+        assert!(state.is_dirty()); // Names differ, so it's dirty
+    }
+
+    #[test]
+    fn duplicate_with_same_name_not_dirty() {
+        let state = PaletteEditorState::duplicate(test_palette("Test"), "Test".to_string());
+        assert!(!state.is_dirty()); // Same content, not dirty
     }
 
     #[test]
