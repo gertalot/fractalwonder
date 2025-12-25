@@ -75,11 +75,17 @@ pub fn PaletteEditor(
 
     // Derived: checkbox values
     let histogram_enabled = Signal::derive(move || {
-        state.get().map(|s| s.working_palette.histogram_enabled).unwrap_or(false)
+        state
+            .get()
+            .map(|s| s.working_palette.histogram_enabled)
+            .unwrap_or(false)
     });
 
     let smooth_enabled = Signal::derive(move || {
-        state.get().map(|s| s.working_palette.smooth_enabled).unwrap_or(false)
+        state
+            .get()
+            .map(|s| s.working_palette.smooth_enabled)
+            .unwrap_or(false)
     });
 
     // Sync name_input when state changes

@@ -7,7 +7,8 @@ use crate::components::PaletteEditorState;
 use crate::components::{CircularProgress, InteractiveCanvas, PaletteEditor, Toast, UIPanel};
 use crate::config::{default_config, get_config};
 use crate::hooks::{
-    load_state, save_state, use_hashchange_listener, use_ui_visibility, PersistedState,
+    apply_palette_order, load_palette_order, load_state, save_palette_order, save_state,
+    use_hashchange_listener, use_ui_visibility, PersistedState,
 };
 use crate::rendering::colorizers::Palette;
 use crate::rendering::RenderProgress;
@@ -76,12 +77,46 @@ pub fn App() -> impl IntoView {
             set_palette_list.set(palettes);
         });
     });
+
+    // Palette order (persisted to localStorage)
+    let initial_order = load_palette_order().unwrap_or_default();
+    let (palette_order, set_palette_order) = create_signal(initial_order);
+
+    // Derive ordered palette options
     let palette_options = Signal::derive(move || {
-        palette_list
+        let available: Vec<(String, String)> = palette_list
             .get()
             .iter()
             .map(|p| (p.name.clone(), p.name.clone()))
-            .collect::<Vec<_>>()
+            .collect();
+        let order = palette_order.get();
+
+        if order.is_empty() {
+            available
+        } else {
+            apply_palette_order(&available, &order)
+        }
+    });
+
+    // Handle palette reorder (from_id dropped onto to_id)
+    let on_palette_reorder = Callback::new(move |(from_id, to_id): (String, String)| {
+        let current_options = palette_options.get_untracked();
+        let current_order: Vec<String> = current_options.iter().map(|(id, _)| id.clone()).collect();
+
+        // Find positions
+        let from_idx = current_order.iter().position(|id| id == &from_id);
+        let to_idx = current_order.iter().position(|id| id == &to_id);
+
+        if let (Some(from), Some(to)) = (from_idx, to_idx) {
+            let mut new_order = current_order;
+            let item = new_order.remove(from);
+            // Insert before the target position
+            new_order.insert(to, item);
+
+            // Persist and update signal
+            save_palette_order(&new_order);
+            set_palette_order.set(new_order);
+        }
     });
 
     // Palette editor state (None = closed)
@@ -309,35 +344,35 @@ pub fn App() -> impl IntoView {
                     }
                 }
                 "ArrowLeft" => {
-                    // Previous palette
-                    let palettes = palette_list.get_untracked();
+                    // Previous palette (using ordered list)
+                    let ordered = palette_options.get_untracked();
                     let current_name = palette_id.get_untracked();
-                    let current_idx = palettes
+                    let current_idx = ordered
                         .iter()
-                        .position(|p| p.name == current_name)
+                        .position(|(id, _)| id == &current_name)
                         .unwrap_or(0);
                     let new_idx = if current_idx == 0 {
-                        palettes.len() - 1
+                        ordered.len() - 1
                     } else {
                         current_idx - 1
                     };
-                    if let Some(new_palette) = palettes.get(new_idx) {
-                        set_palette_id.set(new_palette.name.clone());
-                        set_toast_message.set(Some(format!("Palette: {}", new_palette.name)));
+                    if let Some((new_id, _)) = ordered.get(new_idx) {
+                        set_palette_id.set(new_id.clone());
+                        set_toast_message.set(Some(format!("Palette: {}", new_id)));
                     }
                 }
                 "ArrowRight" => {
-                    // Next palette
-                    let palettes = palette_list.get_untracked();
+                    // Next palette (using ordered list)
+                    let ordered = palette_options.get_untracked();
                     let current_name = palette_id.get_untracked();
-                    let current_idx = palettes
+                    let current_idx = ordered
                         .iter()
-                        .position(|p| p.name == current_name)
+                        .position(|(id, _)| id == &current_name)
                         .unwrap_or(0);
-                    let new_idx = (current_idx + 1) % palettes.len();
-                    if let Some(new_palette) = palettes.get(new_idx) {
-                        set_palette_id.set(new_palette.name.clone());
-                        set_toast_message.set(Some(format!("Palette: {}", new_palette.name)));
+                    let new_idx = (current_idx + 1) % ordered.len();
+                    if let Some((new_id, _)) = ordered.get(new_idx) {
+                        set_palette_id.set(new_id.clone());
+                        set_toast_message.set(Some(format!("Palette: {}", new_id)));
                     }
                 }
                 "ArrowUp" => {
@@ -462,6 +497,7 @@ pub fn App() -> impl IntoView {
             xray_enabled=xray_enabled
             set_xray_enabled=set_xray_enabled
             on_edit=on_palette_edit
+            on_palette_reorder=on_palette_reorder
         />
         <PaletteEditor
             state=editor_state

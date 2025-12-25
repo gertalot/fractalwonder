@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 
 const STORAGE_KEY: &str = "fractalwonder_state";
+const PALETTE_ORDER_KEY: &str = "fractalwonder_palette_order";
 const URL_HASH_PREFIX: &str = "v1:";
 
 /// State persisted to localStorage between sessions.
@@ -157,6 +158,77 @@ pub fn clear_state() {
     }
 
     log::info!("Cleared persisted state");
+}
+
+// =============================================================================
+// Palette Order Persistence
+// =============================================================================
+
+/// Load palette order from localStorage.
+/// Returns None if no order exists or storage is unavailable.
+pub fn load_palette_order() -> Option<Vec<String>> {
+    let window = web_sys::window()?;
+    let storage = window.local_storage().ok()??;
+    let json = storage.get_item(PALETTE_ORDER_KEY).ok()??;
+
+    match serde_json::from_str::<Vec<String>>(&json) {
+        Ok(order) => {
+            log::info!(
+                "Loaded palette order from localStorage: {} items",
+                order.len()
+            );
+            Some(order)
+        }
+        Err(e) => {
+            log::warn!("Failed to parse palette order: {}", e);
+            None
+        }
+    }
+}
+
+/// Save palette order to localStorage.
+pub fn save_palette_order(order: &[String]) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Ok(Some(storage)) = window.local_storage() else {
+        return;
+    };
+
+    match serde_json::to_string(order) {
+        Ok(json) => {
+            if let Err(e) = storage.set_item(PALETTE_ORDER_KEY, &json) {
+                log::warn!("Failed to save palette order: {:?}", e);
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to serialize palette order: {}", e);
+        }
+    }
+}
+
+/// Apply stored order to a list of palettes, appending any new ones at the end.
+/// Filters out IDs that no longer exist in the available list.
+pub fn apply_palette_order(
+    available: &[(String, String)],
+    stored_order: &[String],
+) -> Vec<(String, String)> {
+    let available_map: std::collections::HashMap<_, _> = available.iter().cloned().collect();
+
+    // Start with items in stored order (if they still exist)
+    let mut result: Vec<(String, String)> = stored_order
+        .iter()
+        .filter_map(|id| available_map.get(id).map(|name| (id.clone(), name.clone())))
+        .collect();
+
+    // Append any new items not in stored order
+    for (id, name) in available {
+        if !stored_order.contains(id) {
+            result.push((id.clone(), name.clone()));
+        }
+    }
+
+    result
 }
 
 // =============================================================================

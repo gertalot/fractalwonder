@@ -30,8 +30,29 @@ fn PencilIcon() -> impl IntoView {
     }
 }
 
+/// Drag handle icon (6-dot 2x3 grip pattern) for reorderable items.
+#[component]
+fn DragHandleIcon() -> impl IntoView {
+    view! {
+        <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+        >
+            // 2x3 grid of circles (grip pattern)
+            <circle cx="9" cy="6" r="2"/>
+            <circle cx="15" cy="6" r="2"/>
+            <circle cx="9" cy="12" r="2"/>
+            <circle cx="15" cy="12" r="2"/>
+            <circle cx="9" cy="18" r="2"/>
+            <circle cx="15" cy="18" r="2"/>
+        </svg>
+    }
+}
+
 /// A menu item with selection/enabled indicator, label, and optional shortcut.
-/// Optionally shows an edit (pencil) icon on hover.
+/// Optionally shows an edit (pencil) icon and drag handle on hover.
 #[component]
 pub fn MenuItem(
     /// Whether this item shows as active (enabled for toggles, selected for lists)
@@ -51,14 +72,67 @@ pub fn MenuItem(
     /// Tooltip for edit button (default: "Edit")
     #[prop(optional, into)]
     edit_tooltip: Option<String>,
+    /// Item ID for drag-and-drop (enables drag handle when provided)
+    #[prop(optional, into)]
+    item_id: Option<String>,
+    /// Called when this item starts being dragged (receives item_id)
+    #[prop(optional)]
+    on_drag_start: Option<Callback<String>>,
+    /// Called when dragging over this item (receives item_id)
+    #[prop(optional)]
+    on_drag_over: Option<Callback<String>>,
+    /// Called when an item is dropped on this item (receives item_id)
+    #[prop(optional)]
+    on_drop: Option<Callback<String>>,
 ) -> impl IntoView {
     let has_edit = on_edit.is_some();
+    let has_drag = item_id.is_some() && on_drag_start.is_some();
     let tooltip = edit_tooltip.unwrap_or_else(|| "Edit".to_string());
 
+    // Track whether we're currently dragging (for cursor style)
+    let (is_dragging, set_is_dragging) = create_signal(false);
+    // Track whether we're being dragged over (for drop indicator)
+    let (is_drag_over, set_is_drag_over) = create_signal(false);
+
+    // Clone item_id for each closure that needs it
+    let item_id_for_drag = item_id.clone();
+    let item_id_for_dragover = item_id.clone();
+    let item_id_for_drop = item_id.clone();
+
     view! {
-        <button
-            class="group w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white rounded transition-colors flex items-center justify-between"
+        <div
+            class=move || {
+                let base = "group w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white rounded transition-colors flex items-center justify-between";
+                if is_drag_over.get() {
+                    format!("{} border-t-2 border-blue-400", base)
+                } else {
+                    base.to_string()
+                }
+            }
             on:click=move |_| on_click.call(())
+            on:dragover=move |e| {
+                if on_drag_over.is_some() {
+                    e.prevent_default();
+                    set_is_drag_over.set(true);
+                    if let Some(ref id) = item_id_for_dragover {
+                        if let Some(cb) = on_drag_over {
+                            cb.call(id.clone());
+                        }
+                    }
+                }
+            }
+            on:dragleave=move |_| {
+                set_is_drag_over.set(false);
+            }
+            on:drop=move |e| {
+                e.prevent_default();
+                set_is_drag_over.set(false);
+                if let Some(ref id) = item_id_for_drop {
+                    if let Some(cb) = on_drop {
+                        cb.call(id.clone());
+                    }
+                }
+            }
         >
             <span class="flex items-center gap-2">
                 <span class="w-4 text-center">
@@ -84,8 +158,40 @@ pub fn MenuItem(
                         </span>
                     }
                 })}
+                {has_drag.then(|| {
+                    let on_drag_start = on_drag_start.unwrap();
+                    let item_id = item_id_for_drag.clone().unwrap();
+                    view! {
+                        <span
+                            class=move || {
+                                let base = "opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity";
+                                if is_dragging.get() {
+                                    format!("{} cursor-grabbing", base)
+                                } else {
+                                    format!("{} cursor-grab", base)
+                                }
+                            }
+                            draggable="true"
+                            on:dragstart=move |e| {
+                                e.stop_propagation();
+                                set_is_dragging.set(true);
+                                // Set drag data
+                                if let Some(dt) = e.data_transfer() {
+                                    let _ = dt.set_data("text/plain", &item_id);
+                                }
+                                on_drag_start.call(item_id.clone());
+                            }
+                            on:dragend=move |_| {
+                                set_is_dragging.set(false);
+                            }
+                            title="Drag to reorder"
+                        >
+                            <DragHandleIcon />
+                        </span>
+                    }
+                })}
             </span>
-        </button>
+        </div>
     }
 }
 

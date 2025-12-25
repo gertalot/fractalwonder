@@ -45,6 +45,9 @@ pub fn UIPanel(
     xray_enabled: ReadSignal<bool>,
     /// Callback to toggle x-ray mode
     set_xray_enabled: WriteSignal<bool>,
+    /// Callback when palettes are reordered (from_id, to_id)
+    #[prop(optional)]
+    on_palette_reorder: Option<Callback<(String, String)>>,
 ) -> impl IntoView {
     // Menu open states - lifted here for coordination
     let (is_info_open, set_is_info_open) = create_signal(false);
@@ -132,6 +135,7 @@ pub fn UIPanel(
                         selected_id=selected_palette_id
                         on_select=move |id| on_palette_select.call(id)
                         on_edit=on_edit
+                        on_reorder=on_palette_reorder
                     />
                     <OptionsMenu
                         is_open=is_options_open
