@@ -1,6 +1,6 @@
 //! Slide-out palette editor panel.
 
-use crate::components::{ConfirmDialog, EditMode, PaletteEditorState};
+use crate::components::{CollapsibleSection, ConfirmDialog, EditMode, PaletteEditorState};
 use crate::rendering::colorizers::Palette;
 use leptos::*;
 
@@ -32,6 +32,9 @@ pub fn PaletteEditor(
 
     // Dialog state
     let (dialog_kind, set_dialog_kind) = create_signal(None::<DialogKind>);
+
+    // Collapsible section state
+    let palette_expanded = create_rw_signal(true);
 
     // Derived: is editor visible?
     let is_visible = Signal::derive(move || state.get().is_some());
@@ -69,6 +72,15 @@ pub fn PaletteEditor(
     });
 
     let delete_button_enabled = Signal::derive(move || edit_mode.get() == EditMode::Edit);
+
+    // Derived: checkbox values
+    let histogram_enabled = Signal::derive(move || {
+        state.get().map(|s| s.working_palette.histogram_enabled).unwrap_or(false)
+    });
+
+    let smooth_enabled = Signal::derive(move || {
+        state.get().map(|s| s.working_palette.smooth_enabled).unwrap_or(false)
+    });
 
     // Sync name_input when state changes
     create_effect(move |_| {
@@ -311,10 +323,46 @@ pub fn PaletteEditor(
                     </div>
                 </div>
 
-                // Placeholder for future sections
-                <div class="border border-white/10 rounded-lg p-3">
-                    <p class="text-gray-500 text-xs">"Palette controls coming soon..."</p>
-                </div>
+                // Palette Section
+                <CollapsibleSection title="Palette" expanded=palette_expanded>
+                    <div class="space-y-1">
+                        <label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/5 \
+                                      cursor-pointer transition-colors">
+                            <input
+                                type="checkbox"
+                                class="w-3.5 h-3.5 rounded accent-white"
+                                prop:checked=move || histogram_enabled.get()
+                                on:change=move |ev| {
+                                    let checked = event_target_checked(&ev);
+                                    state.update(|opt| {
+                                        if let Some(s) = opt {
+                                            s.working_palette.histogram_enabled = checked;
+                                        }
+                                    });
+                                }
+                            />
+                            <span class="text-white text-sm">"Histogram Equalization"</span>
+                        </label>
+
+                        <label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/5 \
+                                      cursor-pointer transition-colors">
+                            <input
+                                type="checkbox"
+                                class="w-3.5 h-3.5 rounded accent-white"
+                                prop:checked=move || smooth_enabled.get()
+                                on:change=move |ev| {
+                                    let checked = event_target_checked(&ev);
+                                    state.update(|opt| {
+                                        if let Some(s) = opt {
+                                            s.working_palette.smooth_enabled = checked;
+                                        }
+                                    });
+                                }
+                            />
+                            <span class="text-white text-sm">"Smooth Coloring"</span>
+                        </label>
+                    </div>
+                </CollapsibleSection>
             </div>
         </div>
 
