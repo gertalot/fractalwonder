@@ -3,8 +3,8 @@ use fractalwonder_core::{calculate_precision_bits, fit_viewport_to_canvas, Viewp
 use leptos::*;
 use wasm_bindgen::prelude::Closure;
 
-use crate::components::{CircularProgress, InteractiveCanvas, PaletteEditor, Toast, UIPanel};
 use crate::components::{generate_unique_name, PaletteEditorState};
+use crate::components::{CircularProgress, InteractiveCanvas, PaletteEditor, Toast, UIPanel};
 use crate::config::{default_config, get_config};
 use crate::hooks::{
     load_state, save_state, use_hashchange_listener, use_ui_visibility, PersistedState,
@@ -89,7 +89,11 @@ pub fn App() -> impl IntoView {
 
     // Factory palette names
     let factory_names = Signal::derive(move || {
-        palette_list.get().iter().map(|p| p.name.clone()).collect::<Vec<_>>()
+        palette_list
+            .get()
+            .iter()
+            .map(|p| p.name.clone())
+            .collect::<Vec<_>>()
     });
 
     // All palette names (for now, just factory names)

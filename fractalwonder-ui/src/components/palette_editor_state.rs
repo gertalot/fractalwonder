@@ -49,8 +49,7 @@ impl PaletteEditorState {
     /// In Duplicate mode, always dirty (new palette doesn't exist yet).
     /// In Edit mode, dirty if working differs from source.
     pub fn is_dirty(&self) -> bool {
-        matches!(self.edit_mode, EditMode::Duplicate)
-            || self.working_palette != self.source_palette
+        matches!(self.edit_mode, EditMode::Duplicate) || self.working_palette != self.source_palette
     }
 
     /// Check if source palette shadows a factory default.
