@@ -9,6 +9,7 @@ pub mod render_settings;
 pub mod shading;
 pub mod smooth_iteration;
 
+pub use color_space::{hex_to_rgb, rgb_to_hex};
 pub use colorizer::{Colorizer, ColorizerKind};
 pub use curve::{Curve, CurvePoint, CurveScale};
 pub use gradient::{ColorStop, Gradient};

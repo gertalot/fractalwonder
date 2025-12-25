@@ -96,6 +96,24 @@ pub fn oklch_to_srgb(l: f64, c: f64, h: f64) -> [u8; 3] {
     ]
 }
 
+/// Convert RGB [0-255] to hex string (e.g., [255, 68, 0] → "#ff4400")
+pub fn rgb_to_hex(rgb: [u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2])
+}
+
+/// Parse hex string to RGB (e.g., "#ff4400" → Some([255, 68, 0]))
+/// Handles with/without # prefix, case-insensitive. Returns None on invalid input.
+pub fn hex_to_rgb(hex: &str) -> Option<[u8; 3]> {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some([r, g, b])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,5 +215,45 @@ mod tests {
             let sum: u32 = rgb[0] as u32 + rgb[1] as u32 + rgb[2] as u32;
             assert!(sum > 0, "Should produce non-black colors at L=0.7");
         }
+    }
+
+    #[test]
+    fn rgb_to_hex_black() {
+        assert_eq!(rgb_to_hex([0, 0, 0]), "#000000");
+    }
+
+    #[test]
+    fn rgb_to_hex_white() {
+        assert_eq!(rgb_to_hex([255, 255, 255]), "#ffffff");
+    }
+
+    #[test]
+    fn rgb_to_hex_color() {
+        assert_eq!(rgb_to_hex([255, 68, 0]), "#ff4400");
+    }
+
+    #[test]
+    fn hex_to_rgb_valid() {
+        assert_eq!(hex_to_rgb("#ff4400"), Some([255, 68, 0]));
+    }
+
+    #[test]
+    fn hex_to_rgb_no_hash() {
+        assert_eq!(hex_to_rgb("ff4400"), Some([255, 68, 0]));
+    }
+
+    #[test]
+    fn hex_to_rgb_uppercase() {
+        assert_eq!(hex_to_rgb("#FF4400"), Some([255, 68, 0]));
+    }
+
+    #[test]
+    fn hex_to_rgb_invalid_length() {
+        assert_eq!(hex_to_rgb("#fff"), None);
+    }
+
+    #[test]
+    fn hex_to_rgb_invalid_chars() {
+        assert_eq!(hex_to_rgb("#gggggg"), None);
     }
 }
