@@ -261,6 +261,28 @@ pub fn GradientEditor(
                                                 e.stop_propagation();
                                                 selected_stop.set(Some(index));
                                             }
+                                            on:dblclick=move |e| {
+                                                e.stop_propagation();
+                                                let Some(mut grad) = gradient.get() else {
+                                                    return;
+                                                };
+
+                                                // Silently ignore if only 2 stops remain
+                                                if grad.stops.len() <= 2 {
+                                                    return;
+                                                }
+
+                                                // Remove the stop
+                                                if index < grad.stops.len() {
+                                                    grad.stops.remove(index);
+                                                    // Update midpoints
+                                                    let new_midpoint_count = grad.stops.len().saturating_sub(1);
+                                                    grad.midpoints.resize(new_midpoint_count, 0.5);
+
+                                                    selected_stop.set(None);
+                                                    on_change.call(grad);
+                                                }
+                                            }
                                         />
                                     }
                                 }
