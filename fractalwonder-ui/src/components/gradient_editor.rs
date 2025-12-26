@@ -39,9 +39,15 @@ pub fn GradientEditor(
         if !is_dragging.get() {
             return;
         }
-        let Some(index) = drag_index.get() else { return };
-        let Some(container) = container_ref.get() else { return };
-        let Some(mut grad) = gradient.get() else { return };
+        let Some(index) = drag_index.get() else {
+            return;
+        };
+        let Some(container) = container_ref.get() else {
+            return;
+        };
+        let Some(mut grad) = gradient.get() else {
+            return;
+        };
 
         let rect = container.get_bounding_client_rect();
         let x = e.client_x() as f64 - rect.left();
@@ -51,7 +57,8 @@ pub fn GradientEditor(
         // Update stop position
         if index < grad.stops.len() {
             grad.stops[index].position = position;
-            // Don't call on_change yet - wait for release
+            // Call on_change immediately for visual feedback during drag
+            on_change.call(grad.clone());
         }
     };
 
@@ -62,7 +69,9 @@ pub fn GradientEditor(
             if let Some(grad) = gradient.get() {
                 // Sort stops by position and call on_change
                 let mut sorted = grad.clone();
-                sorted.stops.sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap());
+                sorted
+                    .stops
+                    .sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap());
                 on_change.call(sorted);
             }
         }
@@ -84,10 +93,8 @@ pub fn GradientEditor(
             "mousemove",
             mousemove_closure.as_ref().unchecked_ref(),
         );
-        let _ = document.add_event_listener_with_callback(
-            "mouseup",
-            mouseup_closure.as_ref().unchecked_ref(),
-        );
+        let _ = document
+            .add_event_listener_with_callback("mouseup", mouseup_closure.as_ref().unchecked_ref());
 
         // Leak closures (they live for app lifetime)
         mousemove_closure.forget();
