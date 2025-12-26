@@ -1,6 +1,7 @@
 mod circular_progress;
 mod collapsible_section;
 mod confirm_dialog;
+mod curve_editor;
 mod fullscreen_button;
 mod gradient_editor;
 mod home_button;
@@ -17,6 +18,8 @@ mod ui_panel;
 pub use circular_progress::CircularProgress;
 pub use collapsible_section::CollapsibleSection;
 pub use confirm_dialog::ConfirmDialog;
+#[allow(unused_imports)]
+pub use curve_editor::CurveEditor;
 pub use fullscreen_button::FullscreenButton;
 pub use gradient_editor::GradientEditor;
 pub use home_button::HomeButton;
