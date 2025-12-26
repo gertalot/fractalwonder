@@ -1,6 +1,6 @@
 //! Interactive gradient editor with color stops, midpoints, and zoom.
 
-use crate::rendering::colorizers::{ColorStop, Gradient};
+use crate::rendering::colorizers::{hex_to_rgb, rgb_to_hex, ColorStop, Gradient};
 use crate::rendering::get_2d_context;
 use leptos::*;
 use wasm_bindgen::Clamped;
@@ -301,11 +301,60 @@ pub fn GradientEditor(
                     </div>
                 </div>
 
-                // Color picker panel
+                // Color picker panel (shown when stop selected)
                 <Show when=move || selected_stop.get().is_some()>
-                    <div class="bg-white/5 border border-white/10 rounded p-2">
-                        <span class="text-white/50 text-xs">"Color picker placeholder"</span>
-                    </div>
+                    {move || {
+                        let index = selected_stop.get().unwrap();
+                        let grad = gradient.get();
+                        let stop = grad.as_ref().and_then(|g| g.stops.get(index));
+
+                        if let Some(stop) = stop {
+                            let color = stop.color;
+                            let hex = rgb_to_hex(color);
+
+                            view! {
+                                <div class="bg-white/5 border border-white/10 rounded p-2 space-y-2">
+                                    <div class="flex items-center gap-2">
+                                        // Native color picker
+                                        <input
+                                            type="color"
+                                            value=hex.clone()
+                                            class="w-12 h-8 rounded cursor-pointer bg-transparent"
+                                            on:change=move |e| {
+                                                let value = event_target_value(&e);
+                                                if let Some(rgb) = hex_to_rgb(&value) {
+                                                    let Some(mut grad) = gradient.get() else { return };
+                                                    if let Some(stop) = grad.stops.get_mut(index) {
+                                                        stop.color = rgb;
+                                                        on_change.call(grad);
+                                                    }
+                                                }
+                                            }
+                                        />
+                                        // Hex input
+                                        <input
+                                            type="text"
+                                            value=hex
+                                            class="flex-1 bg-white/5 border border-white/20 rounded px-2 py-1 \
+                                                   text-white text-xs outline-none focus:border-white/40"
+                                            on:change=move |e| {
+                                                let value = event_target_value(&e);
+                                                if let Some(rgb) = hex_to_rgb(&value) {
+                                                    let Some(mut grad) = gradient.get() else { return };
+                                                    if let Some(stop) = grad.stops.get_mut(index) {
+                                                        stop.color = rgb;
+                                                        on_change.call(grad);
+                                                    }
+                                                }
+                                            }
+                                        />
+                                    </div>
+                                </div>
+                            }.into_view()
+                        } else {
+                            view! {}.into_view()
+                        }
+                    }}
                 </Show>
             </div>
         </Show>
