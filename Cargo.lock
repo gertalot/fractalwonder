@@ -693,6 +693,7 @@ dependencies = [
  "fractalwonder-gpu",
  "futures",
  "gloo-timers",
+ "js-sys",
  "leptos",
  "leptos-use",
  "leptos_meta",
