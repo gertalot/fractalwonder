@@ -51,6 +51,9 @@ impl Curve {
 
     /// Evaluate the curve at position x using cubic spline interpolation.
     ///
+    /// Both input and output are clamped to [0, 1]. Output clamping prevents
+    /// cubic spline overshoot from producing invalid values.
+    ///
     /// # Performance
     ///
     /// This method recomputes spline coefficients on each call, resulting in O(n)
@@ -65,17 +68,18 @@ impl Curve {
     pub fn evaluate(&self, x: f64) -> f64 {
         let x = x.clamp(0.0, 1.0);
 
-        if self.points.is_empty() {
-            return x;
-        }
-        if self.points.len() == 1 {
-            return self.points[0].y;
-        }
-        if self.points.len() == 2 {
-            return self.linear_interpolate(x);
-        }
+        let y = if self.points.is_empty() {
+            x
+        } else if self.points.len() == 1 {
+            self.points[0].y
+        } else if self.points.len() == 2 {
+            self.linear_interpolate(x)
+        } else {
+            self.cubic_interpolate(x)
+        };
 
-        self.cubic_interpolate(x)
+        // Clamp output to prevent cubic spline overshoot
+        y.clamp(0.0, 1.0)
     }
 
     fn linear_interpolate(&self, x: f64) -> f64 {
