@@ -41,6 +41,15 @@ pub fn CurveEditor(
                     height=size
                     class="cursor-crosshair rounded"
                     style="width: 100%; height: auto;"
+                    on:mousemove=move |e| {
+                        let Some(canvas) = canvas_ref.get() else { return };
+                        let Some(crv) = curve.get() else { return };
+                        let (x, y) = mouse_to_canvas(&e, &canvas, size);
+                        hover_index.set(find_point_at(&crv, x, y, size as f64));
+                    }
+                    on:mouseleave=move |_| {
+                        hover_index.set(None);
+                    }
                 />
                 <div class="text-white/50 text-xs">
                     "Click to add points · Drag to move · Double-click to remove"
@@ -126,4 +135,30 @@ fn draw_curve(canvas: &HtmlCanvasElement, curve: &Curve, size: u32, hover_index:
         ctx.set_line_width(2.0);
         ctx.stroke();
     }
+}
+
+/// Find the index of a control point near the given canvas coordinates.
+/// Returns None if no point is within the hit radius (10 pixels).
+fn find_point_at(curve: &Curve, canvas_x: f64, canvas_y: f64, size: f64) -> Option<usize> {
+    const HIT_RADIUS: f64 = 10.0;
+
+    for (i, point) in curve.points.iter().enumerate() {
+        let px = point.x * size;
+        let py = (1.0 - point.y) * size;
+        let dist = ((canvas_x - px).powi(2) + (canvas_y - py).powi(2)).sqrt();
+        if dist < HIT_RADIUS {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Convert mouse event to canvas-relative coordinates.
+fn mouse_to_canvas(e: &web_sys::MouseEvent, canvas: &HtmlCanvasElement, size: u32) -> (f64, f64) {
+    let rect = canvas.get_bounding_client_rect();
+    let scale_x = size as f64 / rect.width();
+    let scale_y = size as f64 / rect.height();
+    let x = (e.client_x() as f64 - rect.left()) * scale_x;
+    let y = (e.client_y() as f64 - rect.top()) * scale_y;
+    (x.clamp(0.0, size as f64), y.clamp(0.0, size as f64))
 }
