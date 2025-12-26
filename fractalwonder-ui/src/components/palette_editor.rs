@@ -1,9 +1,9 @@
 //! Slide-out palette editor panel.
 
 use crate::components::{
-    CollapsibleSection, ConfirmDialog, EditMode, GradientEditor, PaletteEditorState,
+    CollapsibleSection, ConfirmDialog, CurveEditor, EditMode, GradientEditor, PaletteEditorState,
 };
-use crate::rendering::colorizers::{Gradient, Palette};
+use crate::rendering::colorizers::{Curve, Gradient, Palette};
 use leptos::*;
 
 /// Which confirmation dialog is currently shown (if any).
@@ -99,6 +99,22 @@ pub fn PaletteEditor(
         state.update(|opt| {
             if let Some(s) = opt {
                 s.working_palette.gradient = new_gradient;
+            }
+        });
+    });
+
+    // Derived: current transfer curve
+    let transfer_curve_signal = Signal::derive(move || {
+        state
+            .get()
+            .map(|s| s.working_palette.transfer_curve.clone())
+    });
+
+    // Callback for transfer curve changes
+    let on_transfer_curve_change = Callback::new(move |new_curve: Curve| {
+        state.update(|opt| {
+            if let Some(s) = opt {
+                s.working_palette.transfer_curve = new_curve;
             }
         });
     });
@@ -388,6 +404,12 @@ pub fn PaletteEditor(
                     <GradientEditor
                         gradient=gradient_signal
                         on_change=on_gradient_change
+                    />
+
+                    // Transfer curve editor
+                    <CurveEditor
+                        curve=transfer_curve_signal
+                        on_change=on_transfer_curve_change
                     />
                 </CollapsibleSection>
             </div>
