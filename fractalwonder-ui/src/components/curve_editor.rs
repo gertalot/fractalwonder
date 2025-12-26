@@ -20,10 +20,18 @@ pub fn CurveEditor(
     let hover_index = create_rw_signal(None::<usize>);
     let drag_index = create_rw_signal(None::<usize>);
     let is_dragging = create_rw_signal(false);
+    // Local curve state during drag (for visual feedback without triggering fractal re-render)
+    let drag_curve = create_rw_signal(None::<Curve>);
 
     // Draw curve when it changes or hover state changes
     create_effect(move |_| {
-        let Some(crv) = curve.get() else { return };
+        // Use drag_curve during drag for responsive visual feedback, otherwise use curve
+        let crv = if is_dragging.get() {
+            drag_curve.get()
+        } else {
+            curve.get()
+        };
+        let Some(crv) = crv else { return };
         let Some(canvas) = canvas_ref.get() else {
             return;
         };
@@ -52,7 +60,10 @@ pub fn CurveEditor(
                 let Some(canvas) = canvas_ref_copy.get() else {
                     return;
                 };
-                let Some(mut crv) = curve.get() else { return };
+                // Use drag_curve if available, otherwise start from the base curve
+                let Some(mut crv) = drag_curve.get().or_else(|| curve.get()) else {
+                    return;
+                };
 
                 let (canvas_x, canvas_y) = mouse_to_canvas(&e, &canvas, size_copy);
                 let x = canvas_x / size_copy as f64;
@@ -72,14 +83,22 @@ pub fn CurveEditor(
                     {
                         drag_index.set(Some(new_idx));
                     }
-                    on_change.call(crv);
+                    // Update local drag state for visual feedback (don't trigger fractal re-render)
+                    drag_curve.set(Some(crv));
                 }
             });
 
         let mouseup_closure =
             Closure::<dyn Fn(web_sys::MouseEvent)>::new(move |_: web_sys::MouseEvent| {
+                // On mouse release, commit the drag curve to trigger fractal re-render
+                if is_dragging.get() {
+                    if let Some(crv) = drag_curve.get() {
+                        on_change.call(crv);
+                    }
+                }
                 is_dragging.set(false);
                 drag_index.set(None);
+                drag_curve.set(None);
             });
 
         let _ = document.add_event_listener_with_callback(
@@ -122,6 +141,8 @@ pub fn CurveEditor(
                             e.prevent_default();
                             is_dragging.set(true);
                             drag_index.set(Some(idx));
+                            // Initialize drag_curve with current curve for visual feedback during drag
+                            drag_curve.set(Some(crv.clone()));
                         } else {
                             // Add new point at click position
                             let x = canvas_x / size as f64;
