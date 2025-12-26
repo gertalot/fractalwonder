@@ -19,6 +19,7 @@ pub fn GradientEditor(
     let zoom = create_rw_signal(1.0_f64);
     let is_dragging = create_rw_signal(false);
     let drag_index = create_rw_signal(None::<usize>);
+    let dragging_midpoint = create_rw_signal(None::<usize>);
 
     // Canvas ref
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
@@ -34,14 +35,19 @@ pub fn GradientEditor(
         selected_stop.set(Some(index));
     };
 
+    // Handle drag start on a midpoint
+    let start_midpoint_drag = move |index: usize, e: web_sys::MouseEvent| {
+        e.prevent_default();
+        e.stop_propagation();
+        is_dragging.set(true);
+        dragging_midpoint.set(Some(index));
+    };
+
     // Handle mouse move during drag
     let handle_mouse_move = move |e: web_sys::MouseEvent| {
         if !is_dragging.get() {
             return;
         }
-        let Some(index) = drag_index.get() else {
-            return;
-        };
         let Some(container) = container_ref.get() else {
             return;
         };
@@ -52,13 +58,45 @@ pub fn GradientEditor(
         let rect = container.get_bounding_client_rect();
         let x = e.client_x() as f64 - rect.left();
         let width = rect.width();
-        let position = (x / width).clamp(0.0, 1.0);
+        let click_pos = (x / width).clamp(0.0, 1.0);
 
-        // Update stop position
-        if index < grad.stops.len() {
-            grad.stops[index].position = position;
-            // Call on_change immediately for visual feedback during drag
-            on_change.call(grad.clone());
+        // Handle midpoint dragging
+        if let Some(midpoint_index) = dragging_midpoint.get() {
+            if midpoint_index < grad.stops.len().saturating_sub(1) {
+                // Get sorted stops to find left and right positions
+                let mut sorted_indices: Vec<(usize, f64)> = grad
+                    .stops
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| (i, s.position))
+                    .collect();
+                sorted_indices.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+                let left_pos = sorted_indices[midpoint_index].1;
+                let right_pos = sorted_indices
+                    .get(midpoint_index + 1)
+                    .map(|s| s.1)
+                    .unwrap_or(1.0);
+
+                let segment_width = right_pos - left_pos;
+                if segment_width.abs() >= 0.001 {
+                    let midpoint_val = ((click_pos - left_pos) / segment_width).clamp(0.05, 0.95);
+                    if midpoint_index < grad.midpoints.len() {
+                        grad.midpoints[midpoint_index] = midpoint_val;
+                        on_change.call(grad);
+                    }
+                }
+            }
+            return;
+        }
+
+        // Handle stop dragging
+        if let Some(index) = drag_index.get() {
+            if index < grad.stops.len() {
+                grad.stops[index].position = click_pos;
+                // Call on_change immediately for visual feedback during drag
+                on_change.call(grad);
+            }
         }
     };
 
@@ -66,8 +104,15 @@ pub fn GradientEditor(
     let end_drag = move |_: web_sys::MouseEvent| {
         if is_dragging.get() {
             is_dragging.set(false);
+
+            // Handle midpoint drag end
+            if dragging_midpoint.get().is_some() {
+                dragging_midpoint.set(None);
+                return;
+            }
+
+            // Handle stop drag end - sort stops by position
             if let Some(grad) = gradient.get() {
-                // Sort stops by position and call on_change
                 let mut sorted = grad.clone();
                 sorted
                     .stops
@@ -76,6 +121,7 @@ pub fn GradientEditor(
             }
         }
         drag_index.set(None);
+        dragging_midpoint.set(None);
     };
 
     // Handle click on gradient bar to add a stop
@@ -317,7 +363,7 @@ pub fn GradientEditor(
                                         .unwrap_or_default()
                                 }
                                 key=|(i, _)| *i
-                                children=move |(_index, display_pos)| {
+                                children=move |(index, display_pos)| {
                                     view! {
                                         <div
                                             class="absolute top-0 w-2.5 h-2.5 bg-white/80 cursor-ew-resize \
@@ -328,6 +374,7 @@ pub fn GradientEditor(
                                                     display_pos * 100.0
                                                 )
                                             }
+                                            on:mousedown=move |e| start_midpoint_drag(index, e)
                                         />
                                     }
                                 }
