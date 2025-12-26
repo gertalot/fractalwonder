@@ -115,13 +115,40 @@ pub fn CurveEditor(
                     on:mousedown=move |e| {
                         let Some(canvas) = canvas_ref.get() else { return };
                         let Some(crv) = curve.get() else { return };
-                        let (x, y) = mouse_to_canvas(&e, &canvas, size);
+                        let (canvas_x, canvas_y) = mouse_to_canvas(&e, &canvas, size);
 
-                        if let Some(idx) = find_point_at(&crv, x, y, size as f64) {
+                        if let Some(idx) = find_point_at(&crv, canvas_x, canvas_y, size as f64) {
                             // Start dragging existing point
                             e.prevent_default();
                             is_dragging.set(true);
                             drag_index.set(Some(idx));
+                        } else {
+                            // Add new point at click position
+                            let x = canvas_x / size as f64;
+                            let y = 1.0 - (canvas_y / size as f64);
+                            let mut new_curve = crv.clone();
+                            new_curve.points.push(CurvePoint { x, y });
+                            new_curve.points.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+                            on_change.call(new_curve);
+                        }
+                    }
+                    on:dblclick=move |e| {
+                        let Some(canvas) = canvas_ref.get() else { return };
+                        let Some(crv) = curve.get() else { return };
+                        let (canvas_x, canvas_y) = mouse_to_canvas(&e, &canvas, size);
+
+                        if let Some(idx) = find_point_at(&crv, canvas_x, canvas_y, size as f64) {
+                            // Don't delete if only 2 points remain
+                            if crv.points.len() <= 2 {
+                                return;
+                            }
+                            // Don't delete first or last point
+                            if idx == 0 || idx == crv.points.len() - 1 {
+                                return;
+                            }
+                            let mut new_curve = crv.clone();
+                            new_curve.points.remove(idx);
+                            on_change.call(new_curve);
                         }
                     }
                 />
