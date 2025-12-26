@@ -60,10 +60,18 @@ pub fn CurveEditor(
 
                 let (x, y) = clamp_point(x, y, idx, crv.points.len());
 
+                let target_point = CurvePoint { x, y };
                 if idx < crv.points.len() {
-                    crv.points[idx] = CurvePoint { x, y };
-                    // Re-sort by x (maintains curve validity)
+                    crv.points[idx] = target_point.clone();
                     crv.points.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+                    // Find new index of the point we just moved (it may have shifted due to sort)
+                    if let Some(new_idx) = crv
+                        .points
+                        .iter()
+                        .position(|p| p.x == target_point.x && p.y == target_point.y)
+                    {
+                        drag_index.set(Some(new_idx));
+                    }
                     on_change.call(crv);
                 }
             });
