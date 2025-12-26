@@ -239,23 +239,30 @@ pub fn GradientEditor(
         }
     });
 
+    // Zoom button state closures (extracted to avoid > and < in view! macro)
+    let zoom_out_disabled = move || zoom.get() < 1.01;
+    let zoom_in_disabled = move || zoom.get() > 9.99;
+    let zoom_text = move || {
+        if zoom.get() > 1.0 {
+            format!("Zoom: {:.1}x", zoom.get())
+        } else {
+            String::new()
+        }
+    };
+
     view! {
         <Show when=move || gradient.get().is_some()>
             <div class="space-y-2">
                 // Zoom controls
                 <div class="flex items-center justify-between px-1">
                     <div class="text-white/50 text-xs">
-                        {move || if zoom.get() > 1.0 {
-                            format!("Zoom: {:.1}x", zoom.get())
-                        } else {
-                            String::new()
-                        }}
+                        {zoom_text}
                     </div>
                     <div class="flex items-center gap-1">
                         <button
                             class="p-1 rounded hover:bg-white/10 text-white disabled:opacity-30 \
                                    disabled:cursor-not-allowed transition-colors"
-                            prop:disabled=move || zoom.get() < 1.01
+                            prop:disabled=zoom_out_disabled
                             on:click=move |_| zoom.update(|z| *z = (*z / 1.2).max(1.0))
                         >
                             <ZoomOutIcon />
@@ -263,7 +270,7 @@ pub fn GradientEditor(
                         <button
                             class="p-1 rounded hover:bg-white/10 text-white disabled:opacity-30 \
                                    disabled:cursor-not-allowed transition-colors"
-                            prop:disabled=move || zoom.get() > 9.99
+                            prop:disabled=zoom_in_disabled
                             on:click=move |_| zoom.update(|z| *z = (*z * 1.2).min(10.0))
                         >
                             <ZoomInIcon />
