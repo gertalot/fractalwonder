@@ -1,6 +1,6 @@
 //! Interactive curve editor for transfer and falloff curves.
 
-use crate::rendering::colorizers::Curve;
+use crate::rendering::colorizers::{Curve, CurvePoint};
 use crate::rendering::get_2d_context;
 use leptos::*;
 use web_sys::HtmlCanvasElement;
@@ -11,7 +11,6 @@ pub fn CurveEditor(
     /// The curve to edit (None when editor closed)
     curve: Signal<Option<Curve>>,
     /// Called when curve changes
-    #[allow(unused)]
     on_change: Callback<Curve>,
     /// Canvas size in logical pixels
     #[prop(default = 320)]
@@ -19,6 +18,8 @@ pub fn CurveEditor(
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let hover_index = create_rw_signal(None::<usize>);
+    let drag_index = create_rw_signal(None::<usize>);
+    let is_dragging = create_rw_signal(false);
 
     // Draw curve when it changes or hover state changes
     create_effect(move |_| {
@@ -29,6 +30,59 @@ pub fn CurveEditor(
         let _ = hover_index.get(); // Track hover for redraw
 
         draw_curve(&canvas, &crv, size, hover_index.get());
+    });
+
+    // Document-level mouse handlers for drag
+    create_effect(move |_| {
+        use wasm_bindgen::closure::Closure;
+        use wasm_bindgen::JsCast;
+
+        let window = web_sys::window().expect("window");
+        let document = window.document().expect("document");
+
+        let size_copy = size;
+        let canvas_ref_copy = canvas_ref;
+
+        let mousemove_closure =
+            Closure::<dyn Fn(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
+                if !is_dragging.get() {
+                    return;
+                }
+                let Some(idx) = drag_index.get() else { return };
+                let Some(canvas) = canvas_ref_copy.get() else {
+                    return;
+                };
+                let Some(mut crv) = curve.get() else { return };
+
+                let (canvas_x, canvas_y) = mouse_to_canvas(&e, &canvas, size_copy);
+                let x = canvas_x / size_copy as f64;
+                let y = 1.0 - (canvas_y / size_copy as f64); // Invert Y
+
+                let (x, y) = clamp_point(x, y, idx, crv.points.len());
+
+                if idx < crv.points.len() {
+                    crv.points[idx] = CurvePoint { x, y };
+                    // Re-sort by x (maintains curve validity)
+                    crv.points.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+                    on_change.call(crv);
+                }
+            });
+
+        let mouseup_closure =
+            Closure::<dyn Fn(web_sys::MouseEvent)>::new(move |_: web_sys::MouseEvent| {
+                is_dragging.set(false);
+                drag_index.set(None);
+            });
+
+        let _ = document.add_event_listener_with_callback(
+            "mousemove",
+            mousemove_closure.as_ref().unchecked_ref(),
+        );
+        let _ = document
+            .add_event_listener_with_callback("mouseup", mouseup_closure.as_ref().unchecked_ref());
+
+        mousemove_closure.forget();
+        mouseup_closure.forget();
     });
 
     view! {
@@ -49,6 +103,18 @@ pub fn CurveEditor(
                     }
                     on:mouseleave=move |_| {
                         hover_index.set(None);
+                    }
+                    on:mousedown=move |e| {
+                        let Some(canvas) = canvas_ref.get() else { return };
+                        let Some(crv) = curve.get() else { return };
+                        let (x, y) = mouse_to_canvas(&e, &canvas, size);
+
+                        if let Some(idx) = find_point_at(&crv, x, y, size as f64) {
+                            // Start dragging existing point
+                            e.prevent_default();
+                            is_dragging.set(true);
+                            drag_index.set(Some(idx));
+                        }
                     }
                 />
                 <div class="text-white/50 text-xs">
@@ -161,4 +227,16 @@ fn mouse_to_canvas(e: &web_sys::MouseEvent, canvas: &HtmlCanvasElement, size: u3
     let x = (e.client_x() as f64 - rect.left()) * scale_x;
     let y = (e.client_y() as f64 - rect.top()) * scale_y;
     (x.clamp(0.0, size as f64), y.clamp(0.0, size as f64))
+}
+
+/// Clamp a curve value to valid range.
+fn clamp_point(x: f64, y: f64, index: usize, point_count: usize) -> (f64, f64) {
+    let x = if index == 0 {
+        0.0 // First point locked to x=0
+    } else if index == point_count - 1 {
+        1.0 // Last point locked to x=1
+    } else {
+        x.clamp(0.0, 1.0)
+    };
+    (x, y.clamp(0.0, 1.0))
 }
