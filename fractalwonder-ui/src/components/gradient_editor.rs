@@ -287,6 +287,51 @@ pub fn GradientEditor(
                                     }
                                 }
                             />
+
+                            // Midpoint diamonds (between stops)
+                            <For
+                                each=move || {
+                                    gradient
+                                        .get()
+                                        .map(|g| {
+                                            // Get sorted stops
+                                            let mut sorted_stops: Vec<(usize, f64)> = g
+                                                .stops
+                                                .iter()
+                                                .enumerate()
+                                                .map(|(i, s)| (i, s.position))
+                                                .collect();
+                                            sorted_stops.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+                                            // Create midpoint data for each pair of stops
+                                            (0..sorted_stops.len().saturating_sub(1))
+                                                .filter_map(|i| {
+                                                    let left_pos = sorted_stops[i].1;
+                                                    let right_pos = sorted_stops.get(i + 1).map(|s| s.1)?;
+                                                    let midpoint_val = g.midpoints.get(i).copied().unwrap_or(0.5);
+                                                    let display_pos = left_pos + (right_pos - left_pos) * midpoint_val;
+                                                    Some((i, display_pos))
+                                                })
+                                                .collect::<Vec<_>>()
+                                        })
+                                        .unwrap_or_default()
+                                }
+                                key=|(i, _)| *i
+                                children=move |(_index, display_pos)| {
+                                    view! {
+                                        <div
+                                            class="absolute top-0 w-2.5 h-2.5 bg-white/80 cursor-ew-resize \
+                                                   border border-white/50"
+                                            style=move || {
+                                                format!(
+                                                    "left: {}%; transform: translateX(-50%) rotate(45deg); margin-top: 1px;",
+                                                    display_pos * 100.0
+                                                )
+                                            }
+                                        />
+                                    }
+                                }
+                            />
                         </div>
 
                         // Gradient bar (canvas)
