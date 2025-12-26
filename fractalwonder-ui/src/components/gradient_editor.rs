@@ -1,6 +1,6 @@
 //! Interactive gradient editor with color stops, midpoints, and zoom.
 
-use crate::rendering::colorizers::Gradient;
+use crate::rendering::colorizers::{ColorStop, Gradient};
 use crate::rendering::get_2d_context;
 use leptos::*;
 use wasm_bindgen::Clamped;
@@ -76,6 +76,41 @@ pub fn GradientEditor(
             }
         }
         drag_index.set(None);
+    };
+
+    // Handle click on gradient bar to add a stop
+    let handle_bar_click = move |e: web_sys::MouseEvent| {
+        let Some(container) = container_ref.get() else {
+            return;
+        };
+        let Some(mut grad) = gradient.get() else {
+            return;
+        };
+
+        let rect = container.get_bounding_client_rect();
+        let x = e.client_x() as f64 - rect.left();
+        let width = rect.width();
+        let position = (x / width).clamp(0.0, 1.0);
+
+        // Sample color from gradient at this position
+        let lut = grad.to_preview_lut(1000);
+        let lut_index = ((position * 999.0) as usize).min(999);
+        let color = lut[lut_index];
+
+        // Add new stop
+        grad.stops.push(ColorStop { position, color });
+        grad.stops
+            .sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap());
+
+        // Update midpoints array to match new stop count
+        let new_midpoint_count = grad.stops.len().saturating_sub(1);
+        grad.midpoints.resize(new_midpoint_count, 0.5);
+
+        // Find the index of the new stop and select it
+        let new_index = grad.stops.iter().position(|s| s.position == position);
+        selected_stop.set(new_index);
+
+        on_change.call(grad);
     };
 
     // Document-level mouse handlers for drag
@@ -239,6 +274,7 @@ pub fn GradientEditor(
                             width="320"
                             height="32"
                             style="height: 32px;"
+                            on:click=handle_bar_click
                         />
                     </div>
                 </div>
