@@ -163,7 +163,10 @@ fn apply_midpoint_bias(t: f64, midpoint: f64) -> f64 {
     }
 
     // Map midpoint to exponent: midpoint=0.5 -> exp=1, midpoint<0.5 -> exp>1, midpoint>0.5 -> exp<1
-    let exp = (0.5_f64).ln() / midpoint.clamp(0.01, 0.99).ln();
+    // Clamp midpoint more aggressively to prevent extreme exponents that cause hard edges.
+    // At midpoint=0.1, exp≈0.30; at midpoint=0.9, exp≈3.3 (smooth transitions)
+    let clamped_midpoint = midpoint.clamp(0.1, 0.9);
+    let exp = (0.5_f64).ln() / clamped_midpoint.ln();
     t.powf(exp)
 }
 

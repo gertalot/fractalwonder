@@ -21,6 +21,11 @@ pub fn GradientEditor(
     let drag_index = create_rw_signal(None::<usize>);
     let dragging_midpoint = create_rw_signal(None::<usize>);
 
+    // Preview positions during drag (UI updates without triggering expensive canvas redraws)
+    // These store the current drag position; UI reads from these while dragging
+    let drag_stop_position = create_rw_signal(None::<f64>); // Position of stop being dragged
+    let drag_midpoint_value = create_rw_signal(None::<f64>); // Value of midpoint being dragged
+
     // Canvas ref
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
 
@@ -51,7 +56,7 @@ pub fn GradientEditor(
         let Some(container) = container_ref.get() else {
             return;
         };
-        let Some(mut grad) = gradient.get() else {
+        let Some(grad) = gradient.get() else {
             return;
         };
 
@@ -60,7 +65,7 @@ pub fn GradientEditor(
         let width = rect.width();
         let click_pos = (x / width).clamp(0.0, 1.0);
 
-        // Handle midpoint dragging
+        // Handle midpoint dragging - update local preview signal only
         if let Some(midpoint_index) = dragging_midpoint.get() {
             if midpoint_index < grad.stops.len().saturating_sub(1) {
                 // Get sorted stops to find left and right positions
@@ -81,43 +86,53 @@ pub fn GradientEditor(
                 let segment_width = right_pos - left_pos;
                 if segment_width.abs() >= 0.001 {
                     let midpoint_val = ((click_pos - left_pos) / segment_width).clamp(0.05, 0.95);
-                    if midpoint_index < grad.midpoints.len() {
-                        grad.midpoints[midpoint_index] = midpoint_val;
-                        on_change.call(grad);
-                    }
+                    // Update local preview signal (no on_change - canvas doesn't redraw)
+                    drag_midpoint_value.set(Some(midpoint_val));
                 }
             }
             return;
         }
 
-        // Handle stop dragging
-        if let Some(index) = drag_index.get() {
-            if index < grad.stops.len() {
-                grad.stops[index].position = click_pos;
-                // Call on_change immediately for visual feedback during drag
-                on_change.call(grad);
-            }
+        // Handle stop dragging - update local preview signal only
+        if drag_index.get().is_some() {
+            // Update local preview signal (no on_change - canvas doesn't redraw)
+            drag_stop_position.set(Some(click_pos));
         }
     };
 
-    // Handle drag end
+    // Handle drag end - apply preview values and call on_change
     let end_drag = move |_: web_sys::MouseEvent| {
         if is_dragging.get() {
             is_dragging.set(false);
 
-            // Handle midpoint drag end
-            if dragging_midpoint.get().is_some() {
+            // Handle midpoint drag end - apply preview value
+            if let Some(midpoint_index) = dragging_midpoint.get() {
+                if let Some(midpoint_val) = drag_midpoint_value.get() {
+                    if let Some(mut grad) = gradient.get() {
+                        if midpoint_index < grad.midpoints.len() {
+                            grad.midpoints[midpoint_index] = midpoint_val;
+                            on_change.call(grad);
+                        }
+                    }
+                }
+                drag_midpoint_value.set(None);
                 dragging_midpoint.set(None);
                 return;
             }
 
-            // Handle stop drag end - sort stops by position
-            if let Some(grad) = gradient.get() {
-                let mut sorted = grad.clone();
-                sorted
-                    .stops
-                    .sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap());
-                on_change.call(sorted);
+            // Handle stop drag end - apply preview position and sort
+            if let Some(index) = drag_index.get() {
+                if let Some(position) = drag_stop_position.get() {
+                    if let Some(mut grad) = gradient.get() {
+                        if index < grad.stops.len() {
+                            grad.stops[index].position = position;
+                            grad.stops
+                                .sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap());
+                            on_change.call(grad);
+                        }
+                    }
+                }
+                drag_stop_position.set(None);
             }
         }
         drag_index.set(None);
@@ -240,7 +255,7 @@ pub fn GradientEditor(
                         <button
                             class="p-1 rounded hover:bg-white/10 text-white disabled:opacity-30 \
                                    disabled:cursor-not-allowed transition-colors"
-                            prop:disabled=move || zoom.get() <= 1.0
+                            prop:disabled=move || zoom.get() < 1.01
                             on:click=move |_| zoom.update(|z| *z = (*z / 1.2).max(1.0))
                         >
                             <ZoomOutIcon />
@@ -248,7 +263,7 @@ pub fn GradientEditor(
                         <button
                             class="p-1 rounded hover:bg-white/10 text-white disabled:opacity-30 \
                                    disabled:cursor-not-allowed transition-colors"
-                            prop:disabled=move || zoom.get() >= 10.0
+                            prop:disabled=move || zoom.get() > 9.99
                             on:click=move |_| zoom.update(|z| *z = (*z * 1.2).min(10.0))
                         >
                             <ZoomInIcon />
@@ -282,9 +297,38 @@ pub fn GradientEditor(
                                         .unwrap_or_default()
                                 }
                                 key=|(i, _, _)| *i
-                                children=move |(index, position, color)| {
+                                children=move |(index, _position, _color)| {
                                     let is_selected = move || selected_stop.get() == Some(index);
-                                    let color_hex = format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2]);
+                                    // Read position reactively: use preview signal during drag, gradient otherwise
+                                    let position = move || {
+                                        // IMPORTANT: Always call .get() on all signals to ensure Leptos tracks them
+                                        let is_dragging_this = drag_index.get() == Some(index);
+                                        let preview_pos = drag_stop_position.get();
+                                        let grad_pos = gradient
+                                            .get()
+                                            .and_then(|g| g.stops.get(index).map(|s| s.position))
+                                            .unwrap_or(0.0);
+
+                                        // If this stop is being dragged, use the preview position
+                                        if is_dragging_this {
+                                            preview_pos.unwrap_or(grad_pos)
+                                        } else {
+                                            grad_pos
+                                        }
+                                    };
+                                    let color_hex = move || {
+                                        gradient
+                                            .get()
+                                            .and_then(|g| {
+                                                g.stops.get(index).map(|s| {
+                                                    format!(
+                                                        "#{:02x}{:02x}{:02x}",
+                                                        s.color[0], s.color[1], s.color[2]
+                                                    )
+                                                })
+                                            })
+                                            .unwrap_or_else(|| "#000000".to_string())
+                                    };
 
                                     view! {
                                         <div
@@ -294,8 +338,8 @@ pub fn GradientEditor(
                                                  background-color: {}; \
                                                  border: 1px solid rgba(255, 255, 255, 0.3); \
                                                  box-shadow: {};",
-                                                position * 100.0,
-                                                color_hex,
+                                                position() * 100.0,
+                                                color_hex(),
                                                 if is_selected() {
                                                     "0 0 6px 2px rgba(255, 255, 255, 0.7)"
                                                 } else {
@@ -363,7 +407,40 @@ pub fn GradientEditor(
                                         .unwrap_or_default()
                                 }
                                 key=|(i, _)| *i
-                                children=move |(index, display_pos)| {
+                                children=move |(index, _display_pos)| {
+                                    // Read display position reactively: use preview signal during drag, gradient otherwise
+                                    let display_pos = move || {
+                                        // IMPORTANT: Always call .get() on all signals to ensure Leptos tracks them
+                                        let is_dragging_this = dragging_midpoint.get() == Some(index);
+                                        let preview_val = drag_midpoint_value.get();
+
+                                        gradient.get().map(|g| {
+                                            let mut sorted_stops: Vec<(usize, f64)> = g
+                                                .stops
+                                                .iter()
+                                                .enumerate()
+                                                .map(|(i, s)| (i, s.position))
+                                                .collect();
+                                            sorted_stops.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+                                            if index < sorted_stops.len().saturating_sub(1) {
+                                                let left_pos = sorted_stops[index].1;
+                                                let right_pos =
+                                                    sorted_stops.get(index + 1).map(|s| s.1).unwrap_or(1.0);
+                                                let grad_val = g.midpoints.get(index).copied().unwrap_or(0.5);
+                                                // Use preview value if this midpoint is being dragged
+                                                let midpoint_val = if is_dragging_this {
+                                                    preview_val.unwrap_or(grad_val)
+                                                } else {
+                                                    grad_val
+                                                };
+                                                left_pos + (right_pos - left_pos) * midpoint_val
+                                            } else {
+                                                0.5
+                                            }
+                                        }).unwrap_or(0.5)
+                                    };
+
                                     view! {
                                         <div
                                             class="absolute top-0 w-2.5 h-2.5 bg-white/80 cursor-ew-resize \
@@ -371,7 +448,7 @@ pub fn GradientEditor(
                                             style=move || {
                                                 format!(
                                                     "left: {}%; transform: translateX(-50%) rotate(45deg); margin-top: 1px;",
-                                                    display_pos * 100.0
+                                                    display_pos() * 100.0
                                                 )
                                             }
                                             on:mousedown=move |e| start_midpoint_drag(index, e)
