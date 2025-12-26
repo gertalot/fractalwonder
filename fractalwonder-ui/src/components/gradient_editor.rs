@@ -63,7 +63,8 @@ pub fn GradientEditor(
         let rect = container.get_bounding_client_rect();
         let x = e.client_x() as f64 - rect.left();
         let width = rect.width();
-        let click_pos = (x / width).clamp(0.0, 1.0);
+        // Reverse: display is flipped, so convert screen position to internal position
+        let click_pos = 1.0 - (x / width).clamp(0.0, 1.0);
 
         // Handle midpoint dragging - update local preview signal only
         if let Some(midpoint_index) = dragging_midpoint.get() {
@@ -151,7 +152,8 @@ pub fn GradientEditor(
         let rect = container.get_bounding_client_rect();
         let x = e.client_x() as f64 - rect.left();
         let width = rect.width();
-        let position = (x / width).clamp(0.0, 1.0);
+        // Reverse: display is flipped, so convert screen position to internal position
+        let position = 1.0 - (x / width).clamp(0.0, 1.0);
 
         // Sample color from gradient at this position
         let lut = grad.to_preview_lut(1000);
@@ -216,8 +218,9 @@ pub fn GradientEditor(
         let lut = grad.to_preview_lut(width);
 
         // Convert to RGBA pixels (repeat each column for full height)
+        // Reverse LUT so editor display matches fractal canvas (position 0 = right, 1 = left)
         let mut pixels = vec![0u8; width * height * 4];
-        for (x, &[r, g, b]) in lut.iter().enumerate() {
+        for (x, &[r, g, b]) in lut.iter().rev().enumerate() {
             for y in 0..height {
                 let idx = (y * width + x) * 4;
                 pixels[idx] = r;
@@ -307,7 +310,8 @@ pub fn GradientEditor(
                                 children=move |(index, _position, _color)| {
                                     let is_selected = move || selected_stop.get() == Some(index);
                                     // Read position reactively: use preview signal during drag, gradient otherwise
-                                    let position = move || {
+                                    // Display position is reversed (1-pos) to match fractal canvas
+                                    let display_position = move || {
                                         // IMPORTANT: Always call .get() on all signals to ensure Leptos tracks them
                                         let is_dragging_this = drag_index.get() == Some(index);
                                         let preview_pos = drag_stop_position.get();
@@ -317,11 +321,13 @@ pub fn GradientEditor(
                                             .unwrap_or(0.0);
 
                                         // If this stop is being dragged, use the preview position
-                                        if is_dragging_this {
+                                        let pos = if is_dragging_this {
                                             preview_pos.unwrap_or(grad_pos)
                                         } else {
                                             grad_pos
-                                        }
+                                        };
+                                        // Reverse for display
+                                        1.0 - pos
                                     };
                                     let color_hex = move || {
                                         gradient
@@ -345,7 +351,7 @@ pub fn GradientEditor(
                                                  background-color: {}; \
                                                  border: 1px solid rgba(255, 255, 255, 0.3); \
                                                  box-shadow: {};",
-                                                position() * 100.0,
+                                                display_position() * 100.0,
                                                 color_hex(),
                                                 if is_selected() {
                                                     "0 0 6px 2px rgba(255, 255, 255, 0.7)"
@@ -416,12 +422,13 @@ pub fn GradientEditor(
                                 key=|(i, _)| *i
                                 children=move |(index, _display_pos)| {
                                     // Read display position reactively: use preview signal during drag, gradient otherwise
+                                    // Display position is reversed (1-pos) to match fractal canvas
                                     let display_pos = move || {
                                         // IMPORTANT: Always call .get() on all signals to ensure Leptos tracks them
                                         let is_dragging_this = dragging_midpoint.get() == Some(index);
                                         let preview_val = drag_midpoint_value.get();
 
-                                        gradient.get().map(|g| {
+                                        let pos = gradient.get().map(|g| {
                                             let mut sorted_stops: Vec<(usize, f64)> = g
                                                 .stops
                                                 .iter()
@@ -445,7 +452,9 @@ pub fn GradientEditor(
                                             } else {
                                                 0.5
                                             }
-                                        }).unwrap_or(0.5)
+                                        }).unwrap_or(0.5);
+                                        // Reverse for display
+                                        1.0 - pos
                                     };
 
                                     view! {
