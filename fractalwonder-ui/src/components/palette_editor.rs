@@ -1,7 +1,8 @@
 //! Slide-out palette editor panel.
 
 use crate::components::{
-    CollapsibleSection, ConfirmDialog, CurveEditor, EditMode, GradientEditor, PaletteEditorState,
+    CollapsibleSection, ConfirmDialog, CurveEditor, EditMode, GradientEditor, LightingControl,
+    LightingSlider, PaletteEditorState,
 };
 use crate::rendering::colorizers::{Curve, Gradient, Palette};
 use leptos::*;
@@ -37,6 +38,7 @@ pub fn PaletteEditor(
 
     // Collapsible section state
     let palette_expanded = create_rw_signal(true);
+    let light_effects_expanded = create_rw_signal(true);
 
     // Derived: is editor visible?
     let is_visible = Signal::derive(move || state.get().is_some());
@@ -90,6 +92,13 @@ pub fn PaletteEditor(
             .unwrap_or(false)
     });
 
+    let shading_enabled = Signal::derive(move || {
+        state
+            .get()
+            .map(|s| s.working_palette.shading_enabled)
+            .unwrap_or(false)
+    });
+
     // Derived: current gradient
     let gradient_signal =
         Signal::derive(move || state.get().map(|s| s.working_palette.gradient.clone()));
@@ -115,6 +124,90 @@ pub fn PaletteEditor(
         state.update(|opt| {
             if let Some(s) = opt {
                 s.working_palette.transfer_curve = new_curve;
+            }
+        });
+    });
+
+    // Derived: falloff curve
+    let falloff_curve_signal = Signal::derive(move || {
+        state
+            .get()
+            .map(|s| s.working_palette.falloff_curve.clone())
+    });
+
+    // Callback for falloff curve changes
+    let on_falloff_curve_change = Callback::new(move |new_curve: Curve| {
+        state.update(|opt| {
+            if let Some(s) = opt {
+                s.working_palette.falloff_curve = new_curve;
+            }
+        });
+    });
+
+    // Derived: lighting parameters
+    let ambient = Signal::derive(move || {
+        state.get().map(|s| s.working_palette.lighting.ambient).unwrap_or(0.0)
+    });
+    let diffuse = Signal::derive(move || {
+        state.get().map(|s| s.working_palette.lighting.diffuse).unwrap_or(0.0)
+    });
+    let specular = Signal::derive(move || {
+        state.get().map(|s| s.working_palette.lighting.specular).unwrap_or(0.0)
+    });
+    let shininess = Signal::derive(move || {
+        state.get().map(|s| s.working_palette.lighting.shininess).unwrap_or(1.0)
+    });
+    let strength = Signal::derive(move || {
+        state.get().map(|s| s.working_palette.lighting.strength).unwrap_or(0.0)
+    });
+    let azimuth = Signal::derive(move || {
+        state.get().map(|s| s.working_palette.lighting.azimuth).unwrap_or(0.0)
+    });
+    let elevation = Signal::derive(move || {
+        state.get().map(|s| s.working_palette.lighting.elevation).unwrap_or(0.0)
+    });
+
+    // Callbacks for lighting parameters
+    let on_ambient_change = Callback::new(move |value: f64| {
+        state.update(|opt| {
+            if let Some(s) = opt {
+                s.working_palette.lighting.ambient = value;
+            }
+        });
+    });
+    let on_diffuse_change = Callback::new(move |value: f64| {
+        state.update(|opt| {
+            if let Some(s) = opt {
+                s.working_palette.lighting.diffuse = value;
+            }
+        });
+    });
+    let on_specular_change = Callback::new(move |value: f64| {
+        state.update(|opt| {
+            if let Some(s) = opt {
+                s.working_palette.lighting.specular = value;
+            }
+        });
+    });
+    let on_shininess_change = Callback::new(move |value: f64| {
+        state.update(|opt| {
+            if let Some(s) = opt {
+                s.working_palette.lighting.shininess = value;
+            }
+        });
+    });
+    let on_strength_change = Callback::new(move |value: f64| {
+        state.update(|opt| {
+            if let Some(s) = opt {
+                s.working_palette.lighting.strength = value;
+            }
+        });
+    });
+    let on_direction_change = Callback::new(move |(az, el): (f64, f64)| {
+        state.update(|opt| {
+            if let Some(s) = opt {
+                s.working_palette.lighting.azimuth = az;
+                s.working_palette.lighting.elevation = el;
             }
         });
     });
