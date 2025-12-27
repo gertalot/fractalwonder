@@ -129,11 +129,8 @@ pub fn PaletteEditor(
     });
 
     // Derived: falloff curve
-    let falloff_curve_signal = Signal::derive(move || {
-        state
-            .get()
-            .map(|s| s.working_palette.falloff_curve.clone())
-    });
+    let falloff_curve_signal =
+        Signal::derive(move || state.get().map(|s| s.working_palette.falloff_curve.clone()));
 
     // Callback for falloff curve changes
     let on_falloff_curve_change = Callback::new(move |new_curve: Curve| {
@@ -146,25 +143,46 @@ pub fn PaletteEditor(
 
     // Derived: lighting parameters
     let ambient = Signal::derive(move || {
-        state.get().map(|s| s.working_palette.lighting.ambient).unwrap_or(0.0)
+        state
+            .get()
+            .map(|s| s.working_palette.lighting.ambient)
+            .unwrap_or(0.0)
     });
     let diffuse = Signal::derive(move || {
-        state.get().map(|s| s.working_palette.lighting.diffuse).unwrap_or(0.0)
+        state
+            .get()
+            .map(|s| s.working_palette.lighting.diffuse)
+            .unwrap_or(0.0)
     });
     let specular = Signal::derive(move || {
-        state.get().map(|s| s.working_palette.lighting.specular).unwrap_or(0.0)
+        state
+            .get()
+            .map(|s| s.working_palette.lighting.specular)
+            .unwrap_or(0.0)
     });
     let shininess = Signal::derive(move || {
-        state.get().map(|s| s.working_palette.lighting.shininess).unwrap_or(1.0)
+        state
+            .get()
+            .map(|s| s.working_palette.lighting.shininess)
+            .unwrap_or(1.0)
     });
     let strength = Signal::derive(move || {
-        state.get().map(|s| s.working_palette.lighting.strength).unwrap_or(0.0)
+        state
+            .get()
+            .map(|s| s.working_palette.lighting.strength)
+            .unwrap_or(0.0)
     });
     let azimuth = Signal::derive(move || {
-        state.get().map(|s| s.working_palette.lighting.azimuth).unwrap_or(0.0)
+        state
+            .get()
+            .map(|s| s.working_palette.lighting.azimuth)
+            .unwrap_or(0.0)
     });
     let elevation = Signal::derive(move || {
-        state.get().map(|s| s.working_palette.lighting.elevation).unwrap_or(0.0)
+        state
+            .get()
+            .map(|s| s.working_palette.lighting.elevation)
+            .unwrap_or(0.0)
     });
 
     // Callbacks for lighting parameters
@@ -494,16 +512,110 @@ pub fn PaletteEditor(
                     </div>
 
                     // Gradient editor
+                    <div class="text-white/50 text-xs px-1">"Color Gradient"</div>
                     <GradientEditor
                         gradient=gradient_signal
                         on_change=on_gradient_change
                     />
 
                     // Transfer curve editor
+                    <div class="text-white/50 text-xs px-1">"Transfer Curve"</div>
                     <CurveEditor
                         curve=transfer_curve_signal
                         on_change=on_transfer_curve_change
                     />
+                </CollapsibleSection>
+
+                // Light Effects Section
+                <CollapsibleSection title="Light Effects" expanded=light_effects_expanded>
+                    // 3D Lighting toggle
+                    <div class="space-y-1">
+                        <label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/5 \
+                                      cursor-pointer transition-colors">
+                            <input
+                                type="checkbox"
+                                class="w-3.5 h-3.5 rounded accent-white"
+                                prop:checked=move || shading_enabled.get()
+                                on:change=move |ev| {
+                                    let checked = event_target_checked(&ev);
+                                    state.update(|opt| {
+                                        if let Some(s) = opt {
+                                            s.working_palette.shading_enabled = checked;
+                                        }
+                                    });
+                                }
+                            />
+                            <span class="text-white text-sm">"3D Lighting"</span>
+                        </label>
+                    </div>
+
+                    // Conditional content when 3D enabled
+                    <Show when=move || shading_enabled.get()>
+                        // Falloff Curve
+                        <div class="text-white/50 text-xs px-1">"3D Falloff Curve"</div>
+                        <CurveEditor
+                            curve=falloff_curve_signal
+                            on_change=on_falloff_curve_change
+                        />
+
+                        // Lighting Parameters
+                        <div class="text-white/50 text-xs px-1">"Lighting Parameters"</div>
+                        <div class="space-y-2">
+                            <LightingSlider
+                                label="Ambient"
+                                value=ambient
+                                on_change=on_ambient_change
+                                min=0.0
+                                max=1.0
+                                step=0.01
+                                precision=2
+                            />
+                            <LightingSlider
+                                label="Diffuse"
+                                value=diffuse
+                                on_change=on_diffuse_change
+                                min=0.0
+                                max=1.0
+                                step=0.01
+                                precision=2
+                            />
+                            <LightingSlider
+                                label="Specular"
+                                value=specular
+                                on_change=on_specular_change
+                                min=0.0
+                                max=1.0
+                                step=0.01
+                                precision=2
+                            />
+                            <LightingSlider
+                                label="Shininess"
+                                value=shininess
+                                on_change=on_shininess_change
+                                min=1.0
+                                max=128.0
+                                step=1.0
+                                precision=0
+                            />
+                            <LightingSlider
+                                label="Strength"
+                                value=strength
+                                on_change=on_strength_change
+                                min=0.0
+                                max=2.0
+                                step=0.01
+                                precision=2
+                            />
+                        </div>
+
+                        // Light Direction
+                        <div class="text-white/50 text-xs px-1">"Light Direction"</div>
+                        <LightingControl
+                            azimuth=azimuth
+                            elevation=elevation
+                            on_change=on_direction_change
+                        />
+                    </Show>
                 </CollapsibleSection>
             </div>
         </div>
