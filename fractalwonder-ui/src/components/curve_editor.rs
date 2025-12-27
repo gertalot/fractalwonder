@@ -115,7 +115,6 @@ pub fn CurveEditor(
     view! {
         <Show when=move || curve.get().is_some()>
             <div class="bg-white/5 border border-white/10 rounded-lg p-4 space-y-2">
-                <div class="text-white/50 text-xs mb-2">"Transfer Curve"</div>
                 <canvas
                     node_ref=canvas_ref
                     width=size
