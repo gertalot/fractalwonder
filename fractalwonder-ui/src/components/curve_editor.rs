@@ -3,6 +3,7 @@
 use crate::rendering::colorizers::{Curve, CurvePoint};
 use crate::rendering::get_2d_context;
 use leptos::*;
+use wasm_bindgen::closure::Closure;
 use web_sys::HtmlCanvasElement;
 
 /// Interactive curve editor component.
@@ -40,8 +41,12 @@ pub fn CurveEditor(
         draw_curve(&canvas, &crv, size, hover_index.get());
     });
 
-    // Document-level mouse handlers for drag
-    create_effect(move |_| {
+    // Document-level mouse handlers for drag with proper cleanup
+    type MouseClosure = Closure<dyn Fn(web_sys::MouseEvent)>;
+    let mousemove_handler = store_value(None::<MouseClosure>);
+    let mouseup_handler = store_value(None::<MouseClosure>);
+
+    {
         use wasm_bindgen::closure::Closure;
         use wasm_bindgen::JsCast;
 
@@ -53,15 +58,27 @@ pub fn CurveEditor(
 
         let mousemove_closure =
             Closure::<dyn Fn(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
-                if !is_dragging.get() {
+                // Guard against disposed signals by using try_get (returns None if disposed)
+                let Some(dragging) = is_dragging.try_get() else {
+                    return;
+                };
+                if !dragging {
                     return;
                 }
-                let Some(idx) = drag_index.get() else { return };
+                let Some(Some(idx)) = drag_index.try_get() else {
+                    return;
+                };
                 let Some(canvas) = canvas_ref_copy.get() else {
                     return;
                 };
                 // Use drag_curve if available, otherwise start from the base curve
-                let Some(mut crv) = drag_curve.get().or_else(|| curve.get()) else {
+                let Some(drag_crv) = drag_curve.try_get() else {
+                    return;
+                };
+                let Some(base_crv) = curve.try_get() else {
+                    return;
+                };
+                let Some(mut crv) = drag_crv.or(base_crv) else {
                     return;
                 };
 
@@ -81,24 +98,28 @@ pub fn CurveEditor(
                         .iter()
                         .position(|p| p.x == target_point.x && p.y == target_point.y)
                     {
-                        drag_index.set(Some(new_idx));
+                        drag_index.try_set(Some(new_idx));
                     }
                     // Update local drag state for visual feedback (don't trigger fractal re-render)
-                    drag_curve.set(Some(crv));
+                    drag_curve.try_set(Some(crv));
                 }
             });
 
         let mouseup_closure =
             Closure::<dyn Fn(web_sys::MouseEvent)>::new(move |_: web_sys::MouseEvent| {
+                // Guard against disposed signals by using try_get (returns None if disposed)
+                let Some(dragging) = is_dragging.try_get() else {
+                    return;
+                };
                 // On mouse release, commit the drag curve to trigger fractal re-render
-                if is_dragging.get() {
-                    if let Some(crv) = drag_curve.get() {
+                if dragging {
+                    if let Some(Some(crv)) = drag_curve.try_get() {
                         on_change.call(crv);
                     }
                 }
-                is_dragging.set(false);
-                drag_index.set(None);
-                drag_curve.set(None);
+                is_dragging.try_set(false);
+                drag_index.try_set(None);
+                drag_curve.try_set(None);
             });
 
         let _ = document.add_event_listener_with_callback(
@@ -108,8 +129,35 @@ pub fn CurveEditor(
         let _ = document
             .add_event_listener_with_callback("mouseup", mouseup_closure.as_ref().unchecked_ref());
 
-        mousemove_closure.forget();
-        mouseup_closure.forget();
+        mousemove_handler.set_value(Some(mousemove_closure));
+        mouseup_handler.set_value(Some(mouseup_closure));
+    }
+
+    // Cleanup event listeners when component is disposed
+    on_cleanup(move || {
+        use wasm_bindgen::JsCast;
+        if let Some(window) = web_sys::window() {
+            if let Some(document) = window.document() {
+                mousemove_handler.with_value(|opt| {
+                    if let Some(handler) = opt {
+                        let _ = document.remove_event_listener_with_callback(
+                            "mousemove",
+                            handler.as_ref().unchecked_ref(),
+                        );
+                    }
+                });
+                mouseup_handler.with_value(|opt| {
+                    if let Some(handler) = opt {
+                        let _ = document.remove_event_listener_with_callback(
+                            "mouseup",
+                            handler.as_ref().unchecked_ref(),
+                        );
+                    }
+                });
+            }
+        }
+        mousemove_handler.set_value(None);
+        mouseup_handler.set_value(None);
     });
 
     view! {

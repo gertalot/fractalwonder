@@ -117,7 +117,6 @@ pub fn UIPanel(
             )
             on:mouseenter=move |_| set_is_mouse_over.set(true)
             on:mouseleave=move |_| set_is_mouse_over.set(false)
-            on:click=move |_| close_all_menus()
         >
             <div class="flex items-center justify-between px-4 py-3 bg-black/50 backdrop-blur-sm">
                 // Left section: info button, home button, and menus

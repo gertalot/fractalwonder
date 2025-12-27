@@ -47,21 +47,26 @@ pub fn LightingControl(
         on_change.call((new_azimuth, new_elevation));
     };
 
-    // Document-level mouse handlers
-    create_effect(move |_| {
+    // Document-level mouse handlers with proper cleanup
+    type MouseClosure = Closure<dyn Fn(web_sys::MouseEvent)>;
+    let mousemove_handler = store_value(None::<MouseClosure>);
+    let mouseup_handler = store_value(None::<MouseClosure>);
+
+    {
         let window = web_sys::window().expect("window");
         let document = window.document().expect("document");
 
         let mousemove_closure =
             Closure::<dyn Fn(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
-                if is_dragging.get() {
+                // Guard against disposed signals
+                if is_dragging.try_get().unwrap_or(false) {
                     calculate_from_mouse(e.client_x(), e.client_y());
                 }
             });
 
         let mouseup_closure =
             Closure::<dyn Fn(web_sys::MouseEvent)>::new(move |_: web_sys::MouseEvent| {
-                is_dragging.set(false);
+                let _ = is_dragging.try_set(false);
             });
 
         let _ = document.add_event_listener_with_callback(
@@ -71,8 +76,34 @@ pub fn LightingControl(
         let _ = document
             .add_event_listener_with_callback("mouseup", mouseup_closure.as_ref().unchecked_ref());
 
-        mousemove_closure.forget();
-        mouseup_closure.forget();
+        mousemove_handler.set_value(Some(mousemove_closure));
+        mouseup_handler.set_value(Some(mouseup_closure));
+    }
+
+    // Cleanup event listeners when component is disposed
+    on_cleanup(move || {
+        if let Some(window) = web_sys::window() {
+            if let Some(document) = window.document() {
+                mousemove_handler.with_value(|opt| {
+                    if let Some(handler) = opt {
+                        let _ = document.remove_event_listener_with_callback(
+                            "mousemove",
+                            handler.as_ref().unchecked_ref(),
+                        );
+                    }
+                });
+                mouseup_handler.with_value(|opt| {
+                    if let Some(handler) = opt {
+                        let _ = document.remove_event_listener_with_callback(
+                            "mouseup",
+                            handler.as_ref().unchecked_ref(),
+                        );
+                    }
+                });
+            }
+        }
+        mousemove_handler.set_value(None);
+        mouseup_handler.set_value(None);
     });
 
     // Convert radians to position percentage

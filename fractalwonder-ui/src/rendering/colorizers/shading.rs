@@ -12,11 +12,18 @@ fn is_interior(data: &ComputeData) -> bool {
 }
 
 /// Compute light direction vector from azimuth and elevation angles.
+///
+/// Azimuth convention: 0 = light from top, increases clockwise (matching UI control).
+/// The formula converts from UI azimuth to the math coordinate system used by normals
+/// (complex plane: +X right, +Y up).
 fn light_direction(azimuth: f64, elevation: f64) -> (f64, f64, f64) {
     let cos_elev = elevation.cos();
+    // Convert UI azimuth (0=top, clockwise) to light direction vector.
+    // UI: 0=top, π/2=right, π=bottom, 3π/2=left
+    // Complex plane normals use: +X=right, +Y=up
     (
-        azimuth.cos() * cos_elev,
         azimuth.sin() * cos_elev,
+        -azimuth.cos() * cos_elev,
         elevation.sin(),
     )
 }
@@ -159,19 +166,32 @@ mod tests {
     }
 
     #[test]
-    fn light_direction_horizontal() {
+    fn light_direction_from_top() {
+        // Azimuth=0 means light from top
+        // sin(0)=0, -cos(0)=-1 → (0, -1, 0)
         let (x, y, z) = light_direction(0.0, 0.0);
-        assert!((x - 1.0).abs() < 0.01);
-        assert!(y.abs() < 0.01);
-        assert!(z.abs() < 0.01);
+        assert!(x.abs() < 0.01, "x={x}");
+        assert!((y + 1.0).abs() < 0.01, "y={y}");
+        assert!(z.abs() < 0.01, "z={z}");
+    }
+
+    #[test]
+    fn light_direction_from_right() {
+        // Azimuth=π/2 means light from right
+        // sin(π/2)=1, -cos(π/2)=0 → (1, 0, 0)
+        let (x, y, z) = light_direction(std::f64::consts::FRAC_PI_2, 0.0);
+        assert!((x - 1.0).abs() < 0.01, "x={x}");
+        assert!(y.abs() < 0.01, "y={y}");
+        assert!(z.abs() < 0.01, "z={z}");
     }
 
     #[test]
     fn light_direction_overhead() {
+        // Elevation=π/2 means light directly overhead → direction pointing +Z
         let (x, y, z) = light_direction(0.0, std::f64::consts::FRAC_PI_2);
-        assert!(x.abs() < 0.01);
-        assert!(y.abs() < 0.01);
-        assert!((z - 1.0).abs() < 0.01);
+        assert!(x.abs() < 0.01, "x={x}");
+        assert!(y.abs() < 0.01, "y={y}");
+        assert!((z - 1.0).abs() < 0.01, "z={z}");
     }
 
     #[test]
