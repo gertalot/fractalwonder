@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fractal Wonder</title>
+    <link rel="stylesheet" href="/fractalwonder/input-59a4004cb811fef.css"/>
+    
+<script type="module">
+import init, * as bindings from '/fractalwonder/fractalwonder-ui-f6e072eba2d31534.js';
+const wasm = await init({ module_or_path: '/fractalwonder/fractalwonder-ui-f6e072eba2d31534_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+    
+    
+    
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+    </style>
+  <link rel="modulepreload" href="/fractalwonder/fractalwonder-ui-f6e072eba2d31534.js" crossorigin="anonymous"><link rel="preload" href="/fractalwonder/fractalwonder-ui-f6e072eba2d31534_bg.wasm" crossorigin="anonymous" as="fetch" type="application/wasm"></head>
+  <body></body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "fractalwonder-compute",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "fractalwonder_compute_bg.wasm",
+    "fractalwonder_compute.js",
+    "fractalwonder_compute.d.ts"
+  ],
+  "main": "fractalwonder_compute.js",
+  "types": "fractalwonder_compute.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
