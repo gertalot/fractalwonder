@@ -7,6 +7,7 @@ mod gradient_editor;
 mod home_button;
 mod info_menu;
 mod interactive_canvas;
+mod lighting_slider;
 mod menu;
 mod options_menu;
 mod palette_editor;
@@ -25,6 +26,8 @@ pub use gradient_editor::GradientEditor;
 pub use home_button::HomeButton;
 pub use info_menu::InfoMenu;
 pub use interactive_canvas::InteractiveCanvas;
+#[allow(unused_imports)]
+pub use lighting_slider::LightingSlider;
 pub use menu::{Menu, MenuItem, MenuSection, StepperMenuItem};
 pub use options_menu::OptionsMenu;
 pub use palette_editor::PaletteEditor;
