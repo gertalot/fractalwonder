@@ -48,16 +48,15 @@ impl MandelbrotRenderer {
             // Escape check: |z|^2 > 65536
             let z_norm_sq = zx_sq.add(&zy_sq);
             if z_norm_sq.gt(&escape_radius_sq) {
+                // No derivative tracking in simple Mandelbrot renderer
                 return MandelbrotData {
                     iterations: i,
                     max_iterations: self.max_iterations,
                     escaped: true,
                     glitched: false,
                     final_z_norm_sq: z_norm_sq.to_f64() as f32,
-                    final_z_re: 0.0,
-                    final_z_im: 0.0,
-                    final_derivative_re: 0.0,
-                    final_derivative_im: 0.0,
+                    surface_normal_re: 0.0,
+                    surface_normal_im: 0.0,
                 };
             }
 
@@ -70,16 +69,15 @@ impl MandelbrotRenderer {
             zy = new_zy;
         }
 
+        // Interior point - no surface normal
         MandelbrotData {
             iterations: self.max_iterations,
             max_iterations: self.max_iterations,
             escaped: false,
             glitched: false,
             final_z_norm_sq: 0.0,
-            final_z_re: 0.0,
-            final_z_im: 0.0,
-            final_derivative_re: 0.0,
-            final_derivative_im: 0.0,
+            surface_normal_re: 0.0,
+            surface_normal_im: 0.0,
         }
     }
 }

@@ -275,12 +275,11 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             dc_max,
             bla_enabled,
         } => {
-            // BLA only helps when dc_max is very small (deep zoom, HDRFloat path).
-            // At f64-compatible zoom levels (dc_max > ~1e-300), the BLA validity
-            // radius shrinks too fast during merging to skip iterations effectively.
-            // Threshold: dc_max < 1e-300 means we're in HDRFloat territory.
+            // BLA helps at deep zoom where iteration counts are high.
+            // Phil Thompson enables BLA at scale > 1e25 (dc_max < ~1e-25).
+            // Reference: https://philthompson.me/2023/Faster-Mandelbrot-Set-Rendering-with-BLA-Bivariate-Linear-Approximation.html
             let dc_max_log2 = dc_max.log2();
-            let bla_useful = dc_max_log2 < -900.0; // Roughly 10^-270
+            let bla_useful = dc_max_log2 < -80.0; // Roughly 10^-25 (scale > 1e25)
 
             let bla_table = if bla_enabled && bla_useful {
                 let ref_orbit = ReferenceOrbit {

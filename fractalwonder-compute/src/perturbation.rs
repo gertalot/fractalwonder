@@ -5,14 +5,28 @@
 
 use fractalwonder_core::{BigFloat, HDRComplex, HDRFloat, MandelbrotData};
 
-/// Sanitize f32 value: replace infinity/NaN with 0.0 to ensure JSON serialization succeeds.
+/// Compute normalized z/ρ direction for 3D lighting.
+/// Returns (re, im) of the unit vector, or (0, 0) if degenerate.
+/// This works at any zoom level since we normalize to a unit vector.
 #[inline]
-fn sanitize_f32(v: f32) -> f32 {
-    if v.is_finite() {
-        v
-    } else {
-        0.0
+fn compute_surface_normal_direction(z_re: f64, z_im: f64, rho_re: f64, rho_im: f64) -> (f32, f32) {
+    // u = z / ρ (complex division)
+    // u = z * conj(ρ) / |ρ|²
+    let rho_norm_sq = rho_re * rho_re + rho_im * rho_im;
+    if !rho_norm_sq.is_finite() || rho_norm_sq == 0.0 {
+        return (0.0, 0.0);
     }
+
+    let u_re = (z_re * rho_re + z_im * rho_im) / rho_norm_sq;
+    let u_im = (z_im * rho_re - z_re * rho_im) / rho_norm_sq;
+
+    // Normalize to unit vector
+    let u_norm = (u_re * u_re + u_im * u_im).sqrt();
+    if !u_norm.is_finite() || u_norm == 0.0 {
+        return (0.0, 0.0);
+    }
+
+    ((u_re / u_norm) as f32, (u_im / u_norm) as f32)
 }
 
 /// A pre-computed reference orbit for perturbation rendering.
@@ -110,10 +124,8 @@ pub fn compute_pixel_perturbation_hdr_bla(
             escaped: false,
             glitched: true,
             final_z_norm_sq: 0.0,
-            final_z_re: 0.0,
-            final_z_im: 0.0,
-            final_derivative_re: 0.0,
-            final_derivative_im: 0.0,
+            surface_normal_re: 0.0,
+            surface_normal_im: 0.0,
         };
     }
 
@@ -143,16 +155,20 @@ pub fn compute_pixel_perturbation_hdr_bla(
 
         // 1. Escape check
         if z_mag_sq > 65536.0 {
+            let (sn_re, sn_im) = compute_surface_normal_direction(
+                z_re.to_f64(),
+                z_im.to_f64(),
+                rho_re.to_f64(),
+                rho_im.to_f64(),
+            );
             return MandelbrotData {
                 iterations: n,
                 max_iterations,
                 escaped: true,
                 glitched,
                 final_z_norm_sq: z_mag_sq as f32,
-                final_z_re: z_re.to_f64() as f32,
-                final_z_im: z_im.to_f64() as f32,
-                final_derivative_re: sanitize_f32(rho_re.to_f64() as f32),
-                final_derivative_im: sanitize_f32(rho_im.to_f64() as f32),
+                surface_normal_re: sn_re,
+                surface_normal_im: sn_im,
             };
         }
 
@@ -269,16 +285,15 @@ pub fn compute_pixel_perturbation_hdr_bla(
         }
     }
 
+    // Interior point - no surface normal needed
     MandelbrotData {
         iterations: max_iterations,
         max_iterations,
         escaped: false,
         glitched,
         final_z_norm_sq: 0.0,
-        final_z_re: 0.0,
-        final_z_im: 0.0,
-        final_derivative_re: 0.0,
-        final_derivative_im: 0.0,
+        surface_normal_re: 0.0,
+        surface_normal_im: 0.0,
     }
 }
 
@@ -303,10 +318,8 @@ pub fn compute_pixel_perturbation<D: ComplexDelta>(
             escaped: false,
             glitched: true,
             final_z_norm_sq: 0.0,
-            final_z_re: 0.0,
-            final_z_im: 0.0,
-            final_derivative_re: 0.0,
-            final_derivative_im: 0.0,
+            surface_normal_re: 0.0,
+            surface_normal_im: 0.0,
         };
     }
 
@@ -344,16 +357,15 @@ pub fn compute_pixel_perturbation<D: ComplexDelta>(
         if z_norm_sq > 65536.0 {
             let (z_re, z_im) = z.to_f64_pair();
             let (rho_re, rho_im) = rho.to_f64_pair();
+            let (sn_re, sn_im) = compute_surface_normal_direction(z_re, z_im, rho_re, rho_im);
             return MandelbrotData {
                 iterations: n,
                 max_iterations,
                 escaped: true,
                 glitched,
                 final_z_norm_sq: z_norm_sq as f32,
-                final_z_re: z_re as f32,
-                final_z_im: z_im as f32,
-                final_derivative_re: sanitize_f32(rho_re as f32),
-                final_derivative_im: sanitize_f32(rho_im as f32),
+                surface_normal_re: sn_re,
+                surface_normal_im: sn_im,
             };
         }
 
@@ -388,16 +400,15 @@ pub fn compute_pixel_perturbation<D: ComplexDelta>(
         n += 1;
     }
 
+    // Interior point - no surface normal needed
     MandelbrotData {
         iterations: max_iterations,
         max_iterations,
         escaped: false,
         glitched,
         final_z_norm_sq: 0.0,
-        final_z_re: 0.0,
-        final_z_im: 0.0,
-        final_derivative_re: 0.0,
-        final_derivative_im: 0.0,
+        surface_normal_re: 0.0,
+        surface_normal_im: 0.0,
     }
 }
 

@@ -174,7 +174,7 @@ impl ProgressiveGpuRenderer {
             final_der_im_data,
         ) = self.read_results(row_set_pixel_count as usize).await?;
 
-        // Convert to ComputeData
+        // Convert to ComputeData with normalized surface direction
         let data: Vec<ComputeData> = iterations
             .iter()
             .zip(glitch_data.iter())
@@ -185,16 +185,26 @@ impl ProgressiveGpuRenderer {
             .zip(final_der_im_data.iter())
             .map(
                 |((((((iter, glitch), z_sq), z_re), z_im), der_re), der_im)| {
+                    let escaped = *iter < max_iterations;
+                    // Compute normalized surface direction for 3D lighting
+                    let (sn_re, sn_im) = if escaped {
+                        Self::compute_surface_normal_direction(
+                            *z_re as f64,
+                            *z_im as f64,
+                            *der_re as f64,
+                            *der_im as f64,
+                        )
+                    } else {
+                        (0.0, 0.0)
+                    };
                     ComputeData::Mandelbrot(MandelbrotData {
                         iterations: *iter,
                         max_iterations,
-                        escaped: *iter < max_iterations,
+                        escaped,
                         glitched: *glitch != 0,
                         final_z_norm_sq: *z_sq,
-                        final_z_re: *z_re,
-                        final_z_im: *z_im,
-                        final_derivative_re: *der_re,
-                        final_derivative_im: *der_im,
+                        surface_normal_re: sn_re,
+                        surface_normal_im: sn_im,
                     })
                 },
             )
@@ -560,6 +570,32 @@ impl ProgressiveGpuRenderer {
             final_der_re_data,
             final_der_im_data,
         ))
+    }
+
+    /// Compute normalized z/ρ direction for 3D lighting.
+    /// Returns (re, im) of the unit vector, or (0, 0) if degenerate.
+    fn compute_surface_normal_direction(
+        z_re: f64,
+        z_im: f64,
+        rho_re: f64,
+        rho_im: f64,
+    ) -> (f32, f32) {
+        // u = z / ρ (complex division)
+        let rho_norm_sq = rho_re * rho_re + rho_im * rho_im;
+        if !rho_norm_sq.is_finite() || rho_norm_sq == 0.0 {
+            return (0.0, 0.0);
+        }
+
+        let u_re = (z_re * rho_re + z_im * rho_im) / rho_norm_sq;
+        let u_im = (z_im * rho_re - z_re * rho_im) / rho_norm_sq;
+
+        // Normalize to unit vector
+        let u_norm = (u_re * u_re + u_im * u_im).sqrt();
+        if !u_norm.is_finite() || u_norm == 0.0 {
+            return (0.0, 0.0);
+        }
+
+        ((u_re / u_norm) as f32, (u_im / u_norm) as f32)
     }
 
     #[cfg(target_arch = "wasm32")]

@@ -28,34 +28,20 @@ fn light_direction(azimuth: f64, elevation: f64) -> (f64, f64, f64) {
     )
 }
 
-/// Compute surface normal from z and derivative at escape.
-/// Returns (nx, ny, nz) normalized vector.
+/// Compute 3D surface normal from pre-computed normalized direction.
+/// The direction is already normalized to a unit vector in the 2D complex plane.
+/// Returns (nx, ny, nz) normalized 3D vector.
 fn compute_normal(m: &MandelbrotData) -> Option<(f64, f64, f64)> {
-    let z_re = m.final_z_re as f64;
-    let z_im = m.final_z_im as f64;
-    let rho_re = m.final_derivative_re as f64;
-    let rho_im = m.final_derivative_im as f64;
+    let u_re = m.surface_normal_re as f64;
+    let u_im = m.surface_normal_im as f64;
 
-    // u = z / ρ (complex division)
-    let rho_norm_sq = rho_re * rho_re + rho_im * rho_im;
-    if rho_norm_sq < 1e-20 {
-        return None; // Degenerate case
-    }
-
-    // z / ρ = (z_re + i*z_im) / (rho_re + i*rho_im)
-    //       = (z_re*rho_re + z_im*rho_im + i*(z_im*rho_re - z_re*rho_im)) / |ρ|²
-    let u_re = (z_re * rho_re + z_im * rho_im) / rho_norm_sq;
-    let u_im = (z_im * rho_re - z_re * rho_im) / rho_norm_sq;
-
-    // Normalize u to unit vector in 2D
-    let u_norm = (u_re * u_re + u_im * u_im).sqrt();
-    if u_norm < 1e-20 {
+    // Check for degenerate case (interior points or failed computation)
+    if u_re == 0.0 && u_im == 0.0 {
         return None;
     }
-    let u_re = u_re / u_norm;
-    let u_im = u_im / u_norm;
 
     // 3D normal: (u_re, u_im, 1) normalized
+    // u_re and u_im are already normalized to [-1, 1] so this is always valid
     let n_len = (u_re * u_re + u_im * u_im + 1.0).sqrt();
     Some((u_re / n_len, u_im / n_len, 1.0 / n_len))
 }
@@ -196,16 +182,15 @@ mod tests {
 
     #[test]
     fn compute_normal_valid() {
+        // Pre-computed normalized direction (unit vector in 2D)
         let m = MandelbrotData {
             iterations: 10,
             max_iterations: 100,
             escaped: true,
             glitched: false,
             final_z_norm_sq: 100000.0,
-            final_z_re: 100.0,
-            final_z_im: 50.0,
-            final_derivative_re: 10.0,
-            final_derivative_im: 5.0,
+            surface_normal_re: 0.894, // Approximate unit vector
+            surface_normal_im: 0.447,
         };
         let normal = compute_normal(&m);
         assert!(normal.is_some());

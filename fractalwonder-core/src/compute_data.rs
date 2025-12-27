@@ -51,18 +51,15 @@ pub struct MandelbrotData {
     /// |z|² at escape for smooth iteration coloring. Interior points store 0.0.
     #[serde(default)]
     pub final_z_norm_sq: f32,
-    /// Real part of z at escape (for derivative-based lighting)
+    /// Pre-computed normalized surface direction for 3D lighting (real component).
+    /// This is the normalized z/ρ direction, always in [-1, 1].
+    /// Computed at render time to avoid f32 overflow at deep zooms.
     #[serde(default)]
-    pub final_z_re: f32,
-    /// Imaginary part of z at escape (for derivative-based lighting)
+    pub surface_normal_re: f32,
+    /// Pre-computed normalized surface direction for 3D lighting (imaginary component).
+    /// This is the normalized z/ρ direction, always in [-1, 1].
     #[serde(default)]
-    pub final_z_im: f32,
-    /// Real part of derivative ρ = dz/dc at escape
-    #[serde(default)]
-    pub final_derivative_re: f32,
-    /// Imaginary part of derivative ρ = dz/dc at escape
-    #[serde(default)]
-    pub final_derivative_im: f32,
+    pub surface_normal_im: f32,
 }
 
 impl Default for MandelbrotData {
@@ -73,10 +70,8 @@ impl Default for MandelbrotData {
             escaped: false,
             glitched: false,
             final_z_norm_sq: 0.0,
-            final_z_re: 0.0,
-            final_z_im: 0.0,
-            final_derivative_re: 0.0,
-            final_derivative_im: 0.0,
+            surface_normal_re: 0.0,
+            surface_normal_im: 0.0,
         }
     }
 }
