@@ -1,7 +1,9 @@
 //! Circular light direction control for azimuth and elevation.
 
 use leptos::*;
-use std::f64::consts::{FRAC_PI_2, PI};
+use std::f64::consts::{FRAC_PI_2, PI, TAU};
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
 
 /// Circular picker for light direction.
 ///
@@ -16,19 +18,69 @@ pub fn LightingControl(
     on_change: Callback<(f64, f64)>,
 ) -> impl IntoView {
     let circle_ref = create_node_ref::<leptos::html::Div>();
+    let is_dragging = create_rw_signal(false);
 
-    // Suppress unused warnings until drag interaction is added in Task 3
-    let _ = &on_change;
-    let _ = &circle_ref;
+    // Calculate azimuth/elevation from mouse position
+    let calculate_from_mouse = move |client_x: i32, client_y: i32| {
+        let Some(circle) = circle_ref.get() else {
+            return;
+        };
+        let rect = circle.get_bounding_client_rect();
+
+        let center_x = rect.left() + rect.width() / 2.0;
+        let center_y = rect.top() + rect.height() / 2.0;
+        let radius = rect.width() / 2.0;
+
+        let dx = (client_x as f64 - center_x) / radius;
+        let dy = (client_y as f64 - center_y) / radius;
+
+        // Azimuth: atan2 + 90° offset (so 0 = top)
+        let mut new_azimuth = dy.atan2(dx) + FRAC_PI_2;
+        if new_azimuth < 0.0 {
+            new_azimuth += TAU;
+        }
+
+        // Elevation: center = PI/2, edge = 0
+        let distance = (dx * dx + dy * dy).sqrt().min(1.0);
+        let new_elevation = FRAC_PI_2 * (1.0 - distance);
+
+        on_change.call((new_azimuth, new_elevation));
+    };
+
+    // Document-level mouse handlers
+    create_effect(move |_| {
+        let window = web_sys::window().expect("window");
+        let document = window.document().expect("document");
+
+        let mousemove_closure =
+            Closure::<dyn Fn(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
+                if is_dragging.get() {
+                    calculate_from_mouse(e.client_x(), e.client_y());
+                }
+            });
+
+        let mouseup_closure =
+            Closure::<dyn Fn(web_sys::MouseEvent)>::new(move |_: web_sys::MouseEvent| {
+                is_dragging.set(false);
+            });
+
+        let _ = document.add_event_listener_with_callback(
+            "mousemove",
+            mousemove_closure.as_ref().unchecked_ref(),
+        );
+        let _ = document
+            .add_event_listener_with_callback("mouseup", mouseup_closure.as_ref().unchecked_ref());
+
+        mousemove_closure.forget();
+        mouseup_closure.forget();
+    });
 
     // Convert radians to position percentage
     let position = Signal::derive(move || {
         let az = azimuth.get();
         let el = elevation.get();
 
-        // Angle from top, clockwise
         let angle = az - FRAC_PI_2;
-        // Radius: center = 0%, edge = 50%
         let radius_pct = (1.0 - el / FRAC_PI_2) * 50.0;
 
         let x = 50.0 + radius_pct * angle.cos();
@@ -45,6 +97,11 @@ pub fn LightingControl(
             <div
                 node_ref=circle_ref
                 class="relative w-full aspect-square bg-white/5 rounded-full border border-white/20 cursor-crosshair"
+                on:mousedown=move |e| {
+                    e.prevent_default();
+                    is_dragging.set(true);
+                    calculate_from_mouse(e.client_x(), e.client_y());
+                }
             >
                 // Center dot
                 <div class="absolute top-1/2 left-1/2 w-2 h-2 bg-white/30 rounded-full -translate-x-1/2 -translate-y-1/2" />
