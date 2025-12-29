@@ -134,7 +134,19 @@ pub fn compute_pixel_perturbation_hdr_bla(
 
     let mut n = 0u32;
 
+    // Safety counter to prevent infinite loops from repeated rebasing.
+    // Rebasing doesn't increment n, so without this check, pathological
+    // cases (e.g., center tiles at extreme zoom) could loop forever.
+    // GPU shader has equivalent protection via max_loops.
+    let mut loop_count: u32 = 0;
+    let max_loops = max_iterations.saturating_mul(4);
+
     while n < max_iterations {
+        loop_count += 1;
+        if loop_count > max_loops {
+            glitched = true;
+            break;
+        }
         // Reference exhaustion detection: m exceeded orbit length
         if reference_escaped && m >= orbit_len {
             glitched = true;
@@ -334,7 +346,19 @@ pub fn compute_pixel_perturbation<D: ComplexDelta>(
     let mut n: u32 = 0;
     let mut glitched = false;
 
+    // Safety counter to prevent infinite loops from repeated rebasing.
+    // Rebasing doesn't increment n, so without this check, pathological
+    // cases (e.g., center tiles at extreme zoom) could loop forever.
+    // GPU shader has equivalent protection via max_loops.
+    let mut loop_count: u32 = 0;
+    let max_loops = max_iterations.saturating_mul(4);
+
     while n < max_iterations {
+        loop_count += 1;
+        if loop_count > max_loops {
+            glitched = true;
+            break;
+        }
         // Glitch if we've run past a finite orbit
         if reference_escaped && m >= orbit_len {
             glitched = true;

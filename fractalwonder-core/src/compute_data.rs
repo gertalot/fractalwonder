@@ -89,7 +89,11 @@ impl MandelbrotData {
     /// Replace NaN or Infinity with a default value to ensure JSON serialization works.
     #[inline]
     fn sanitize_f32(value: f32, default: f32) -> f32 {
-        if value.is_finite() { value } else { default }
+        if value.is_finite() {
+            value
+        } else {
+            default
+        }
     }
 }
 

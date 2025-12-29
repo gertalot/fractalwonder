@@ -1,4 +1,4 @@
-use crate::{ComputeData, PixelRect};
+use crate::{ComputeData, HDRFloat, PixelRect};
 use serde::{Deserialize, Serialize};
 
 /// Messages sent from main thread to worker.
@@ -36,8 +36,8 @@ pub enum MainToWorker {
         orbit: Vec<(f64, f64)>,
         derivative: Vec<(f64, f64)>,
         escaped_at: Option<u32>,
-        /// Maximum |δc| for any pixel in viewport (for BLA table construction)
-        dc_max: f64,
+        /// Maximum |δc| for any pixel in viewport (HDRFloat to avoid underflow at extreme zoom)
+        dc_max: HDRFloat,
         /// Whether to build BLA table for this orbit
         bla_enabled: bool,
     },
@@ -215,7 +215,7 @@ mod tests {
             orbit: vec![(0.0, 0.0), (-0.5, 0.0), (-0.25, 0.0)],
             derivative: vec![(0.0, 0.0), (1.0, 0.0), (1.5, 0.0)],
             escaped_at: None,
-            dc_max: 0.01,
+            dc_max: HDRFloat::from_f64(0.01),
             bla_enabled: true,
         };
         let json = serde_json::to_string(&msg).unwrap();
@@ -329,14 +329,14 @@ mod tests {
             orbit: vec![(0.0, 0.0), (-0.5, 0.0)],
             derivative: vec![(0.0, 0.0), (1.0, 0.0)],
             escaped_at: None,
-            dc_max: 0.001,
+            dc_max: HDRFloat::from_f64(0.001),
             bla_enabled: true,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: MainToWorker = serde_json::from_str(&json).unwrap();
         match parsed {
             MainToWorker::StoreReferenceOrbit { dc_max, .. } => {
-                assert!((dc_max - 0.001).abs() < 1e-12);
+                assert!((dc_max.to_f64() - 0.001).abs() < 1e-12);
             }
             _ => panic!("Wrong variant"),
         }

@@ -5,10 +5,11 @@
 //! enabling deep GPU zoom without f64 dependency.
 
 use crate::BigFloat;
+use serde::{Deserialize, Serialize};
 
 /// High Dynamic Range Float with ~48-bit mantissa precision.
 /// Value = (head + tail) × 2^exp
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct HDRFloat {
     /// Primary mantissa, normalized to [0.5, 1.0)
     pub head: f32,
@@ -16,13 +17,6 @@ pub struct HDRFloat {
     pub tail: f32,
     /// Binary exponent (base 2)
     pub exp: i32,
-}
-
-/// Complex number using HDRFloat components.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct HDRComplex {
-    pub re: HDRFloat,
-    pub im: HDRFloat,
 }
 
 impl HDRFloat {
@@ -382,140 +376,148 @@ impl HDRFloat {
         }
         .normalize()
     }
-}
 
-impl HDRComplex {
-    /// Zero constant.
-    pub const ZERO: Self = Self {
-        re: HDRFloat::ZERO,
-        im: HDRFloat::ZERO,
-    };
-
-    /// Add two complex numbers.
+    /// Compute square root with extended exponent range.
+    ///
+    /// sqrt(m × 2^e) = sqrt(m) × 2^(e/2) for even e
+    /// sqrt(m × 2^e) = sqrt(2m) × 2^floor(e/2) for odd e
     #[inline]
-    pub fn add(&self, other: &Self) -> Self {
-        Self {
-            re: self.re.add(&other.re),
-            im: self.im.add(&other.im),
+    pub fn sqrt(&self) -> Self {
+        if self.head <= 0.0 {
+            return Self::ZERO;
         }
-    }
 
-    /// Subtract other from self.
-    #[inline]
-    pub fn sub(&self, other: &Self) -> Self {
-        Self {
-            re: self.re.sub(&other.re),
-            im: self.im.sub(&other.im),
-        }
-    }
+        let mantissa_f64 = self.head as f64 + self.tail as f64;
+        let exp_half = self.exp.div_euclid(2); // Floor division
+        let exp_odd = self.exp.rem_euclid(2) != 0;
 
-    /// Multiply two complex numbers: (a + bi)(c + di) = (ac - bd) + (ad + bc)i
-    #[inline]
-    pub fn mul(&self, other: &Self) -> Self {
-        Self {
-            re: self.re.mul(&other.re).sub(&self.im.mul(&other.im)),
-            im: self.re.mul(&other.im).add(&self.im.mul(&other.re)),
-        }
-    }
-
-    /// Square: (a + bi)² = (a² - b²) + 2abi
-    #[inline]
-    pub fn square(&self) -> Self {
-        let re_sq = self.re.square();
-        let im_sq = self.im.square();
-        let re_im = self.re.mul(&self.im);
-        // Multiply by 2 exactly by incrementing exponent (no rounding error)
-        let two_re_im = HDRFloat {
-            head: re_im.head,
-            tail: re_im.tail,
-            exp: re_im.exp.saturating_add(1),
+        // For odd exponent, multiply mantissa by 2 before sqrt
+        let adjusted_mantissa = if exp_odd {
+            (mantissa_f64 * 2.0).sqrt()
+        } else {
+            mantissa_f64.sqrt()
         };
+
+        // Split result mantissa into head + tail
+        let head = adjusted_mantissa as f32;
+        let tail = (adjusted_mantissa - head as f64) as f32;
+
         Self {
-            re: re_sq.sub(&im_sq),
-            im: two_re_im,
+            head,
+            tail,
+            exp: exp_half,
+        }
+        .normalize()
+    }
+
+    /// Compute log2 of this HDRFloat.
+    ///
+    /// Returns log2(mantissa * 2^exp) = log2(mantissa) + exp.
+    /// Returns negative infinity for zero or negative values.
+    #[inline]
+    pub fn log2(&self) -> f64 {
+        if self.head <= 0.0 {
+            return f64::NEG_INFINITY;
+        }
+        // mantissa = head + tail (approximately)
+        let mantissa = self.head as f64 + self.tail as f64;
+        // log2(mantissa * 2^exp) = log2(mantissa) + exp
+        mantissa.log2() + self.exp as f64
+    }
+
+    /// Divide by another HDRFloat.
+    #[inline]
+    pub fn div(&self, other: &Self) -> Self {
+        if self.head == 0.0 {
+            return Self::ZERO;
+        }
+        if other.head == 0.0 {
+            // Division by zero
+            return Self {
+                head: if self.head > 0.0 {
+                    f32::INFINITY
+                } else {
+                    f32::NEG_INFINITY
+                },
+                tail: 0.0,
+                exp: 0,
+            };
+        }
+
+        // Compute quotient in f64 for better precision
+        let self_mantissa = self.head as f64 + self.tail as f64;
+        let other_mantissa = other.head as f64 + other.tail as f64;
+        let quotient = self_mantissa / other_mantissa;
+
+        // Split quotient into head + tail
+        let q_head = quotient as f32;
+        let q_tail = (quotient - q_head as f64) as f32;
+
+        Self {
+            head: q_head,
+            tail: q_tail,
+            exp: self.exp.saturating_sub(other.exp),
+        }
+        .normalize()
+    }
+
+    /// Compare two HDRFloat values for ordering.
+    /// Returns true if self < other.
+    #[inline]
+    pub fn less_than(&self, other: &Self) -> bool {
+        // Handle zero cases
+        if self.head == 0.0 && other.head == 0.0 {
+            return false;
+        }
+        if self.head == 0.0 {
+            return other.head > 0.0;
+        }
+        if other.head == 0.0 {
+            return self.head < 0.0;
+        }
+
+        // Different signs
+        if self.head < 0.0 && other.head > 0.0 {
+            return true;
+        }
+        if self.head > 0.0 && other.head < 0.0 {
+            return false;
+        }
+
+        // Same sign - compare exponents first
+        let positive = self.head > 0.0;
+        if self.exp != other.exp {
+            return if positive {
+                self.exp < other.exp
+            } else {
+                self.exp > other.exp
+            };
+        }
+
+        // Same exponent - compare mantissas
+        let self_m = self.head as f64 + self.tail as f64;
+        let other_m = other.head as f64 + other.tail as f64;
+        self_m < other_m
+    }
+
+    /// Return the minimum of two HDRFloat values.
+    #[inline]
+    pub fn min(&self, other: &Self) -> Self {
+        if self.less_than(other) {
+            *self
+        } else {
+            *other
         }
     }
 
-    /// Squared magnitude: |z|² = re² + im²
-    /// Returns f64 since result is bounded for escape testing.
+    /// Return the maximum of two HDRFloat values.
     #[inline]
-    pub fn norm_sq(&self) -> f64 {
-        let re_sq = self.re.square();
-        let im_sq = self.im.square();
-        re_sq.add(&im_sq).to_f64()
-    }
-
-    /// Check if zero.
-    #[inline]
-    pub fn is_zero(&self) -> bool {
-        self.re.is_zero() && self.im.is_zero()
-    }
-}
-
-use crate::ComplexDelta;
-
-impl ComplexDelta for HDRComplex {
-    #[inline]
-    fn zero(&self) -> Self {
-        Self::ZERO
-    }
-
-    #[inline]
-    fn from_f64_pair(re: f64, im: f64) -> Self {
-        Self {
-            re: HDRFloat::from_f64(re),
-            im: HDRFloat::from_f64(im),
+    pub fn max(&self, other: &Self) -> Self {
+        if self.less_than(other) {
+            *other
+        } else {
+            *self
         }
-    }
-
-    #[inline]
-    fn to_f64_pair(&self) -> (f64, f64) {
-        (self.re.to_f64(), self.im.to_f64())
-    }
-
-    #[inline]
-    fn add(&self, other: &Self) -> Self {
-        Self {
-            re: self.re.add(&other.re),
-            im: self.im.add(&other.im),
-        }
-    }
-
-    #[inline]
-    fn sub(&self, other: &Self) -> Self {
-        Self {
-            re: self.re.sub(&other.re),
-            im: self.im.sub(&other.im),
-        }
-    }
-
-    #[inline]
-    fn mul(&self, other: &Self) -> Self {
-        Self {
-            re: self.re.mul(&other.re).sub(&self.im.mul(&other.im)),
-            im: self.re.mul(&other.im).add(&self.im.mul(&other.re)),
-        }
-    }
-
-    #[inline]
-    fn scale(&self, factor: f64) -> Self {
-        Self {
-            re: self.re.mul_f64(factor),
-            im: self.im.mul_f64(factor),
-        }
-    }
-
-    #[inline]
-    fn square(&self) -> Self {
-        Self {
-            re: self.re.square().sub(&self.im.square()),
-            im: self.re.mul(&self.im).mul_f64(2.0),
-        }
-    }
-
-    #[inline]
-    fn norm_sq(&self) -> f64 {
-        self.re.square().add(&self.im.square()).to_f64()
     }
 }
 

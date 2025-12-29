@@ -1,67 +1,185 @@
-Deep Zoom Center Tile Stuck Bug - Comprehensive Summary
+# Deep Zoom Center Tile Bug
 
-The Problem
+At ~10^270 zoom, center tiles hang during CPU rendering while GPU works fine.
 
-At 10^270 zoom with 10M iterations, 4 center tiles never complete rendering while consuming high CPU. 
-The render never finishes - or it finishes after a VERY long time leaving a black tile in the center.
+## Bug Status: PARTIALLY FIXED - INVESTIGATION ONGOING
 
-What We Know For Certain
+The dc_max underflow issue has been fixed by using HDRFloat. However, the test still hangs, indicating additional issues remain.
 
-The bug is SPECIFIC to:
+```bash
+# Verifies HDRFloat dc_max does NOT underflow - PASSES
+cargo test --package fractalwonder-compute dc_max_at_extreme_zoom -- --nocapture
 
-- CPU rendering at extreme zoom - GPU renderer works fine at same zoom
-- Zoom levels where center tiles use HDRFloat path (delta_log2 ≤ -900)
-- Center tiles only - edge tiles complete fine
+# This test still HANGS (additional issue beyond dc_max underflow)
+cargo test --package fractalwonder-compute deep_zoom_full_tile_with_bla -- --ignored --nocapture
 
-The bug does NOT occur when:
+# This test is SLOW but progresses (no BLA)
+cargo test --package fractalwonder-compute deep_zoom_full_tile_without_bla -- --ignored --nocapture
+```
 
-- GPU renderer is used - same 10^270 render completes successfully with GPU
-- Condition is triggered around 10^269 zoom (see 2 urls below) - slightly lower zoom = success, slightly higher zoom =
-  failed center tile
-- Edge tiles at 10^270 - they complete
+## Original Root Cause (FIXED)
 
-What The Bug Is NOT
+**BLA (Bilinear Approximation) failed when dc_max underflowed to 0.**
 
-- ❌ NOT iteration count dependent - at 10^267 and deeper max iterations is 10M, for both working and failing urls
-  (see below)
-- ❌ NOT reference orbit computation - GPU uses same orbit and works
-- ❌ NOT viewport/delta calculation - GPU uses same calculations and works
+The original `calculate_dc_max` function computed viewport diagonal using f64. At ~10^270 zoom, squaring underflowed to 0. This has been fixed by using HDRFloat throughout.
 
-Example parameters
+## Test Case Details
 
-This URL does **NOT** work (1 center tile does not render):
+**Location:** `fractalwonder-compute/src/perturbation/tests/deep_zoom_center_tile.rs`
 
-<http://127.0.0.1:8080/fractalwonder/#v1:7VjLbtswEPwXnY1itsjJ935FUQiKzNgCFDmQ5aRBkH-vbIu7M1RzLXqwDL9EkVzuY2Z3P6rXLr29HMep2n5UbRqmNFbbnx_Va9OfU7Wt8A0GzG-br8sPu_6-3LkOXG9dhq5vIN-6PbNMu71uw8v8ZWiZtzyc97n9Xba77QDzVfP0_AgJGP_zVxbAJcOytmXJjNf3UZivkz9p_bznshJiSZe_uIe8vG-aF7G4mU_rJ_SdYzc6MFw5LkdWbGyPOBsZx6Xh8y-yG2nUlzOEws2tGWcprJjNRfOM58vyEPsgFAgZj23zULE3VJDwuHAd11Cox1dkp_M55HNZPQC7JkjDvEUYPIQK1WaxQuhw1_gwk8iJiAq5yLI-K9ycHSImqSElZtQXl6FqU72Mqe1O3XGoH7vpVG0N3x8-NwITHl8iN3sjh5yjCEkvCqIgC-Hcq4zDLGwhXgaxYVjdjRE6A8SuFhY0PQABClsK5AGm6CKRTUd3CRABE_5t4DgEqyO2ksgmSCWHYv0SkoochKUMkhIhxjDqgEAjBWxDDk9RGV7sjktxbCKQlacky1oBY2F65xszE5wg4CLws0JH6m85Dpi_fA0KKI9eCNKDg8AIrhlsCHM88Ijh2LsojgjwGJ9KfxC09r_yIkcFrUI4agJugPI-hLu-Aotfm-qt202HS56xQo37db_u1z-_JLkBJ_cFezl_cg4c6EXJA0q4IQQMlAfl1UZfxCycJjLhm6SBkjQY0QtWcIiC6Y1ZkmlpeZygWBXkuAnheSNKpDQ2-CRIkx4BJ8miF4AyPM3WEStxVhObSWot5Er1kBZt_BRTvFElBSkZnGdgVF5IoaFJKu9PmaCmalxAsF-Y1DOsP3B-wpmsa53ygRXvSZbOtaEmD5T5c5KmmQTc1TQ_1UwMmqaFEdaxR9QOzs0pmeJKBQWTryKSmfrLrL46pG5_mO5Efb_u139ymZTPzE5Up4LreapsAUAaD0GQgLZt_lKtmUAwkRK3cXhJBhsgZIQxDaz4zIgh9UbRI5P2G1e9BY6Dmx7aEuLSm-pMKbONezrcZGEFcOuJeg_MM-BGYuBv0fsA1oWsFPzggpl6R6rgsJs2I1kPJfX5otySEYFQcCFWjUXpn0rXCyZMBO0oUIpi0N6J0aqIpE4JmjROrS2jPhmk_QRpNEuxrK1IDgFpxnGDyiinDGeDSa_alLihvRPwecMzjZsFX1L1zNXtcXjq9nW3m1n6uRl2qX8cj9NlQtOnaUr10DxfGPxHn9pp7Np5ZEzzY2N9moe7YX-6Nv7f2z7V7fE8zLRvm-p8SvX-5Vxtn5r-lDbV77F5r9PQPPZp5zefjmOb6sNurJ_6YzMt92eZXtN4kbTaPnz-AQ>
+**Failing URL (decoded):**
+```
+http://127.0.0.1:8080/fractalwonder/#v1:7ZvLbhvZFUX_hWMh2CcIMtA8XxEEhCyVbQJqyaBodxpG_3so...
+```
 
-VIEWPORT:
-  Center X:  0.273000307495579097715200094310253922494103490187797182966812629706330340783242
-  Center Y:  0.005838718497531293679839354462882728828030188792949767250660666951674130465532
-  Width:     6.41168508790612546864064840442871741036216483032694E-270
-  Height:    3.78104390378403872371063183579811951956660518273799E-270
-  Zoom Depth: ~10^269 (2^894)
-  Precision:  1024 bits
+**Viewport:**
+- Center X: 0.273000307495579097715200094310253922494103490187797182966812629706330340783242
+- Center Y: 0.005838718497531293679839354462882728828030188792949767250660666951674130465532
+- Width: 3.68629585526668733757870313779318701180348758566795E-270
+- Height: 2.12689256332334093913116602106093685402570700118706E-270
+- Precision: 1026 bits
+- Zoom: ~10^269 (2^895)
 
-This url also does **NOT** work (4 center tiles do not render):
+**Canvas:** 773x446 pixels
 
-<http://127.0.0.1:8080/fractalwonder/#v1:7ZnNbuNGEITfhWchqA6CHHTPUwSBIEu0TUArGRTtzcLYdw8lcaa_Gu3mGOQgLuyVOX89_Vtd-uw-hv7r22mcuvVnt-uPUz926z8_u4_t4b3v1p1-UUjzT8zP5UNcP1_eXAeury5D1x-pvLrNWZbd_t2Gl_XL0LJumVzOuf25HHc7QVF3LcvLFAiYf5f_igBVMi17R5EsuH8dVdR9ym_sX85cdlJuWeVv3qlsXw8tm0S-LLetN6wn52m4sKpyqhxFsXm88m4wTpWG919kD2i0bhdKhUe1Zt6lsWIxF9YF19v2MvsoFSgbz2PLUHO2XJD0uHSdqqFUT92RTlfXwOeKeiS6pqBhHpEGT6FStUWsFDrdNX8FVJhzFdw7_Toira1qMVMUdFSdB_7CwKSvd6vubex3w3k4HTdPw3Tu1qFff_--sjxhglDw6o6MuZpG0tSuIURZVVhUtwrGWRrD3ExmxDR7tUbqWzLDRpow_ALIKDSV4ALh6cVCG1evEigjJh08xEAU1ZFHWWgjp8KjqF-kUpMDyZRZ0kIkmEdrRsBIk7dll0dYZmFIf8xADhMo2lvCstHksTR9LTiBMLQ6YtkvGh25v0VE-qKZKgVEMfTopCfTpZAWZIW1ugpLHL0LcYRozjqSLpVlQdA0hVdKh-yXdg7IJA9NDwFG0s-TxV-r7uuwn14vQOMuazyex_N4_vsnmAj8A6CwZDUA-Qu1PjJFWa4kwG7yDXBwoOYzAWWhBnY2nMMyhWRpSBHpT039QK4TK2cAyLCcooSiPCTKFfAfFgDWAgN5q8Kptiq8o2qLONUgOdiC6cya1hOgFkv3yMe6FwJ69DuYrWjmsY5ALwa65PjI8JOIpq3HaxuyvKr3lKo3kmGCCjDywgbbTUZOs6oKcN64OCt3hMM7RdtwED-6bydQkgtBl0UgsgcOE16BfvHfoH332g8vr9OjWj-ex_N_eZLlaaG9sUDMwYEGTrK2OzM3YD7PIu0TbEQtcVnjAtYLokWgP6LALJCS9_SWdWXsIwieli7xpgtFONM5mnj2g6kUNfxg0Qg-hJX4MCQQ5Mmy72M7p6Y5FHpo9NZu8qZIQJJ7pZCgI56RrySfkbZqAFRQFmdX1NIQYTxayLg9sAGGGmUIJ-5NYNSFk4tkmgUcGWGI0QW3K5K5CGAYtSRIGBsE2k92mQYx-IVIGIVhGpsa1DJ8wYiFIE1s8A6E4j3kjpY5NeCDexsot2AFxS1yrvqBCUHQA2OpiWDGJ-6DGAOEIjVtzmxEnX85IAPFdwYSozwsk6phrsDOEGxSXy3f3bYQZDsbxhxcPL9yQOLwVA6KClwNWwjBdg3lbKGC9otEq8gpgceSpxqSveEdhm1qYULXg8qTQwu2M27AtiEScqnT4exc2ReFk2U_uMPdTj-DyzNe3p2Oz8PLZtjPSPnL9rjvD0_jabos2B76aeo3x-2XC4r-49DvpnHYzSNjP08bN-d5eDi-nK9fwX3bHfrN7vR-nKF3rLr3c795eXvv1s_bw7lfdX-P22-b_rh9OvT7-vL5NO76zet-3DwfTttpeT_L9NGPF0m79W_f_wE>
+**Tile size:** 32x32 (DEEP_ZOOM_TILE_SIZE at this zoom)
 
-VIEWPORT:
-  Center X:  0.273000307495579097715200094310253922494103490187797182966812629706330340783242
-  Center Y:  0.005838718497531293679839354462882728828030188792949767250660666951674130465532
-  Width:     2.72541884424307948148519517874785629104530282883043E-270
-  Height:    1.60721061078324631194274624952059727793884777529759E-270
-  Zoom Depth: ~10^269 (2^895)
-  Precision:  1026 bits
+**Center tiles (sorted by distance from canvas center):**
+1. (384, 192) - 20.18px from center
+2. (384, 224) - 21.71px from center
+3. (352, 192) - 23.82px from center
+4. (352, 224) - 25.12px from center
 
-This URL **DOES** work (only **slightly** zoomed out):
+**Test output before hang:**
+```
+=== DEEP ZOOM FULL TILE TEST ===
+Canvas: 773x446
+Tile: (384, 192, 32, 32)
+Viewport width: 3.68629585526668733757870313779318701180348758566795E-270
+Viewport height: 2.12689256332334093913116602106093685402570700118706E-270
 
-<http://127.0.0.1:8080/fractalwonder/#v1:7VjLbtswEPwXno1itsjJ935FUQiKTNsCFCmQ5aRBkH-vZIvcGbrpscjBCuLEokQu9zEzy_fw0sbX52GcwvY9NLGf4hi2P9_DS92dY9gGfIMB86_N1_KPXf5f7lwGLreWocsvkG5dn1lfu_5ch9f316H1vfXhtM7167rcdQVYnjW9nh4hA_17-pMMyJZhnduSZcbz51FYnid90vxpzXUm-JTZ_uIe0vR50TSJ-c2027zDvLKvRhtGdk62IznWl4fvjYKTreH9r7YbeTRPZ3CHW46m76WIYgoXvWf8vkwPiQ_cgZBxXzYNFWtDDfGM89TJHnL35Bk56fI7lHPJPQCnJsjDvIQH3I1y1yaz3GhPV_-wbF_2uVEBUTh51xwYI3eZhwu3hamhMjY8bMLzGJv21A599dhOp7A1fH_42AhM5Poiu71KObdy_MHeLxxERZb9ZTmrjMvMYyFZBomhRz0Hw90NSFzNI2i6AQIUjhQoA0zRRSqbtp4tgBeM57eB6xDsDl9KKpsglRKK_UtIKnYQljJISoUYw2gGBBopYBuyeapK54Wcm1THJgZZuUuKrBUw5qE3o-UZJwi4CPys8JHmm5l5Lkqo3EDiQvKuERRSwmU3-G4Ic1KqMMNxdlEdEeARPjlZCUt5NTIWKuvSYoI7Xndagl5L5O3PweLXJry2u-m46Iwb1Lhf9-t-_ffLtJJBYOcYp6oFBDMuS12BCOkTogGFLjHSSwzDDISs1GAqhakFMIZNoStR0MJVZCyrRwjDAijEqXQ_JGq5HzGme-lqiPMJxhmdRZiKAMdN50B0gUJ5iByFqbIVuqepAdVnIDlftAfO-IWidQFpwpQgyUd8jEI2AZo7EEp0SZHTT3Ww54fvxiB7tps-zFstWJGyrkAAjSM5AaTZKIQSRFLf2rtBOwPT_pADwi0l6RYT1efbd5lBSgiirj6V9eEY28NxujP1_bpfX-OiDp27UivaQQDSalLLr3TIyEyEQfgnHEs8Rchl3h8wD1nBbbyK6bGa9KBMvFaKDIZoglsTBAadkNDMUID1eYmq-XDC_nZKxMJF3gIrJxYOTiF05AVhKT5fI0fp7owPSkrWg7TbFBPq6viY0M_SOI3EdXzQJr1zeaYi5xbM8ORRPhqAfMrpDkUcwrc8f0Gw_rTJiQdt3CR17KYYSq0pQpTVnWSLFcVlkj-AVgtLv9u6kqN1UqqUbvgHV89k3Qz9vj1U7W6m6ae638XucRym5YW6i9MUq75-Wij8RxebaWybeWSM82NjdZqH2_5wuhz9vzVdrJrh3M-8b5twPsXq8HwO233dneIm_B7rtyr29WMXd_nmfhibWB13Y7Xvhnpa7882vcRxsTRsHz7-AA>
+dc_max = 2.12793615438037e-270 (log2 = -895.8)
+dc_max after JSON: 2.12793615438037e-270 (log2 = -895.8)
 
-VIEWPORT:
-  Center X:  0.273000307495579097715200094310253922494103490187797182966812629706330340783242
-  Center Y:  0.005838718497531293679839354462882728828030188792949767250660666951674130465532
-  Width:     6.93528480442846379107722538986124809492095837958151E-270
-  Height:    4.08981663498290823785033363879282223888532659891334E-270
-  Zoom Depth: ~10^269 (2^894)
-  Precision:  1024 bits
+Computing reference orbit (10000000 iterations)...
+Orbit: 30265 points, escaped_at=Some(30264)
+Orbit after JSON round-trip: 30265 points
 
+BLA table: 60536 entries, 16 levels
+
+delta_c_origin log2: re=-903.3, im=-899.7
+delta_c_step log2: re=-904.6, im=-904.6
+
+Computing 1024 pixels (32 x 32)...
+[HANGS HERE]
+```
+
+**Key observation:** The reference orbit escapes at iteration 30264 (not 10M). This location is NOT in the Mandelbrot set - it should render with colors, not black.
+
+## Why GPU Works But CPU Doesn't
+
+GPU does not use BLA. It performs raw perturbation iteration without skipping:
+
+```wgsl
+// fractalwonder-gpu/src/shaders/progressive_iteration.wgsl
+// Delta iteration: dz' = 2*z_m*dz + dz^2 + dc
+// Iterates one-by-one, no BLA
+```
+
+| Aspect | GPU | CPU |
+|--------|-----|-----|
+| BLA | Not used | Used for iteration skipping |
+| dc_max | Not needed | Required for BLA table |
+| At dc_max=0 | Works | **HANGS** |
+
+## Test Verification
+
+The test exactly matches production code:
+
+1. **Viewport parameters** - Decoded from actual failing URL
+2. **Canvas size** - 773x446 from user's browser
+3. **Tile calculation** - Identical to `coordinator.rs` lines 269-278
+4. **Delta step** - Identical to `coordinator.rs` lines 181-187
+5. **JSON serialization** - All values round-trip through JSON like production
+6. **Pixel loop** - Computes all 1024 pixels (32x32), identical to `worker.rs` lines 436-464
+7. **BLA usage** - Uses `compute_pixel_perturbation_hdr_bla` like production
+
+## Implemented Fix: HDRFloat for dc_max
+
+Professional renderers (FractalZoomer, FractalShark, Fraktaler-3) use extended-range floating point throughout BLA calculations.
+
+### Changes Made
+
+**1. `helpers.rs:51-54` - Calculate dc_max with HDRFloat:** ✅
+```rust
+pub fn calculate_dc_max(viewport: &Viewport) -> HDRFloat {
+    let half_width = HDRFloat::from_bigfloat(&viewport.width).div_f64(2.0);
+    let half_height = HDRFloat::from_bigfloat(&viewport.height).div_f64(2.0);
+    half_width.square().add(&half_height.square()).sqrt()
+}
+```
+
+**2. `bla.rs:16` - Store r_sq as HDRFloat:** ✅
+```rust
+pub struct BlaEntry {
+    pub a_re: f64,
+    pub a_im: f64,
+    pub b_re: f64,
+    pub b_im: f64,
+    pub l: u32,
+    pub r_sq: HDRFloat,  // HDRFloat to avoid underflow
+}
+```
+
+**3. `bla.rs:40` - `BlaEntry::merge()` uses HDRFloat for radius calculation** ✅
+
+**4. `messages.rs:40` - `MainToWorker::StoreReferenceOrbit` passes HDRFloat dc_max** ✅
+
+**5. `coordinator.rs:43,177,259` - Full HDRFloat pipeline through coordinator** ✅
+
+**6. `worker.rs:291` - BlaTable::compute receives HDRFloat dc_max** ✅
+
+### Why Not Just Disable BLA?
+
+BLA provides 10-100x speedup at deep zoom. Disabling it would make deep zoom renders impractically slow.
+
+### Remaining Issue
+
+Despite dc_max no longer underflowing, the BLA test still hangs. Additional investigation needed to identify the remaining cause.
+
+## Running the Tests
+
+```bash
+# Quick check - verifies dc_max calculation works with HDRFloat
+cargo test --package fractalwonder-compute dc_max_at_extreme_zoom -- --nocapture
+
+# Sanity check - verifies test infrastructure works
+cargo test --package fractalwonder-compute deep_zoom_sanity_check -- --nocapture
+
+# Full reproduction WITH BLA - HANGS (bug present)
+cargo test --package fractalwonder-compute deep_zoom_full_tile_with_bla -- --ignored --nocapture
+
+# Full reproduction WITHOUT BLA - PASSES (confirms BLA is the issue)
+cargo test --package fractalwonder-compute deep_zoom_full_tile_without_bla -- --ignored --nocapture
+
+# Quick check of all 4 center tiles
+cargo test --package fractalwonder-compute deep_zoom_all_center_tiles -- --ignored --nocapture
+```
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `fractalwonder-compute/src/perturbation/tests/deep_zoom_center_tile.rs` | Reproduction test |
+| `fractalwonder-ui/src/workers/perturbation/helpers.rs` | `calculate_dc_max()` - root cause |
+| `fractalwonder-compute/src/bla.rs` | BLA table construction |
+| `fractalwonder-compute/src/perturbation.rs` | `compute_pixel_perturbation_hdr_bla()` - hanging code |
+| `fractalwonder-compute/src/worker.rs` | Production worker code path |
+| `fractalwonder-ui/src/workers/perturbation/coordinator.rs` | Tile parameter calculation |
+
+## References
+
+- [Deep zoom theory and practice](https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html)
+- [Deep zoom theory and practice (again)](https://mathr.co.uk/blog/2022-02-21_deep_zoom_theory_and_practice_again.html)
+- [FractalShark GitHub](https://github.com/mattsaccount364/FractalShark)
+- [Fraktaler-3](https://mathr.co.uk/fraktaler-3/)

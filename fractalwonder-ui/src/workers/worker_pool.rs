@@ -54,7 +54,9 @@ fn create_workers(count: usize, pool: Rc<RefCell<WorkerPool>>) -> Result<Vec<Wor
         let pool_clone = Rc::clone(&pool);
         let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
             let Some(msg_str) = e.data().as_string() else {
-                web_sys::console::error_1(&format!("[WorkerPool] Worker {worker_id} non-string msg").into());
+                web_sys::console::error_1(
+                    &format!("[WorkerPool] Worker {worker_id} non-string msg").into(),
+                );
                 return;
             };
             match serde_json::from_str::<WorkerToMain>(&msg_str) {

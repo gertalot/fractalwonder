@@ -14,7 +14,7 @@ fn bla_version_matches_non_bla_for_escaping_point() {
         re: HDRFloat::from_f64(0.1),
         im: HDRFloat::from_f64(0.1),
     };
-    let dc_max = 0.15;
+    let dc_max = HDRFloat::from_f64(0.15);
     let bla_table = BlaTable::compute(&orbit, dc_max);
 
     // Non-BLA version
@@ -37,7 +37,7 @@ fn bla_version_matches_non_bla_for_in_set_point() {
         re: HDRFloat::from_f64(0.01),
         im: HDRFloat::from_f64(0.01),
     };
-    let dc_max = 0.02;
+    let dc_max = HDRFloat::from_f64(0.02);
     let bla_table = BlaTable::compute(&orbit, dc_max);
 
     let result_no_bla = compute_pixel_perturbation(&orbit, delta_c, 500, TEST_TAU_SQ);
@@ -67,7 +67,7 @@ fn bla_matches_non_bla_for_many_deltas() {
             re: HDRFloat::from_f64(dx),
             im: HDRFloat::from_f64(dy),
         };
-        let dc_max = (dx.abs() + dy.abs()).max(0.001);
+        let dc_max = HDRFloat::from_f64((dx.abs() + dy.abs()).max(0.001));
         let bla_table = BlaTable::compute(&orbit, dc_max);
 
         let result_no_bla = compute_pixel_perturbation(&orbit, delta_c, 1000, TEST_TAU_SQ);
@@ -99,7 +99,7 @@ fn bla_handles_rebasing() {
         re: HDRFloat::from_f64(0.005),
         im: HDRFloat::from_f64(0.003),
     };
-    let bla_table = BlaTable::compute(&orbit, 0.01);
+    let bla_table = BlaTable::compute(&orbit, HDRFloat::from_f64(0.01));
 
     let result_no_bla = compute_pixel_perturbation(&orbit, delta_c, 500, TEST_TAU_SQ);
     let result_bla =

@@ -6,7 +6,7 @@
 use super::glitch_resolution::GlitchResolver;
 use super::helpers::{calculate_dc_max, calculate_render_max_iterations, validate_viewport};
 use crate::config::get_config;
-use fractalwonder_core::{BigFloat, MainToWorker, PixelRect, Viewport};
+use fractalwonder_core::{BigFloat, HDRFloat, MainToWorker, PixelRect, Viewport};
 use std::collections::HashSet;
 
 /// Request to compute a reference orbit.
@@ -39,8 +39,8 @@ struct PerturbationState {
     delta_step: (BigFloat, BigFloat),
     /// Glitch detection threshold squared
     tau_sq: f64,
-    /// Maximum |delta_c| for BLA table construction
-    dc_max: f64,
+    /// Maximum |delta_c| for BLA table construction (HDRFloat to avoid underflow at extreme zoom)
+    dc_max: HDRFloat,
     /// Enable BLA for iteration skipping
     bla_enabled: bool,
     /// Force HDRFloat for all calculations (debug option)
@@ -55,7 +55,7 @@ impl Default for PerturbationState {
             max_iterations: 0,
             delta_step: (BigFloat::zero(64), BigFloat::zero(64)),
             tau_sq: 1e-6,
-            dc_max: 0.0,
+            dc_max: HDRFloat::ZERO,
             bla_enabled: true,
             force_hdr_float: false,
         }
@@ -101,7 +101,7 @@ impl PerturbationCoordinator {
     }
 
     /// Get dc_max for BLA.
-    pub fn dc_max(&self) -> f64 {
+    pub fn dc_max(&self) -> HDRFloat {
         self.state.dc_max
     }
 
@@ -189,6 +189,23 @@ impl PerturbationCoordinator {
         // Prepare orbit request
         let c_ref_json = serde_json::to_string(&viewport.center).unwrap_or_default();
 
+        // DEBUG: Log all render parameters for test reproduction (JSON format)
+        #[cfg(target_arch = "wasm32")]
+        {
+            let width_json = serde_json::to_string(&viewport.width).unwrap_or_default();
+            let height_json = serde_json::to_string(&viewport.height).unwrap_or_default();
+            let delta_step_json = serde_json::to_string(&self.state.delta_step).unwrap_or_default();
+            web_sys::console::error_1(
+                &format!(
+                    "[DEBUG-RENDER-JSON] precision={}, max_iter={}, canvas=({},{}), c_ref_json={}, width_json={}, height_json={}, delta_step_json={}",
+                    precision, self.state.max_iterations,
+                    canvas_size.0, canvas_size.1,
+                    c_ref_json, width_json, height_json, delta_step_json
+                )
+                .into(),
+            );
+        }
+
         Ok(OrbitRequest {
             render_id,
             orbit_id: self.state.orbit_id,
@@ -262,6 +279,26 @@ impl PerturbationCoordinator {
 
         let delta_c_origin_json = serde_json::to_string(&delta_c_origin).ok()?;
         let delta_c_step_json = serde_json::to_string(&self.state.delta_step).ok()?;
+
+        // DEBUG: Log center tile parameters to diagnose deep zoom bug
+        // Output the JSON strings (exactly what workers receive)
+        #[cfg(target_arch = "wasm32")]
+        {
+            let is_center_tile = (norm_x.abs() < 0.1) && (norm_y.abs() < 0.1);
+            if is_center_tile {
+                let delta_log2 = delta_c_origin
+                    .0
+                    .log2_approx()
+                    .max(delta_c_origin.1.log2_approx());
+                web_sys::console::error_1(
+                    &format!(
+                        "[DEBUG-TILE-JSON] tile=({},{}), log2={:.1}, origin_json={}, step_json={}",
+                        tile.x, tile.y, delta_log2, delta_c_origin_json, delta_c_step_json
+                    )
+                    .into(),
+                );
+            }
+        }
 
         let bigfloat_threshold_bits = get_config(&self.renderer_id)
             .map(|c| c.bigfloat_threshold_bits)

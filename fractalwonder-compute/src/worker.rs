@@ -294,7 +294,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                         "[Worker] Built BLA table: {} entries, {} levels (dc_max={:.2e})",
                         table.entries.len(),
                         table.num_levels,
-                        dc_max
+                        dc_max.to_f64()
                     )
                     .into(),
                 );
@@ -304,7 +304,8 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     web_sys::console::log_1(
                         &format!(
                             "[Worker] Skipping BLA table: dc_max={:.2e} too large (log2={:.0})",
-                            dc_max, dc_max_log2
+                            dc_max.to_f64(),
+                            dc_max_log2
                         )
                         .into(),
                     );
