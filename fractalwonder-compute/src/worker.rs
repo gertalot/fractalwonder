@@ -4,8 +4,8 @@ use crate::{
     ReferenceOrbit, Renderer, TestImageRenderer,
 };
 use fractalwonder_core::{
-    BigFloat, BigFloatComplex, ComplexDelta, ComputeData, F64Complex, HDRComplex, HDRFloat,
-    MainToWorker, Viewport, WorkerToMain,
+    BigFloat, ComplexDelta, ComputeData, F64Complex, HDRComplex, HDRFloat, MainToWorker, Viewport,
+    WorkerToMain,
 };
 use js_sys::Date;
 use std::cell::RefCell;
@@ -333,7 +333,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             delta_c_step_json,
             max_iterations,
             tau_sq,
-            bigfloat_threshold_bits,
+            bigfloat_threshold_bits: _, // No longer used: pixel calculations use HDRFloat, not BigFloat
             bla_enabled,
         } => {
             // Parse BigFloat deltas from JSON
@@ -372,7 +372,6 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
             let orbit = cached.to_reference_orbit();
             let start_time = Date::now();
-            let precision = delta_c_origin.0.precision_bits();
 
             // Check if deltas fit in f64 range (roughly 10^-300 to 10^300)
             // log2 of ~10^-300 is about -1000, so we use -900 as safe threshold
@@ -384,10 +383,13 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
             let mut data = Vec::with_capacity((tile.width * tile.height) as usize);
 
-            // Three-tier dispatch based on delta magnitude (not precision):
+            // Two-tier dispatch based on delta magnitude:
             // 1. Deltas fit in f64 range: Use fast f64 path (most common case)
-            // 2. Deltas exceed f64 but precision <= threshold: Use HDRFloat
-            // 3. Precision > threshold: Use BigFloat (highest precision)
+            // 2. Otherwise: Use HDRFloat (handles arbitrary exponent range)
+            //
+            // NOTE: BigFloat is intentionally NOT used for pixel calculations.
+            // BigFloat should ONLY be used for reference orbit computation.
+            // HDRFloat provides sufficient precision for pixel deltas at any zoom level.
 
             if deltas_fit_f64 {
                 // Fast path: f64 arithmetic
@@ -416,8 +418,9 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
                     delta_c_row.1 += delta_step.1;
                 }
-            } else if delta_log2 > -1000.0 || precision <= bigfloat_threshold_bits {
-                // Medium path: HDRFloat (with optional BLA acceleration)
+            } else {
+                // HDRFloat path: handles arbitrary exponent range with ~48-bit mantissa
+                // This is sufficient for pixel calculations at any zoom depth.
                 let delta_origin = HDRComplex {
                     re: HDRFloat::from_bigfloat(&delta_c_origin.0),
                     im: HDRFloat::from_bigfloat(&delta_c_origin.1),
@@ -455,28 +458,6 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     }
 
                     delta_c_row.im = delta_c_row.im.add(&delta_step.im);
-                }
-            } else {
-                // Deep zoom path: BigFloat arithmetic (full precision)
-                let delta_c_row_re = delta_c_origin.0.clone();
-                let mut delta_c_row_im = delta_c_origin.1.clone();
-
-                for _py in 0..tile.height {
-                    let mut delta_c_re = delta_c_row_re.clone();
-
-                    for _px in 0..tile.width {
-                        let result = compute_pixel_perturbation(
-                            &orbit,
-                            BigFloatComplex::new(delta_c_re.clone(), delta_c_row_im.clone()),
-                            max_iterations,
-                            tau_sq,
-                        );
-                        data.push(ComputeData::Mandelbrot(result));
-
-                        delta_c_re = delta_c_re.add(&delta_c_step.0);
-                    }
-
-                    delta_c_row_im = delta_c_row_im.add(&delta_c_step.1);
                 }
             }
 
