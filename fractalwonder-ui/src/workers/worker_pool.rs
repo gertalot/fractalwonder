@@ -137,8 +137,19 @@ impl WorkerPool {
     }
 
     pub(super) fn send_to_worker(&self, worker_id: usize, msg: &MainToWorker) {
-        if let Ok(json) = serde_json::to_string(msg) {
-            let _ = self.workers[worker_id].post_message(&JsValue::from_str(&json));
+        match serde_json::to_string(msg) {
+            Ok(json) => {
+                let _ = self.workers[worker_id].post_message(&JsValue::from_str(&json));
+            }
+            Err(e) => {
+                web_sys::console::error_1(
+                    &format!(
+                        "[WorkerPool] CRITICAL: Failed to serialize message for worker {}: {}",
+                        worker_id, e
+                    )
+                    .into(),
+                );
+            }
         }
     }
 
