@@ -8,6 +8,9 @@ pub struct RenderSettings {
     pub cycle_count: u32,
     pub use_gpu: bool,
     pub xray_enabled: bool,
+    /// Force HDRFloat for all calculations (debug option)
+    #[serde(default)]
+    pub force_hdr_float: bool,
 }
 
 impl Default for RenderSettings {
@@ -16,6 +19,7 @@ impl Default for RenderSettings {
             cycle_count: 1,
             use_gpu: true,
             xray_enabled: false,
+            force_hdr_float: false,
         }
     }
 }

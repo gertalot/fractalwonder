@@ -62,6 +62,37 @@ pub struct MandelbrotData {
     pub surface_normal_im: f32,
 }
 
+impl MandelbrotData {
+    /// Create a new MandelbrotData, sanitizing any NaN/Infinity float values.
+    /// This is critical because serde_json serializes NaN/Infinity as null,
+    /// which causes deserialization to fail with "invalid type: null, expected f32".
+    pub fn new(
+        iterations: u32,
+        max_iterations: u32,
+        escaped: bool,
+        glitched: bool,
+        final_z_norm_sq: f32,
+        surface_normal_re: f32,
+        surface_normal_im: f32,
+    ) -> Self {
+        Self {
+            iterations,
+            max_iterations,
+            escaped,
+            glitched,
+            final_z_norm_sq: Self::sanitize_f32(final_z_norm_sq, 0.0),
+            surface_normal_re: Self::sanitize_f32(surface_normal_re, 0.0),
+            surface_normal_im: Self::sanitize_f32(surface_normal_im, 0.0),
+        }
+    }
+
+    /// Replace NaN or Infinity with a default value to ensure JSON serialization works.
+    #[inline]
+    fn sanitize_f32(value: f32, default: f32) -> f32 {
+        if value.is_finite() { value } else { default }
+    }
+}
+
 impl Default for MandelbrotData {
     fn default() -> Self {
         Self {

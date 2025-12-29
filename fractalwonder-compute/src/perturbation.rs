@@ -161,15 +161,15 @@ pub fn compute_pixel_perturbation_hdr_bla(
                 rho_re.to_f64(),
                 rho_im.to_f64(),
             );
-            return MandelbrotData {
-                iterations: n,
+            return MandelbrotData::new(
+                n,
                 max_iterations,
-                escaped: true,
+                true,
                 glitched,
-                final_z_norm_sq: z_mag_sq as f32,
-                surface_normal_re: sn_re,
-                surface_normal_im: sn_im,
-            };
+                z_mag_sq as f32,
+                sn_re,
+                sn_im,
+            );
         }
 
         // 2. Pauldelbrot glitch detection
@@ -358,15 +358,15 @@ pub fn compute_pixel_perturbation<D: ComplexDelta>(
             let (z_re, z_im) = z.to_f64_pair();
             let (rho_re, rho_im) = rho.to_f64_pair();
             let (sn_re, sn_im) = compute_surface_normal_direction(z_re, z_im, rho_re, rho_im);
-            return MandelbrotData {
-                iterations: n,
+            return MandelbrotData::new(
+                n,
                 max_iterations,
-                escaped: true,
+                true,
                 glitched,
-                final_z_norm_sq: z_norm_sq as f32,
-                surface_normal_re: sn_re,
-                surface_normal_im: sn_im,
-            };
+                z_norm_sq as f32,
+                sn_re,
+                sn_im,
+            );
         }
 
         // Pauldelbrot glitch detection

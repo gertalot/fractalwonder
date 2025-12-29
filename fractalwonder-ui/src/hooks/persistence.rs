@@ -255,20 +255,42 @@ fn encode_state(state: &PersistedState) -> Option<String> {
 /// Decode state from a compressed, URL-safe string.
 fn decode_state(encoded: &str) -> Option<PersistedState> {
     // Check and strip version prefix
-    let data = encoded.strip_prefix(URL_HASH_PREFIX)?;
+    let data = match encoded.strip_prefix(URL_HASH_PREFIX) {
+        Some(d) => d,
+        None => {
+            log::warn!("URL decode: missing prefix '{URL_HASH_PREFIX}'");
+            return None;
+        }
+    };
 
     // Decode from base64
-    let compressed = URL_SAFE_NO_PAD.decode(data).ok()?;
+    let compressed = match URL_SAFE_NO_PAD.decode(data) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("URL decode: base64 decode failed: {e}");
+            return None;
+        }
+    };
 
     // Decompress
     let mut decoder = DeflateDecoder::new(&compressed[..]);
     let mut json = String::new();
-    decoder.read_to_string(&mut json).ok()?;
+    if let Err(e) = decoder.read_to_string(&mut json) {
+        log::warn!("URL decode: deflate decompress failed: {e}");
+        return None;
+    }
 
     // Deserialize
-    let state: PersistedState = serde_json::from_str(&json).ok()?;
+    let state: PersistedState = match serde_json::from_str(&json) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("URL decode: JSON deserialize failed: {e}");
+            log::debug!("URL decode: JSON content preview: {}", &json[..json.len().min(500)]);
+            return None;
+        }
+    };
 
-    // Accept v1, v2, v3 (migration handled by serde default)
+    // Accept v1, v2, v3, v4 (migration handled by serde default)
     if state.version >= 1 && state.version <= PersistedState::CURRENT_VERSION {
         Some(state)
     } else {
@@ -393,6 +415,7 @@ mod tests {
             cycle_count: 64,
             use_gpu: false,
             xray_enabled: true,
+            force_hdr_float: false,
         };
 
         let state = PersistedState::new(

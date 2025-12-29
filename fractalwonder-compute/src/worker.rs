@@ -335,6 +335,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             tau_sq,
             bigfloat_threshold_bits: _, // No longer used: pixel calculations use HDRFloat, not BigFloat
             bla_enabled,
+            force_hdr_float,
         } => {
             // Parse BigFloat deltas from JSON
             let delta_c_origin: (BigFloat, BigFloat) =
@@ -375,11 +376,12 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
 
             // Check if deltas fit in f64 range (roughly 10^-300 to 10^300)
             // log2 of ~10^-300 is about -1000, so we use -900 as safe threshold
+            // force_hdr_float overrides this check for debugging deep zoom issues
             let delta_log2 = delta_c_origin
                 .0
                 .log2_approx()
                 .max(delta_c_origin.1.log2_approx());
-            let deltas_fit_f64 = delta_log2 > -900.0 && delta_log2 < 900.0;
+            let deltas_fit_f64 = !force_hdr_float && delta_log2 > -900.0 && delta_log2 < 900.0;
 
             let mut data = Vec::with_capacity((tile.width * tile.height) as usize);
 

@@ -59,6 +59,8 @@ pub enum MainToWorker {
         bigfloat_threshold_bits: usize,
         /// Enable BLA (Bivariate Linear Approximation) for iteration skipping.
         bla_enabled: bool,
+        /// Force HDRFloat for all calculations (debug option).
+        force_hdr_float: bool,
     },
 
     /// Discard a cached orbit.
@@ -256,6 +258,7 @@ mod tests {
             tau_sq: 1e-6,
             bigfloat_threshold_bits: 1024,
             bla_enabled: true,
+            force_hdr_float: false,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: MainToWorker = serde_json::from_str(&json).unwrap();

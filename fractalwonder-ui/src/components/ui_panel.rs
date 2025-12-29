@@ -45,6 +45,10 @@ pub fn UIPanel(
     xray_enabled: ReadSignal<bool>,
     /// Callback to toggle x-ray mode
     set_xray_enabled: WriteSignal<bool>,
+    /// Force HDRFloat mode enabled state
+    force_hdr_float: Signal<bool>,
+    /// Callback to toggle force HDRFloat mode
+    on_force_hdr_float_toggle: Callback<()>,
     /// Callback when palettes are reordered (from_id, to_id)
     #[prop(optional)]
     on_palette_reorder: Option<Callback<(String, String)>>,
@@ -146,6 +150,8 @@ pub fn UIPanel(
                         on_gpu_toggle=on_gpu_toggle
                         xray_enabled=xray_enabled.into()
                         on_xray_toggle=Callback::new(move |_| set_xray_enabled.update(|v| *v = !*v))
+                        force_hdr_float=force_hdr_float
+                        on_force_hdr_float_toggle=on_force_hdr_float_toggle
                     />
                 </div>
 

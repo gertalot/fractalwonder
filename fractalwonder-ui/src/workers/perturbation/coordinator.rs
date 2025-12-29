@@ -43,6 +43,8 @@ struct PerturbationState {
     dc_max: f64,
     /// Enable BLA for iteration skipping
     bla_enabled: bool,
+    /// Force HDRFloat for all calculations (debug option)
+    force_hdr_float: bool,
 }
 
 impl Default for PerturbationState {
@@ -55,6 +57,7 @@ impl Default for PerturbationState {
             tau_sq: 1e-6,
             dc_max: 0.0,
             bla_enabled: true,
+            force_hdr_float: false,
         }
     }
 }
@@ -105,6 +108,11 @@ impl PerturbationCoordinator {
     /// Get bla_enabled flag.
     pub fn bla_enabled(&self) -> bool {
         self.state.bla_enabled
+    }
+
+    /// Set force_hdr_float flag.
+    pub fn set_force_hdr_float(&mut self, force: bool) {
+        self.state.force_hdr_float = force;
     }
 
     /// Access glitch resolver.
@@ -269,6 +277,7 @@ impl PerturbationCoordinator {
             tau_sq: self.state.tau_sq,
             bigfloat_threshold_bits,
             bla_enabled: self.state.bla_enabled,
+            force_hdr_float: self.state.force_hdr_float,
         })
     }
 

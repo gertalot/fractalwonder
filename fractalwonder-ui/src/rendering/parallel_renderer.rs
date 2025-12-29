@@ -228,11 +228,13 @@ impl ParallelRenderer {
             );
             self.start_progressive_gpu_render(viewport, canvas);
         } else {
-            log::info!("Using CPU renderer (zoom={zoom:.2e})");
+            let force_hdr_float = self.pipeline.borrow().render_settings().force_hdr_float;
+            log::info!("Using CPU renderer (zoom={zoom:.2e}, force_hdr={force_hdr_float})");
             self.worker_pool.borrow_mut().start_perturbation_render(
                 viewport.clone(),
                 (width, height),
                 tiles,
+                force_hdr_float,
             );
         }
     }

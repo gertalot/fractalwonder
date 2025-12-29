@@ -55,15 +55,15 @@ impl MandelbrotRenderer {
             let z_norm_sq = zx_sq + zy_sq;
             if z_norm_sq > ESCAPE_RADIUS_SQ {
                 // No derivative tracking in simple Mandelbrot renderer
-                return MandelbrotData {
-                    iterations: i,
-                    max_iterations: self.max_iterations,
-                    escaped: true,
-                    glitched: false,
-                    final_z_norm_sq: z_norm_sq as f32,
-                    surface_normal_re: 0.0,
-                    surface_normal_im: 0.0,
-                };
+                return MandelbrotData::new(
+                    i,
+                    self.max_iterations,
+                    true,
+                    false,
+                    z_norm_sq as f32,
+                    0.0,
+                    0.0,
+                );
             }
 
             // z = z^2 + c

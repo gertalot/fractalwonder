@@ -1,6 +1,10 @@
 use crate::config::get_config;
 use crate::rendering::RenderProgress;
-use crate::workers::perturbation::{OrbitData, OrbitRequest, PerturbationCoordinator};
+use crate::workers::perturbation::{OrbitData, PerturbationCoordinator};
+use crate::workers::worker_pool_types::{
+    performance_now, OrbitCompleteCallback, OrbitCompleteData, PendingOrbitRequest,
+    RenderCompleteCallback, TileResult,
+};
 use fractalwonder_core::{ComputeData, MainToWorker, PixelRect, Viewport, WorkerToMain};
 use leptos::*;
 use std::cell::RefCell;
@@ -11,40 +15,14 @@ use web_sys::{MessageEvent, Worker, WorkerOptions, WorkerType};
 
 const WORKER_SCRIPT_PATH: &str = "./message-compute-worker.js";
 
-#[derive(Clone)]
-pub struct TileResult {
-    pub tile: PixelRect,
-    pub data: Vec<ComputeData>,
-    pub compute_time_ms: f64,
-}
-
-/// Orbit data passed to the orbit complete callback.
-#[derive(Clone)]
-pub struct OrbitCompleteData {
-    pub orbit: Vec<(f64, f64)>,
-    pub derivative: Vec<(f64, f64)>,
-    pub orbit_id: u32,
-    pub max_iterations: u32,
-    pub escaped_at: Option<u32>,
-}
-
-/// Type alias for orbit complete callback.
-type OrbitCompleteCallback = Rc<RefCell<Option<Box<dyn Fn(OrbitCompleteData)>>>>;
-type RenderCompleteCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
-
-/// Pending reference orbit computation request.
-struct PendingOrbitRequest {
-    request: OrbitRequest,
-}
-
 pub struct WorkerPool {
-    workers: Vec<Worker>,
+    pub(super) workers: Vec<Worker>,
     renderer_id: String,
     initialized_workers: HashSet<usize>,
     pending_tiles: VecDeque<PixelRect>,
     current_render_id: u32,
-    current_viewport: Option<Viewport>,
-    canvas_size: (u32, u32),
+    pub(super) current_viewport: Option<Viewport>,
+    pub(super) canvas_size: (u32, u32),
     on_tile_complete: Rc<dyn Fn(TileResult)>,
     on_render_complete: RenderCompleteCallback,
     on_orbit_complete: OrbitCompleteCallback,
@@ -52,7 +30,7 @@ pub struct WorkerPool {
     render_start_time: Option<f64>,
     self_ref: Weak<RefCell<Self>>,
     /// Perturbation coordinator (handles state, glitch resolution, tile messages)
-    perturbation: PerturbationCoordinator,
+    pub(super) perturbation: PerturbationCoordinator,
     /// Whether current render is using perturbation mode
     is_perturbation_render: bool,
     /// GPU mode: orbit complete callback handles rendering, skip tile dispatch
@@ -61,13 +39,6 @@ pub struct WorkerPool {
     pending_orbit_request: Option<PendingOrbitRequest>,
     /// Cached orbit data for callbacks
     pending_orbit_data: Option<OrbitData>,
-}
-
-fn performance_now() -> f64 {
-    web_sys::window()
-        .and_then(|w| w.performance())
-        .map(|p| p.now())
-        .unwrap_or(0.0)
 }
 
 fn create_workers(count: usize, pool: Rc<RefCell<WorkerPool>>) -> Result<Vec<Worker>, JsValue> {
@@ -82,9 +53,15 @@ fn create_workers(count: usize, pool: Rc<RefCell<WorkerPool>>) -> Result<Vec<Wor
 
         let pool_clone = Rc::clone(&pool);
         let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
-            if let Some(msg_str) = e.data().as_string() {
-                if let Ok(msg) = serde_json::from_str::<WorkerToMain>(&msg_str) {
-                    pool_clone.borrow_mut().handle_message(worker_id, msg);
+            let Some(msg_str) = e.data().as_string() else {
+                web_sys::console::error_1(&format!("[WorkerPool] Worker {worker_id} non-string msg").into());
+                return;
+            };
+            match serde_json::from_str::<WorkerToMain>(&msg_str) {
+                Ok(msg) => pool_clone.borrow_mut().handle_message(worker_id, msg),
+                Err(err) => {
+                    let preview: String = msg_str.chars().take(200).collect();
+                    web_sys::console::error_1(&format!("[WorkerPool] Parse error worker {worker_id}: {err}. Preview: {preview}").into());
                 }
             }
         }) as Box<dyn FnMut(_)>);
@@ -159,7 +136,7 @@ impl WorkerPool {
         Ok(pool)
     }
 
-    fn send_to_worker(&self, worker_id: usize, msg: &MainToWorker) {
+    pub(super) fn send_to_worker(&self, worker_id: usize, msg: &MainToWorker) {
         if let Ok(json) = serde_json::to_string(msg) {
             let _ = self.workers[worker_id].post_message(&JsValue::from_str(&json));
         }
@@ -502,10 +479,14 @@ impl WorkerPool {
         viewport: Viewport,
         canvas_size: (u32, u32),
         tiles: Vec<PixelRect>,
+        force_hdr_float: bool,
     ) {
         self.is_perturbation_render = true;
         self.gpu_mode = false;
         self.current_render_id = self.current_render_id.wrapping_add(1);
+
+        // Set force_hdr_float before starting render
+        self.perturbation.set_force_hdr_float(force_hdr_float);
 
         let orbit_request =
             match self
@@ -579,106 +560,7 @@ impl WorkerPool {
         self.current_render_id = self.current_render_id.wrapping_add(1);
     }
 
-    pub fn subdivide_glitched_cells(&mut self) {
-        let subdivided = self
-            .perturbation
-            .glitch_resolver_mut()
-            .subdivide_glitched_cells();
-        if subdivided == 0 {
-            web_sys::console::log_1(&"[WorkerPool] No cells subdivided".into());
-            return;
-        }
-
-        web_sys::console::log_1(
-            &format!(
-                "[WorkerPool] Subdivided {} cells with glitched tiles",
-                subdivided
-            )
-            .into(),
-        );
-        for (bounds, count) in self
-            .perturbation
-            .glitch_resolver()
-            .leaves_with_glitch_counts()
-        {
-            web_sys::console::log_1(
-                &format!(
-                    "[WorkerPool] Cell ({},{})-({},{}): {} glitched tiles",
-                    bounds.x,
-                    bounds.y,
-                    bounds.x + bounds.width,
-                    bounds.y + bounds.height,
-                    count
-                )
-                .into(),
-            );
-        }
-        self.compute_orbits_for_glitched_cells();
-    }
-
-    fn compute_orbits_for_glitched_cells(&mut self) {
-        let Some(viewport) = self.current_viewport.clone() else {
-            web_sys::console::log_1(
-                &"[WorkerPool] No viewport available, cannot compute cell center orbits".into(),
-            );
-            return;
-        };
-
-        let max_iterations = self.perturbation.max_iterations();
-        let start_time = performance_now();
-        let computed = self.perturbation.glitch_resolver_mut().compute_cell_orbits(
-            &viewport,
-            self.canvas_size,
-            max_iterations,
-        );
-        let elapsed = performance_now() - start_time;
-        web_sys::console::log_1(
-            &format!(
-                "[WorkerPool] Phase 7: Computed {} reference orbits in {:.1}ms",
-                computed, elapsed
-            )
-            .into(),
-        );
-        self.broadcast_cell_orbits_to_workers();
-    }
-
-    fn broadcast_cell_orbits_to_workers(&mut self) {
-        let dc_max = self.perturbation.dc_max();
-        let bla_enabled = self.perturbation.bla_enabled();
-        let broadcasts = self
-            .perturbation
-            .glitch_resolver_mut()
-            .orbits_to_broadcast(dc_max, bla_enabled);
-
-        if broadcasts.is_empty() {
-            web_sys::console::log_1(&"[WorkerPool] Phase 8: No cell orbits to distribute".into());
-            return;
-        }
-
-        let start_time = performance_now();
-        for (orbit_id, msg) in &broadcasts {
-            for worker_id in 0..self.workers.len() {
-                self.send_to_worker(worker_id, msg);
-            }
-            web_sys::console::log_1(
-                &format!(
-                    "[WorkerPool] Phase 8: Broadcasting orbit #{} to {} workers",
-                    orbit_id,
-                    self.workers.len()
-                )
-                .into(),
-            );
-        }
-        let elapsed = performance_now() - start_time;
-        web_sys::console::log_1(
-            &format!(
-                "[WorkerPool] Phase 8: Broadcast {} cell orbits in {:.1}ms",
-                broadcasts.len(),
-                elapsed
-            )
-            .into(),
-        );
-    }
+    // Note: subdivide_glitched_cells and related methods are in worker_pool_glitch.rs
 
     /// Terminate and recreate all workers. Used when switching renderers.
     fn recreate_workers(&mut self) {

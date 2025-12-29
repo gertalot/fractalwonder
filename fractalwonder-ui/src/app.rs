@@ -403,6 +403,18 @@ pub fn App() -> impl IntoView {
                         set_toast_message.set(Some(msg.to_string()));
                     });
                 }
+                "h" | "H" => {
+                    // Toggle force HDRFloat mode
+                    set_render_settings.update(|settings| {
+                        settings.force_hdr_float = !settings.force_hdr_float;
+                        let msg = if settings.force_hdr_float {
+                            "HDRFloat: On"
+                        } else {
+                            "HDRFloat: Off"
+                        };
+                        set_toast_message.set(Some(msg.to_string()));
+                    });
+                }
                 _ => {}
             }
         }) as Box<dyn FnMut(web_sys::KeyboardEvent)>);
@@ -501,6 +513,18 @@ pub fn App() -> impl IntoView {
             on_cancel=on_cancel
             xray_enabled=xray_enabled
             set_xray_enabled=set_xray_enabled
+            force_hdr_float=Signal::derive(move || render_settings.get().force_hdr_float)
+            on_force_hdr_float_toggle=Callback::new(move |_| {
+                set_render_settings.update(|settings| {
+                    settings.force_hdr_float = !settings.force_hdr_float;
+                    let msg = if settings.force_hdr_float {
+                        "HDRFloat: On"
+                    } else {
+                        "HDRFloat: Off"
+                    };
+                    set_toast_message.set(Some(msg.to_string()));
+                });
+            })
             on_edit=on_palette_edit
             on_palette_reorder=on_palette_reorder
         />

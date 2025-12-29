@@ -24,6 +24,10 @@ pub fn OptionsMenu(
     xray_enabled: Signal<bool>,
     /// Callback when X-ray toggle is clicked
     on_xray_toggle: Callback<()>,
+    /// Force HDRFloat mode enabled state
+    force_hdr_float: Signal<bool>,
+    /// Callback when Force HDRFloat toggle is clicked
+    on_force_hdr_float_toggle: Callback<()>,
 ) -> impl IntoView {
     // Derived signals for stepper bounds
     let cycle_at_min = Signal::derive(move || cycle_count.get() <= 1);
@@ -56,6 +60,12 @@ pub fn OptionsMenu(
                 on_click=on_xray_toggle
                 label="X-ray"
                 shortcut="[X]"
+            />
+            <MenuItem
+                active=force_hdr_float
+                on_click=on_force_hdr_float_toggle
+                label="Use HDRFloat"
+                shortcut="[H]"
             />
         </Menu>
     }
