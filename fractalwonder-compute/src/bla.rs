@@ -1,17 +1,26 @@
 //! Bivariate Linear Approximation for iteration skipping.
+//!
+//! Uses HDRFloat for coefficients to prevent overflow at deep zoom levels
+//! where BLA coefficients can exceed f64 range (10^308).
 
 use crate::ReferenceOrbit;
+use fractalwonder_core::{HDRComplex, HDRFloat};
 
 /// Single BLA entry: skips `l` iterations.
 /// Applies: δz_new = A·δz + B·δc
-#[derive(Clone, Debug, PartialEq)]
+///
+/// Uses HDRFloat for A, B, and r_sq to prevent overflow during deep zoom
+/// where coefficients multiply together across many iterations.
+#[derive(Clone, Debug)]
 pub struct BlaEntry {
-    pub a_re: f64,
-    pub a_im: f64,
-    pub b_re: f64,
-    pub b_im: f64,
+    /// Complex coefficient A (multiplies δz)
+    pub a: HDRComplex,
+    /// Complex coefficient B (multiplies δc)
+    pub b: HDRComplex,
+    /// Number of iterations to skip
     pub l: u32,
-    pub r_sq: f64,
+    /// Validity radius squared
+    pub r_sq: HDRFloat,
 }
 
 impl BlaEntry {
@@ -22,42 +31,61 @@ impl BlaEntry {
         let r = epsilon * z_mag;
 
         Self {
-            a_re: 2.0 * z_re,
-            a_im: 2.0 * z_im,
-            b_re: 1.0,
-            b_im: 0.0,
+            a: HDRComplex {
+                re: HDRFloat::from_f64(2.0 * z_re),
+                im: HDRFloat::from_f64(2.0 * z_im),
+            },
+            b: HDRComplex {
+                re: HDRFloat::from_f64(1.0),
+                im: HDRFloat::ZERO,
+            },
             l: 1,
-            r_sq: r * r,
+            r_sq: HDRFloat::from_f64(r * r),
         }
     }
 
     /// Merge two BLAs: x (first) then y (second).
     /// Result skips l_x + l_y iterations.
+    ///
+    /// All arithmetic uses HDRFloat to prevent overflow at deep zoom levels.
     pub fn merge(x: &BlaEntry, y: &BlaEntry, dc_max: f64) -> BlaEntry {
-        // A_merged = A_y * A_x (complex multiplication)
-        let a_re = y.a_re * x.a_re - y.a_im * x.a_im;
-        let a_im = y.a_re * x.a_im + y.a_im * x.a_re;
+        // A_merged = A_y * A_x (HDRComplex multiplication - no overflow!)
+        let a = y.a.mul(&x.a);
 
         // B_merged = A_y * B_x + B_y
-        let b_re = (y.a_re * x.b_re - y.a_im * x.b_im) + y.b_re;
-        let b_im = (y.a_re * x.b_im + y.a_im * x.b_re) + y.b_im;
+        let b = y.a.mul(&x.b).add(&y.b);
 
         // r_merged = min(r_x, max(0, (r_y - |B_x|·dc_max) / |A_x|))
         let r_x = x.r_sq.sqrt();
         let r_y = y.r_sq.sqrt();
-        let b_x_mag = (x.b_re * x.b_re + x.b_im * x.b_im).sqrt();
-        let a_x_mag = (x.a_re * x.a_re + x.a_im * x.a_im).sqrt();
+        let b_x_mag = x.b.norm_hdr();
+        let a_x_mag = x.a.norm_hdr();
 
-        let r_adjusted = (r_y - b_x_mag * dc_max).max(0.0) / a_x_mag.max(1e-300);
-        let r = r_x.min(r_adjusted);
+        // All HDRFloat arithmetic - no f64 overflow possible
+        let dc_max_hdr = HDRFloat::from_f64(dc_max);
+        let b_dc = b_x_mag.mul(&dc_max_hdr);
+        let r_adjusted_num = r_y.sub(&b_dc);
+
+        // max(0, r_adjusted_num) - check if negative via sign
+        let r_adjusted = if r_adjusted_num.is_negative() || r_adjusted_num.is_zero() {
+            HDRFloat::ZERO
+        } else {
+            // Avoid division by zero
+            if a_x_mag.is_zero() {
+                HDRFloat::ZERO
+            } else {
+                r_adjusted_num.div(&a_x_mag)
+            }
+        };
+
+        // min(r_x, r_adjusted)
+        let r = r_x.min(&r_adjusted);
 
         BlaEntry {
-            a_re,
-            a_im,
-            b_re,
-            b_im,
+            a,
+            b,
             l: x.l + y.l,
-            r_sq: r * r,
+            r_sq: r.square(),
         }
     }
 }
@@ -137,6 +165,9 @@ impl BlaTable {
             return None;
         }
 
+        // Convert dz_mag_sq to HDRFloat for comparison with r_sq
+        let dz_mag_sq_hdr = HDRFloat::from_f64(dz_mag_sq);
+
         // Fast path: when |δz|² = 0, try highest level first (common case at iteration start)
         // But still verify r_sq > 0 (accounts for dc_max)
         if dz_mag_sq == 0.0 {
@@ -155,7 +186,7 @@ impl BlaTable {
             if entry_idx < level_end {
                 let entry = &self.entries[entry_idx];
                 // Only return if r_sq > 0 (BLA is actually valid for this dc_max)
-                if entry.r_sq > 0.0 {
+                if !entry.r_sq.is_zero() && !entry.r_sq.is_negative() {
                     return Some(entry);
                 }
             }
@@ -185,7 +216,8 @@ impl BlaTable {
             let entry = &self.entries[entry_idx];
 
             // Check validity: |δz|² < r²
-            if dz_mag_sq < entry.r_sq {
+            // Using HDRFloat comparison: a < b iff (a - b).is_negative()
+            if dz_mag_sq_hdr.sub(&entry.r_sq).is_negative() {
                 return Some(entry);
             }
         }
@@ -208,16 +240,16 @@ mod tests {
         // r = ε·|Z| = ε·√(1 + 0.25) ≈ ε·1.118
         let entry = BlaEntry::from_orbit_point(1.0, 0.5);
 
-        assert!((entry.a_re - 2.0).abs() < 1e-14);
-        assert!((entry.a_im - 1.0).abs() < 1e-14);
-        assert!((entry.b_re - 1.0).abs() < 1e-14);
-        assert!((entry.b_im - 0.0).abs() < 1e-14);
+        assert!((entry.a.re.to_f64() - 2.0).abs() < 1e-14);
+        assert!((entry.a.im.to_f64() - 1.0).abs() < 1e-14);
+        assert!((entry.b.re.to_f64() - 1.0).abs() < 1e-14);
+        assert!((entry.b.im.to_f64() - 0.0).abs() < 1e-14);
         assert_eq!(entry.l, 1);
 
         let z_mag = (1.0_f64 * 1.0 + 0.5 * 0.5).sqrt();
         let epsilon = 2.0_f64.powi(-53);
         let expected_r_sq = (epsilon * z_mag).powi(2);
-        assert!((entry.r_sq - expected_r_sq).abs() < 1e-40);
+        assert!((entry.r_sq.to_f64() - expected_r_sq).abs() < 1e-40);
     }
 
     #[test]
@@ -234,12 +266,12 @@ mod tests {
 
         // A_merged = A_y * A_x = (1.0, 0) * (2.0, 0) = (2.0, 0)
         // (complex multiply: (1)(2) - (0)(0) = 2, (1)(0) + (0)(2) = 0)
-        assert!((merged.a_re - 2.0).abs() < 1e-14);
-        assert!((merged.a_im - 0.0).abs() < 1e-14);
+        assert!((merged.a.re.to_f64() - 2.0).abs() < 1e-14);
+        assert!((merged.a.im.to_f64() - 0.0).abs() < 1e-14);
 
         // B_merged = A_y * B_x + B_y = (1,0)*(1,0) + (1,0) = (2,0)
-        assert!((merged.b_re - 2.0).abs() < 1e-14);
-        assert!((merged.b_im - 0.0).abs() < 1e-14);
+        assert!((merged.b.re.to_f64() - 2.0).abs() < 1e-14);
+        assert!((merged.b.im.to_f64() - 0.0).abs() < 1e-14);
     }
 
     #[test]
@@ -258,7 +290,7 @@ mod tests {
         let z0 = orbit.orbit[0];
         let expected = BlaEntry::from_orbit_point(z0.0, z0.1);
         assert_eq!(table.entries[0].l, expected.l);
-        assert!((table.entries[0].a_re - expected.a_re).abs() < 1e-14);
+        assert!((table.entries[0].a.re.to_f64() - expected.a.re.to_f64()).abs() < 1e-14);
     }
 
     #[test]

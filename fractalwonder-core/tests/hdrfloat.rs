@@ -475,3 +475,5 @@ fn hdr_complex_delta_norm_sq() {
     let norm = a.norm_sq();
     assert!((norm - 25.0).abs() < 1e-10);
 }
+
+// NOTE: sqrt() and div() tests are in hdrfloat_extended_arithmetic.rs

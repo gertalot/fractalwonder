@@ -194,23 +194,11 @@ pub fn compute_pixel_perturbation_hdr_bla(
         // 4. Try BLA acceleration
         if let Some(bla) = bla_table.find_valid(m, dz_mag_sq) {
             // Apply BLA: δz_new = A·δz + B·δc
-            let new_dz_re = dz
-                .re
-                .mul_f64(bla.a_re)
-                .sub(&dz.im.mul_f64(bla.a_im))
-                .add(&delta_c.re.mul_f64(bla.b_re))
-                .sub(&delta_c.im.mul_f64(bla.b_im));
-            let new_dz_im = dz
-                .re
-                .mul_f64(bla.a_im)
-                .add(&dz.im.mul_f64(bla.a_re))
-                .add(&delta_c.re.mul_f64(bla.b_im))
-                .add(&delta_c.im.mul_f64(bla.b_re));
+            // Now uses HDRComplex multiplication - no f64 overflow possible
+            let a_dz = bla.a.mul(&dz);
+            let b_dc = bla.b.mul(&delta_c);
+            dz = a_dz.add(&b_dc);
 
-            dz = HDRComplex {
-                re: new_dz_re,
-                im: new_dz_im,
-            };
             // NOTE: During BLA skip, drho is NOT updated (less accurate but functional)
             m += bla.l as usize;
             n += bla.l;
