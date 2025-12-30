@@ -1,9 +1,13 @@
 //! Pure helper functions for perturbation rendering.
 //!
-//! These functions are stateless and easily testable.
+//! These functions delegate to fractalwonder_core::config for the actual
+//! implementations, ensuring consistency between UI and compute layers.
 
 use crate::config::FractalConfig;
-use fractalwonder_core::{calculate_max_iterations, HDRFloat, Viewport};
+use fractalwonder_core::Viewport;
+
+// Re-export core functions - these are the actual implementations
+pub use fractalwonder_core::calculate_dc_max;
 
 /// Validate viewport dimensions for rendering.
 ///
@@ -23,35 +27,19 @@ pub fn validate_viewport(viewport: &Viewport) -> Result<(), String> {
 }
 
 /// Calculate maximum iterations for a render based on zoom level.
+///
+/// Delegates to core implementation using the config's core parameters.
 pub fn calculate_render_max_iterations(viewport: &Viewport, config: Option<&FractalConfig>) -> u32 {
-    let vp_width = viewport.width.to_f64();
-
-    // Calculate zoom exponent from viewport width
-    // Default Mandelbrot width is ~4, so zoom = 4 / width
-    let zoom = 4.0 / vp_width;
-    let zoom_exponent = if zoom.is_finite() && zoom > 0.0 {
-        zoom.log10()
-    } else {
-        0.0
-    };
-
-    let multiplier = config.map(|c| c.iteration_multiplier).unwrap_or(200.0);
-    let power = config.map(|c| c.iteration_power).unwrap_or(2.5);
-
-    calculate_max_iterations(zoom_exponent, multiplier, power)
-}
-
-/// Calculate maximum |delta_c| for any pixel in the viewport.
-///
-/// This is the distance from viewport center to the farthest corner,
-/// used for BLA table construction.
-///
-/// Uses HDRFloat to avoid underflow when squaring very small viewport dimensions
-/// at extreme zoom levels (e.g., 10^270 where f64 squaring underflows to 0).
-pub fn calculate_dc_max(viewport: &Viewport) -> HDRFloat {
-    let half_width = HDRFloat::from_bigfloat(&viewport.width).div_f64(2.0);
-    let half_height = HDRFloat::from_bigfloat(&viewport.height).div_f64(2.0);
-    half_width.square().add(&half_height.square()).sqrt()
+    match config {
+        Some(cfg) => fractalwonder_core::calculate_render_max_iterations(viewport, cfg.core),
+        None => {
+            // Fallback to mandelbrot config if none provided
+            fractalwonder_core::calculate_render_max_iterations(
+                viewport,
+                &fractalwonder_core::MANDELBROT_CONFIG,
+            )
+        }
+    }
 }
 
 #[cfg(test)]

@@ -174,8 +174,8 @@ pub fn UIPanel(
                             let zoom_exponent = zoom_log2 / LOG2_10;
                             let max_iter = calculate_max_iterations(
                                 zoom_exponent,
-                                cfg.iteration_multiplier,
-                                cfg.iteration_power,
+                                cfg.iteration_multiplier(),
+                                cfg.iteration_power(),
                             );
 
                             let cx = format_signed_coordinate(&vp.center.0);

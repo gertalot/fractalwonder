@@ -1,6 +1,7 @@
 pub mod bigfloat;
 pub mod complex_delta;
 pub mod compute_data;
+pub mod config;
 pub mod hdrcomplex;
 pub mod hdrfloat;
 pub mod messages;
@@ -12,6 +13,10 @@ pub mod viewport;
 pub use bigfloat::BigFloat;
 pub use complex_delta::{BigFloatComplex, ComplexDelta, F64Complex};
 pub use compute_data::{ComputeData, MandelbrotData, TestImageData};
+pub use config::{
+    calculate_dc_max, calculate_render_max_iterations, get_fractal_config, is_bla_useful,
+    FractalConfig, MANDELBROT_CONFIG,
+};
 pub use hdrcomplex::HDRComplex;
 pub use hdrfloat::HDRFloat;
 pub use messages::{MainToWorker, WorkerToMain};

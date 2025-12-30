@@ -84,7 +84,7 @@ impl ParallelRenderer {
             }
         };
 
-        let worker_pool = WorkerPool::new(config.id, on_tile_complete, progress)?;
+        let worker_pool = WorkerPool::new(config.id(), on_tile_complete, progress)?;
 
         // Set up render complete callback to apply postprocessing (shading) when all tiles done
         let tile_results_complete = Rc::clone(&tile_results);
@@ -348,7 +348,7 @@ impl ParallelRenderer {
 
     pub fn switch_config(&mut self, config: &'static FractalConfig) -> Result<(), JsValue> {
         self.config = config;
-        self.worker_pool.borrow_mut().switch_renderer(config.id);
+        self.worker_pool.borrow_mut().switch_renderer(config.id());
         Ok(())
     }
 }
@@ -440,7 +440,7 @@ fn schedule_row_set(
             );
         }
 
-        let tau_sq = config.tau_sq as f32;
+        let tau_sq = config.tau_sq() as f32;
         let reference_escaped =
             orbit_data_spawn.orbit.len() < orbit_data_spawn.max_iterations as usize;
 

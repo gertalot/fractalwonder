@@ -1,8 +1,15 @@
 //! Fractal configuration registry.
 //!
 //! Defines available fractal types with their natural bounds and metadata.
+//! Core rendering parameters come from fractalwonder_core::config.
 
-use fractalwonder_core::Viewport;
+use fractalwonder_core::{Viewport, MANDELBROT_CONFIG as CORE_MANDELBROT};
+
+// Re-export core config functions for convenience
+pub use fractalwonder_core::{
+    calculate_dc_max, calculate_render_max_iterations, is_bla_useful,
+    FractalConfig as CoreFractalConfig,
+};
 
 /// Determines which renderer implementation to use.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -14,39 +21,22 @@ pub enum RendererType {
     Perturbation,
 }
 
-/// Configuration for a fractal type.
+/// UI-specific configuration for a fractal type.
+/// Core rendering parameters (tau_sq, iteration_multiplier, etc.) come from
+/// fractalwonder_core::config to ensure consistency between UI and compute layers.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FractalConfig {
-    /// Unique identifier (matches renderer ID in compute layer)
-    pub id: &'static str,
-    /// Human-readable name for UI display
-    pub display_name: &'static str,
-    /// Default center coordinates as strings (preserves precision)
-    pub default_center: (&'static str, &'static str),
-    /// Default width in fractal space as string
-    pub default_width: &'static str,
-    /// Default height in fractal space as string
-    pub default_height: &'static str,
+    /// Reference to core config (source of truth for rendering parameters)
+    pub core: &'static CoreFractalConfig,
     /// Which renderer implementation to use
     pub renderer_type: RendererType,
-    /// Glitch detection threshold squared (τ²).
-    /// Default 1e-6 corresponds to τ = 10⁻³ (standard).
-    /// See docs/research/perturbation-theory.md Section 2.5.
-    pub tau_sq: f64,
     /// Number of web workers for parallel rendering.
     /// 0 = use all available hardware threads (hardware_concurrency).
     pub worker_count: usize,
-    /// Multiplier for max iterations formula: multiplier * zoom_exp^power.
-    pub iteration_multiplier: f64,
-    /// Power for max iterations formula: multiplier * zoom_exp^power.
-    pub iteration_power: f64,
     /// Minimum precision bits before switching to BigFloat delta arithmetic.
     /// Below this threshold, fast f64 arithmetic is used.
     /// 1024 bits ≈ 10^300 zoom depth.
     pub bigfloat_threshold_bits: usize,
-    /// Enable BLA (Bivariate Linear Approximation) for iteration skipping.
-    /// Provides significant speedup at deep zoom levels.
-    pub bla_enabled: bool,
     /// Enable GPU acceleration via WebGPU compute shaders.
     /// Falls back to CPU if GPU unavailable or disabled.
     pub gpu_enabled: bool,
@@ -59,33 +49,48 @@ pub struct FractalConfig {
 }
 
 impl FractalConfig {
+    /// Get the unique identifier.
+    pub fn id(&self) -> &'static str {
+        self.core.id
+    }
+
+    /// Get the display name.
+    pub fn display_name(&self) -> &'static str {
+        self.core.display_name
+    }
+
+    /// Get tau_sq (glitch detection threshold squared).
+    pub fn tau_sq(&self) -> f64 {
+        self.core.tau_sq
+    }
+
+    /// Get iteration multiplier.
+    pub fn iteration_multiplier(&self) -> f64 {
+        self.core.iteration_multiplier
+    }
+
+    /// Get iteration power.
+    pub fn iteration_power(&self) -> f64 {
+        self.core.iteration_power
+    }
+
+    /// Check if BLA is enabled.
+    pub fn bla_enabled(&self) -> bool {
+        self.core.bla_enabled
+    }
+
     /// Create the default viewport for this fractal at the given precision.
     pub fn default_viewport(&self, precision_bits: usize) -> Viewport {
-        Viewport::from_strings(
-            self.default_center.0,
-            self.default_center.1,
-            self.default_width,
-            self.default_height,
-            precision_bits,
-        )
-        .expect("Invalid default viewport coordinates in FractalConfig")
+        self.core.default_viewport(precision_bits)
     }
 }
 
 /// Registry of available fractal configurations.
 pub static FRACTAL_CONFIGS: &[FractalConfig] = &[FractalConfig {
-    id: "mandelbrot",
-    display_name: "Mandelbrot Set",
-    default_center: ("-0.5", "0.0"),
-    default_width: "4.0",
-    default_height: "4.0",
+    core: &CORE_MANDELBROT,
     renderer_type: RendererType::Perturbation,
-    tau_sq: 1e-6,
     worker_count: 0, // all available workers
-    iteration_multiplier: 200.0,
-    iteration_power: 2.8,
     bigfloat_threshold_bits: 1024, // ~10^300 zoom
-    bla_enabled: true,
     gpu_enabled: true,
     gpu_iterations_per_dispatch: 50_000,
     gpu_progressive_row_sets: 32, // 0 = use old tiled renderer, >0 = progressive
@@ -93,7 +98,7 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[FractalConfig {
 
 /// Look up a fractal configuration by ID.
 pub fn get_config(id: &str) -> Option<&'static FractalConfig> {
-    FRACTAL_CONFIGS.iter().find(|c| c.id == id)
+    FRACTAL_CONFIGS.iter().find(|c| c.id() == id)
 }
 
 /// Get the default fractal configuration.
@@ -109,7 +114,7 @@ mod tests {
     fn get_config_finds_mandelbrot() {
         let config = get_config("mandelbrot");
         assert!(config.is_some());
-        assert_eq!(config.unwrap().display_name, "Mandelbrot Set");
+        assert_eq!(config.unwrap().display_name(), "Mandelbrot Set");
     }
 
     #[test]
@@ -133,6 +138,16 @@ mod tests {
     #[test]
     fn default_config_returns_mandelbrot() {
         let config = default_config();
-        assert_eq!(config.id, "mandelbrot");
+        assert_eq!(config.id(), "mandelbrot");
+    }
+
+    #[test]
+    fn config_uses_core_values() {
+        let config = get_config("mandelbrot").unwrap();
+        // Verify core values are accessible
+        assert_eq!(config.tau_sq(), 1e-6);
+        assert_eq!(config.iteration_multiplier(), 200.0);
+        assert_eq!(config.iteration_power(), 2.8);
+        assert!(config.bla_enabled());
     }
 }

@@ -3,6 +3,10 @@
 //! At ~10^270 zoom with 10M iterations, center tiles fail to render with CPU while GPU works.
 //! This test reproduces the EXACT conditions using EXACT production code paths and parameters.
 //!
+//! CRITICAL: This test uses the ACTUAL production functions from fractalwonder_core,
+//! not copied/duplicated logic. Any changes to production code will automatically
+//! be reflected in this test.
+//!
 //! URL decoded from: http://127.0.0.1:8080/fractalwonder/#v1:...
 //! Canvas size: 773x446
 //! Tile size at this zoom: 32x32 (DEEP_ZOOM_TILE_SIZE)
@@ -10,7 +14,10 @@
 use crate::bla::BlaTable;
 use crate::tile_render::{render_tile, TileRenderInput};
 use crate::ReferenceOrbit;
-use fractalwonder_core::{BigFloat, ComputeData, HDRFloat, Viewport};
+use fractalwonder_core::{
+    calculate_dc_max, calculate_render_max_iterations, is_bla_useful, BigFloat, ComputeData,
+    Viewport, MANDELBROT_CONFIG,
+};
 
 // =============================================================================
 // EXACT VALUES FROM DECODED URL (Canvas: 773x446, Tile size: 32)
@@ -22,6 +29,9 @@ const CANVAS_HEIGHT: u32 = 446;
 
 /// Tile size at deep zoom (from tiles.rs: DEEP_ZOOM_TILE_SIZE = 32)
 const TILE_SIZE: u32 = 32;
+
+/// Precision bits from the decoded URL
+const PRECISION_BITS: usize = 1026;
 
 /// The EXACT c_ref JSON from the decoded URL.
 /// Center: (0.2730003..., 0.0058387...)
@@ -36,46 +46,29 @@ const VIEWPORT_WIDTH_STR: &str = "3.68629585526668733757870313779318701180348758
 /// Height: 2.12689256332334093913116602106093685402570700118706E-270
 const VIEWPORT_HEIGHT_STR: &str = "2.12689256332334093913116602106093685402570700118706E-270";
 
-/// Production max iterations from the failing render
-const MAX_ITERATIONS: u32 = 10_000_000;
-
-/// Production precision bits
-const PRECISION_BITS: usize = 1026;
-
 // =============================================================================
-// Helper Functions (EXACT same code as production)
+// Helper Functions - Use ACTUAL production code paths
 // =============================================================================
-
-/// Parse BigFloat tuple from JSON (EXACT same code as worker.rs)
-fn parse_bigfloat_tuple(json: &str) -> (BigFloat, BigFloat) {
-    serde_json::from_str(json).expect("Valid BigFloat tuple JSON")
-}
 
 /// Create viewport from production values.
 /// This is the EXACT viewport that causes the bug.
 fn create_production_viewport() -> Viewport {
-    let c_ref = parse_bigfloat_tuple(C_REF_JSON);
+    let center: (BigFloat, BigFloat) =
+        serde_json::from_str(C_REF_JSON).expect("Valid c_ref JSON");
     let width =
         BigFloat::from_string(VIEWPORT_WIDTH_STR, PRECISION_BITS).expect("Valid viewport width");
     let height =
         BigFloat::from_string(VIEWPORT_HEIGHT_STR, PRECISION_BITS).expect("Valid viewport height");
 
     Viewport {
-        center: c_ref,
+        center,
         width,
         height,
     }
 }
 
-/// Calculate dc_max EXACTLY as production does (same as helpers.rs:calculate_dc_max).
-/// Uses HDRFloat to avoid underflow when squaring very small viewport dimensions.
-fn calculate_dc_max(viewport: &Viewport) -> HDRFloat {
-    let half_width = HDRFloat::from_bigfloat(&viewport.width).div_f64(2.0);
-    let half_height = HDRFloat::from_bigfloat(&viewport.height).div_f64(2.0);
-    half_width.square().add(&half_height.square()).sqrt()
-}
-
 /// Calculate delta_c_origin for a tile EXACTLY as coordinator.rs does (lines 269-278).
+/// This is the only function we replicate because it's internal to coordinator.
 fn calculate_delta_c_origin(
     tile_x: u32,
     tile_y: u32,
@@ -108,22 +101,42 @@ fn calculate_delta_c_step(viewport: &Viewport, canvas_size: (u32, u32)) -> (BigF
     )
 }
 
-/// Create reference orbit using EXACT same method as production.
-fn create_production_reference_orbit() -> ReferenceOrbit {
-    let c_ref = parse_bigfloat_tuple(C_REF_JSON);
-    ReferenceOrbit::compute(&c_ref, MAX_ITERATIONS)
+/// Simulate the EXACT JSON round-trip that happens in production for messages.
+/// In production, messages go through: serialize -> send -> deserialize
+/// This simulates that for any serializable type.
+fn json_round_trip<T: serde::Serialize + serde::de::DeserializeOwned>(value: &T) -> T {
+    let json = serde_json::to_string(value).expect("serialize");
+    serde_json::from_str(&json).expect("deserialize")
 }
 
+/// Simulate the DOUBLE JSON encoding that happens for delta values in production.
+/// Production flow:
+/// 1. coordinator: delta_c_origin_json = serde_json::to_string(&delta_c_origin)
+/// 2. MainToWorker message created with this JSON string
+/// 3. Entire message serialized to JSON for worker messaging
+/// 4. Worker deserializes message, gets back the JSON string
+/// 5. Worker parses: serde_json::from_str(&delta_c_origin_json)
+fn double_json_round_trip_bigfloat_tuple(value: &(BigFloat, BigFloat)) -> (BigFloat, BigFloat) {
+    // Step 1: coordinator serializes delta to JSON string
+    let inner_json = serde_json::to_string(value).expect("serialize delta");
+
+    // Steps 2-4: The JSON string goes inside MainToWorker message, which is itself serialized
+    // We simulate this by serializing the string as JSON (which escapes it), then deserializing
+    let outer_json = serde_json::to_string(&inner_json).expect("serialize message");
+    let recovered_inner_json: String =
+        serde_json::from_str(&outer_json).expect("deserialize message");
+
+    // Step 5: Worker parses the recovered JSON string
+    serde_json::from_str(&recovered_inner_json).expect("deserialize delta")
+}
 
 // =============================================================================
 // Production-Matching Tests
 // =============================================================================
 
-/// Production tau_sq value (from config default)
-const PRODUCTION_TAU_SQ: f64 = 1e-6;
-
 /// This test reproduces the EXACT failing condition from production.
 /// It uses render_tile() with TileRenderInput - the EXACT production code path.
+/// ALL parameters use ACTUAL production functions, not hardcoded values.
 ///
 /// Run with: cargo test deep_zoom_full_tile_with_bla -- --ignored --nocapture
 #[test]
@@ -143,92 +156,165 @@ fn deep_zoom_full_tile_with_bla() {
     println!("Viewport height: {}", VIEWPORT_HEIGHT_STR);
     println!();
 
-    // Calculate dc_max EXACTLY as production does (helpers.rs:51-55)
-    let dc_max = calculate_dc_max(&viewport);
-    println!("dc_max = {:e} (log2 = {:.1})", dc_max.to_f64(), dc_max.log2());
+    // =========================================================================
+    // Use ACTUAL production functions - no hardcoded values
+    // =========================================================================
 
-    // Simulate JSON round-trip for dc_max (production: coordinator -> worker message)
-    let dc_max_json = serde_json::to_string(&dc_max).expect("serialize dc_max");
-    let dc_max: HDRFloat = serde_json::from_str(&dc_max_json).expect("deserialize dc_max");
-    println!("dc_max after JSON: {:e} (log2 = {:.1})", dc_max.to_f64(), dc_max.log2());
+    // Calculate max_iterations using ACTUAL production function and config
+    let max_iterations = calculate_render_max_iterations(&viewport, &MANDELBROT_CONFIG);
+    println!(
+        "max_iterations = {} (from MANDELBROT_CONFIG: multiplier={}, power={})",
+        max_iterations, MANDELBROT_CONFIG.iteration_multiplier, MANDELBROT_CONFIG.iteration_power
+    );
+
+    // Get tau_sq from ACTUAL production config
+    let tau_sq = MANDELBROT_CONFIG.tau_sq;
+    println!("tau_sq = {:e} (from MANDELBROT_CONFIG)", tau_sq);
+
+    // Get bla_enabled from ACTUAL production config
+    let bla_enabled = MANDELBROT_CONFIG.bla_enabled;
+    println!("bla_enabled = {} (from MANDELBROT_CONFIG)", bla_enabled);
     println!();
 
-    // Compute reference orbit (worker.rs:240)
-    println!("Computing reference orbit ({} iterations)...", MAX_ITERATIONS);
-    let orbit = create_production_reference_orbit();
+    // Calculate dc_max using ACTUAL production function
+    let dc_max = calculate_dc_max(&viewport);
+    println!(
+        "dc_max = {:e} (log2 = {:.1}) [from calculate_dc_max]",
+        dc_max.to_f64(),
+        dc_max.log2()
+    );
+
+    // Simulate JSON round-trip for dc_max (production: coordinator -> worker message)
+    let dc_max = json_round_trip(&dc_max);
+    println!(
+        "dc_max after JSON round-trip: {:e} (log2 = {:.1})",
+        dc_max.to_f64(),
+        dc_max.log2()
+    );
+
+    // Check bla_useful using ACTUAL production function
+    let bla_useful = is_bla_useful(&dc_max);
+    println!(
+        "is_bla_useful = {} [from is_bla_useful(), threshold log2 < -80]",
+        bla_useful
+    );
+    println!();
+
+    // =========================================================================
+    // Compute reference orbit (same as worker.rs:240)
+    // =========================================================================
+
+    println!("Computing reference orbit ({} iterations)...", max_iterations);
+    let c_ref: (BigFloat, BigFloat) =
+        serde_json::from_str(C_REF_JSON).expect("Valid c_ref JSON");
+    let orbit = ReferenceOrbit::compute(&c_ref, max_iterations);
     println!(
         "Orbit: {} points, escaped_at={:?}",
         orbit.orbit.len(),
         orbit.escaped_at
     );
 
-    // Simulate JSON round-trip for orbit (production: ReferenceOrbitComplete -> StoreReferenceOrbit)
-    let orbit_json = serde_json::to_string(&orbit.orbit).expect("serialize orbit");
-    let derivative_json = serde_json::to_string(&orbit.derivative).expect("serialize derivative");
-    let orbit_data: Vec<(f64, f64)> = serde_json::from_str(&orbit_json).expect("deserialize orbit");
-    let derivative_data: Vec<(f64, f64)> =
-        serde_json::from_str(&derivative_json).expect("deserialize derivative");
-    let orbit = ReferenceOrbit {
-        c_ref: orbit.c_ref,
-        orbit: orbit_data,
-        derivative: derivative_data,
-        escaped_at: orbit.escaped_at,
-    };
-    println!("Orbit after JSON round-trip: {} points", orbit.orbit.len());
-    println!();
+    // =========================================================================
+    // Simulate FULL JSON round-trip for orbit (ReferenceOrbitComplete -> StoreReferenceOrbit)
+    // Production sends orbit TWICE through JSON: worker->main, main->worker
+    // =========================================================================
 
-    // Build BLA table (worker.rs:286)
-    let bla_table = BlaTable::compute(&orbit, dc_max);
+    // First round-trip: ReferenceOrbitComplete message
+    let c_ref_rt1 = json_round_trip(&orbit.c_ref);
+    let orbit_data_rt1 = json_round_trip(&orbit.orbit);
+    let derivative_rt1 = json_round_trip(&orbit.derivative);
+    let escaped_at_rt1 = json_round_trip(&orbit.escaped_at);
+
+    // Second round-trip: StoreReferenceOrbit message
+    let c_ref_rt2 = json_round_trip(&c_ref_rt1);
+    let orbit_data_rt2 = json_round_trip(&orbit_data_rt1);
+    let derivative_rt2 = json_round_trip(&derivative_rt1);
+    let escaped_at_rt2 = json_round_trip(&escaped_at_rt1);
+
+    let orbit = ReferenceOrbit {
+        c_ref: c_ref_rt2,
+        orbit: orbit_data_rt2,
+        derivative: derivative_rt2,
+        escaped_at: escaped_at_rt2,
+    };
     println!(
-        "BLA table: {} entries, {} levels",
-        bla_table.entries.len(),
-        bla_table.num_levels
+        "Orbit after 2x JSON round-trip: {} points, escaped_at={:?}",
+        orbit.orbit.len(),
+        orbit.escaped_at
     );
     println!();
 
-    // Calculate delta values EXACTLY as coordinator.rs:269-278 does
+    // =========================================================================
+    // Build BLA table (worker.rs:279-309) - only if bla_enabled AND bla_useful
+    // =========================================================================
+
+    let bla_table = if bla_enabled && bla_useful {
+        let table = BlaTable::compute(&orbit, dc_max);
+        println!(
+            "BLA table: {} entries, {} levels",
+            table.entries.len(),
+            table.num_levels
+        );
+        Some(table)
+    } else {
+        println!(
+            "BLA table SKIPPED: bla_enabled={}, bla_useful={}",
+            bla_enabled, bla_useful
+        );
+        None
+    };
+    println!();
+
+    // =========================================================================
+    // Calculate delta values with DOUBLE JSON encoding (production behavior)
+    // =========================================================================
+
     let delta_c_origin = calculate_delta_c_origin(tile_x, tile_y, &viewport, canvas_size);
     let delta_c_step = calculate_delta_c_step(&viewport, canvas_size);
 
-    // Simulate JSON round-trip for deltas (production: RenderTilePerturbation message)
-    let origin_json = serde_json::to_string(&delta_c_origin).expect("serialize origin");
-    let step_json = serde_json::to_string(&delta_c_step).expect("serialize step");
-    let delta_c_origin: (BigFloat, BigFloat) =
-        serde_json::from_str(&origin_json).expect("deserialize origin");
-    let delta_c_step: (BigFloat, BigFloat) =
-        serde_json::from_str(&step_json).expect("deserialize step");
+    // Simulate DOUBLE JSON round-trip for deltas (nested in MainToWorker message)
+    let delta_c_origin = double_json_round_trip_bigfloat_tuple(&delta_c_origin);
+    let delta_c_step = double_json_round_trip_bigfloat_tuple(&delta_c_step);
 
     println!(
-        "delta_c_origin log2: re={:.1}, im={:.1}",
+        "delta_c_origin log2: re={:.1}, im={:.1} (after double JSON encoding)",
         delta_c_origin.0.log2_approx(),
         delta_c_origin.1.log2_approx()
     );
     println!(
-        "delta_c_step log2: re={:.1}, im={:.1}",
+        "delta_c_step log2: re={:.1}, im={:.1} (after double JSON encoding)",
         delta_c_step.0.log2_approx(),
         delta_c_step.1.log2_approx()
     );
     println!();
 
+    // =========================================================================
     // Create TileRenderInput EXACTLY as worker.rs:373-382 does
+    // =========================================================================
+
     let input = TileRenderInput {
         delta_c_origin,
         delta_c_step,
         tile_width: TILE_SIZE,
         tile_height: TILE_SIZE,
-        max_iterations: MAX_ITERATIONS,
-        tau_sq: PRODUCTION_TAU_SQ,
-        bla_enabled: true,
+        max_iterations,
+        tau_sq,
+        bla_enabled, // Production passes config value; render_tile handles bla_table=None
         force_hdr_float: false,
     };
 
     println!(
-        "Calling render_tile() with {} x {} pixels, bla_enabled=true...",
-        TILE_SIZE, TILE_SIZE
+        "Calling render_tile() with {} x {} pixels, bla_enabled={}...",
+        TILE_SIZE,
+        TILE_SIZE,
+        input.bla_enabled
     );
 
+    // =========================================================================
     // Call render_tile() - the EXACT production code path (worker.rs:384)
-    let results = render_tile(&orbit, Some(&bla_table), &input);
+    // =========================================================================
+
+    let results = render_tile(&orbit, bla_table.as_ref(), &input);
 
     // Analyze results
     let escaped_count = results
@@ -269,52 +355,58 @@ fn deep_zoom_full_tile_without_bla() {
 
     println!("=== DEEP ZOOM FULL TILE (NO BLA, PRODUCTION CODE PATH) ===");
 
-    let orbit = create_production_reference_orbit();
+    // Use ACTUAL production functions
+    let max_iterations = calculate_render_max_iterations(&viewport, &MANDELBROT_CONFIG);
+    let tau_sq = MANDELBROT_CONFIG.tau_sq;
+
+    println!("max_iterations = {} (from MANDELBROT_CONFIG)", max_iterations);
+    println!("tau_sq = {:e} (from MANDELBROT_CONFIG)", tau_sq);
+
+    let c_ref: (BigFloat, BigFloat) =
+        serde_json::from_str(C_REF_JSON).expect("Valid c_ref JSON");
+    let orbit = ReferenceOrbit::compute(&c_ref, max_iterations);
     println!(
         "Orbit: {} points, escaped_at={:?}",
         orbit.orbit.len(),
         orbit.escaped_at
     );
 
-    // JSON round-trip for orbit
-    let orbit_json = serde_json::to_string(&orbit.orbit).expect("serialize orbit");
-    let derivative_json = serde_json::to_string(&orbit.derivative).expect("serialize derivative");
-    let orbit_data: Vec<(f64, f64)> = serde_json::from_str(&orbit_json).expect("deserialize orbit");
-    let derivative_data: Vec<(f64, f64)> =
-        serde_json::from_str(&derivative_json).expect("deserialize derivative");
+    // Full JSON round-trip for orbit (2x as in production)
+    let c_ref_rt = json_round_trip(&json_round_trip(&orbit.c_ref));
+    let orbit_data_rt = json_round_trip(&json_round_trip(&orbit.orbit));
+    let derivative_rt = json_round_trip(&json_round_trip(&orbit.derivative));
+    let escaped_at_rt = json_round_trip(&json_round_trip(&orbit.escaped_at));
+
     let orbit = ReferenceOrbit {
-        c_ref: orbit.c_ref,
-        orbit: orbit_data,
-        derivative: derivative_data,
-        escaped_at: orbit.escaped_at,
+        c_ref: c_ref_rt,
+        orbit: orbit_data_rt,
+        derivative: derivative_rt,
+        escaped_at: escaped_at_rt,
     };
 
     let delta_c_origin = calculate_delta_c_origin(tile_x, tile_y, &viewport, canvas_size);
     let delta_c_step = calculate_delta_c_step(&viewport, canvas_size);
 
-    // JSON round-trip for deltas
-    let origin_json = serde_json::to_string(&delta_c_origin).expect("serialize origin");
-    let step_json = serde_json::to_string(&delta_c_step).expect("serialize step");
-    let delta_c_origin: (BigFloat, BigFloat) =
-        serde_json::from_str(&origin_json).expect("deserialize origin");
-    let delta_c_step: (BigFloat, BigFloat) =
-        serde_json::from_str(&step_json).expect("deserialize step");
+    // Double JSON round-trip for deltas
+    let delta_c_origin = double_json_round_trip_bigfloat_tuple(&delta_c_origin);
+    let delta_c_step = double_json_round_trip_bigfloat_tuple(&delta_c_step);
 
-    // Create TileRenderInput with bla_enabled=false (worker.rs:373-382)
     let input = TileRenderInput {
         delta_c_origin,
         delta_c_step,
         tile_width: TILE_SIZE,
         tile_height: TILE_SIZE,
-        max_iterations: MAX_ITERATIONS,
-        tau_sq: PRODUCTION_TAU_SQ,
-        bla_enabled: false, // <-- Key difference: no BLA
+        max_iterations,
+        tau_sq,
+        bla_enabled: false, // Key difference: no BLA
         force_hdr_float: false,
     };
 
-    println!("Calling render_tile() with {} x {} pixels, bla_enabled=false...", TILE_SIZE, TILE_SIZE);
+    println!(
+        "Calling render_tile() with {} x {} pixels, bla_enabled=false...",
+        TILE_SIZE, TILE_SIZE
+    );
 
-    // Call render_tile() - the EXACT production code path (worker.rs:384)
     let results = render_tile(&orbit, None, &input);
 
     let escaped_count = results
@@ -331,8 +423,13 @@ fn deep_zoom_full_tile_without_bla() {
         .count();
 
     println!();
-    println!("Total: {}, Escaped: {}, In set: {}, Glitched: {}",
-        results.len(), escaped_count, in_set_count, glitched_count);
+    println!(
+        "Total: {}, Escaped: {}, In set: {}, Glitched: {}",
+        results.len(),
+        escaped_count,
+        in_set_count,
+        glitched_count
+    );
 
     if in_set_count == results.len() {
         println!("*** BUG: ALL pixels in set ***");
@@ -342,7 +439,8 @@ fn deep_zoom_full_tile_without_bla() {
 /// Quick sanity test with small iteration count to verify test setup works
 #[test]
 fn deep_zoom_sanity_check() {
-    let c_ref = parse_bigfloat_tuple(C_REF_JSON);
+    let c_ref: (BigFloat, BigFloat) =
+        serde_json::from_str(C_REF_JSON).expect("Valid c_ref JSON");
     let orbit = ReferenceOrbit::compute(&c_ref, 1000);
 
     let viewport = create_production_viewport();
@@ -356,7 +454,7 @@ fn deep_zoom_sanity_check() {
         tile_width: 1,
         tile_height: 1,
         max_iterations: 1000,
-        tau_sq: PRODUCTION_TAU_SQ,
+        tau_sq: MANDELBROT_CONFIG.tau_sq,
         bla_enabled: false,
         force_hdr_float: false,
     };
@@ -371,16 +469,27 @@ fn deep_zoom_sanity_check() {
 }
 
 /// Verify HDRFloat dc_max does NOT underflow at extreme zoom.
+/// Uses ACTUAL production function.
 #[test]
 fn dc_max_at_extreme_zoom() {
     let viewport = create_production_viewport();
+
+    // Use ACTUAL production function
     let dc_max = calculate_dc_max(&viewport);
 
     println!("=== DC_MAX AT EXTREME ZOOM (10^270) ===");
     println!("Viewport width: {}", VIEWPORT_WIDTH_STR);
     println!("Viewport height: {}", VIEWPORT_HEIGHT_STR);
-    println!("dc_max = {:e} (log2 = {:.1})", dc_max.to_f64(), dc_max.log2());
+    println!(
+        "dc_max = {:e} (log2 = {:.1}) [from calculate_dc_max]",
+        dc_max.to_f64(),
+        dc_max.log2()
+    );
     println!("dc_max.is_zero() = {}", dc_max.is_zero());
+    println!(
+        "is_bla_useful = {} [from is_bla_useful]",
+        is_bla_useful(&dc_max)
+    );
 
     assert!(
         !dc_max.is_zero(),
@@ -394,6 +503,28 @@ fn dc_max_at_extreme_zoom() {
     println!("\n*** SUCCESS: HDRFloat dc_max does NOT underflow ***");
 }
 
+/// Verify max_iterations calculation matches expected value.
+#[test]
+fn max_iterations_at_extreme_zoom() {
+    let viewport = create_production_viewport();
+
+    // Use ACTUAL production function
+    let max_iterations = calculate_render_max_iterations(&viewport, &MANDELBROT_CONFIG);
+
+    println!("=== MAX_ITERATIONS AT EXTREME ZOOM ===");
+    println!(
+        "MANDELBROT_CONFIG: multiplier={}, power={}",
+        MANDELBROT_CONFIG.iteration_multiplier, MANDELBROT_CONFIG.iteration_power
+    );
+    println!("max_iterations = {}", max_iterations);
+
+    // At 10^270 zoom, the formula gives a huge value that gets clamped to 10M
+    assert_eq!(
+        max_iterations, 10_000_000,
+        "max_iterations should be capped at 10M"
+    );
+}
+
 /// Test all 4 center tiles to identify which one(s) fail.
 /// Uses render_tile() with 1x1 tiles for quick first-pixel check.
 #[test]
@@ -402,45 +533,69 @@ fn deep_zoom_all_center_tiles() {
     let viewport = create_production_viewport();
     let canvas_size = (CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // The 4 center tiles for 773x446 canvas (sorted by distance from center):
-    // 1. (384, 192) - closest
-    // 2. (384, 224)
-    // 3. (352, 192)
-    // 4. (352, 224)
-    let center_tiles = [
-        (384, 192),
-        (384, 224),
-        (352, 192),
-        (352, 224),
-    ];
+    // Use ACTUAL production functions
+    let max_iterations = calculate_render_max_iterations(&viewport, &MANDELBROT_CONFIG);
+    let tau_sq = MANDELBROT_CONFIG.tau_sq;
+    let bla_enabled = MANDELBROT_CONFIG.bla_enabled;
 
     let dc_max = calculate_dc_max(&viewport);
-    let orbit = create_production_reference_orbit();
-    let bla_table = BlaTable::compute(&orbit, dc_max);
+    let dc_max = json_round_trip(&dc_max);
+    let bla_useful = is_bla_useful(&dc_max);
+
+    // The 4 center tiles for 773x446 canvas (sorted by distance from center):
+    let center_tiles = [(384, 192), (384, 224), (352, 192), (352, 224)];
+
+    let c_ref: (BigFloat, BigFloat) =
+        serde_json::from_str(C_REF_JSON).expect("Valid c_ref JSON");
+    let orbit = ReferenceOrbit::compute(&c_ref, max_iterations);
+
+    // Full JSON round-trip (2x)
+    let c_ref_rt = json_round_trip(&json_round_trip(&orbit.c_ref));
+    let orbit_data_rt = json_round_trip(&json_round_trip(&orbit.orbit));
+    let derivative_rt = json_round_trip(&json_round_trip(&orbit.derivative));
+    let escaped_at_rt = json_round_trip(&json_round_trip(&orbit.escaped_at));
+
+    let orbit = ReferenceOrbit {
+        c_ref: c_ref_rt,
+        orbit: orbit_data_rt,
+        derivative: derivative_rt,
+        escaped_at: escaped_at_rt,
+    };
+
+    let bla_table = if bla_enabled && bla_useful {
+        Some(BlaTable::compute(&orbit, dc_max))
+    } else {
+        None
+    };
 
     println!("=== ALL 4 CENTER TILES (PRODUCTION CODE PATH) ===");
     println!("Orbit: {} points", orbit.orbit.len());
-    println!("BLA: {} entries, {} levels", bla_table.entries.len(), bla_table.num_levels);
+    if let Some(ref table) = bla_table {
+        println!("BLA: {} entries, {} levels", table.entries.len(), table.num_levels);
+    } else {
+        println!("BLA: disabled");
+    }
     println!();
 
     let delta_c_step = calculate_delta_c_step(&viewport, canvas_size);
+    let delta_c_step = double_json_round_trip_bigfloat_tuple(&delta_c_step);
 
     for (tile_x, tile_y) in center_tiles {
         let delta_c_origin = calculate_delta_c_origin(tile_x, tile_y, &viewport, canvas_size);
+        let delta_c_origin = double_json_round_trip_bigfloat_tuple(&delta_c_origin);
 
-        // Use render_tile with 1x1 tile for first pixel only
         let input = TileRenderInput {
             delta_c_origin,
             delta_c_step: delta_c_step.clone(),
             tile_width: 1,
             tile_height: 1,
-            max_iterations: MAX_ITERATIONS,
-            tau_sq: PRODUCTION_TAU_SQ,
-            bla_enabled: true,
+            max_iterations,
+            tau_sq,
+            bla_enabled, // Production passes config value; render_tile handles bla_table=None
             force_hdr_float: false,
         };
 
-        let results = render_tile(&orbit, Some(&bla_table), &input);
+        let results = render_tile(&orbit, bla_table.as_ref(), &input);
         if let Some(ComputeData::Mandelbrot(result)) = results.first() {
             println!(
                 "Tile ({}, {}): escaped={}, iter={}, glitched={}",

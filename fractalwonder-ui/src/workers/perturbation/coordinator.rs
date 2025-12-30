@@ -173,9 +173,9 @@ impl PerturbationCoordinator {
 
         // Calculate render parameters
         self.state.max_iterations = calculate_render_max_iterations(viewport, config);
-        self.state.tau_sq = config.map(|c| c.tau_sq).unwrap_or(1e-6);
+        self.state.tau_sq = config.map(|c| c.tau_sq()).unwrap_or(1e-6);
         self.state.dc_max = calculate_dc_max(viewport);
-        self.state.bla_enabled = config.map(|c| c.bla_enabled).unwrap_or(true);
+        self.state.bla_enabled = config.map(|c| c.bla_enabled()).unwrap_or(true);
 
         // Calculate delta step per pixel
         let precision = viewport.width.precision_bits();
@@ -235,7 +235,7 @@ impl PerturbationCoordinator {
 
         // Calculate render parameters
         self.state.max_iterations = calculate_render_max_iterations(viewport, config);
-        self.state.tau_sq = config.map(|c| c.tau_sq).unwrap_or(1e-6);
+        self.state.tau_sq = config.map(|c| c.tau_sq()).unwrap_or(1e-6);
 
         // Prepare orbit request
         let c_ref_json = serde_json::to_string(&viewport.center).unwrap_or_default();
