@@ -3,7 +3,7 @@
 //! These functions are stateless and easily testable.
 
 use crate::config::FractalConfig;
-use fractalwonder_core::{calculate_max_iterations, Viewport};
+use fractalwonder_core::{calculate_max_iterations, HDRFloat, Viewport};
 
 /// Validate viewport dimensions for rendering.
 ///
@@ -45,11 +45,18 @@ pub fn calculate_render_max_iterations(viewport: &Viewport, config: Option<&Frac
 ///
 /// This is the distance from viewport center to the farthest corner,
 /// used for BLA table construction.
-pub fn calculate_dc_max(viewport: &Viewport) -> f64 {
-    let half_width = viewport.width.to_f64() / 2.0;
-    let half_height = viewport.height.to_f64() / 2.0;
+///
+/// Returns HDRFloat to prevent underflow at deep zoom levels where
+/// viewport dimensions like 10^-270 would underflow in f64.
+pub fn calculate_dc_max(viewport: &Viewport) -> HDRFloat {
+    // Convert BigFloat dimensions to HDRFloat to preserve extended exponent range
+    let half_width = HDRFloat::from_bigfloat(&viewport.width).div_f64(2.0);
+    let half_height = HDRFloat::from_bigfloat(&viewport.height).div_f64(2.0);
 
-    (half_width * half_width + half_height * half_height).sqrt()
+    // dc_max = sqrt(half_width² + half_height²)
+    let width_sq = half_width.square();
+    let height_sq = half_height.square();
+    width_sq.add(&height_sq).sqrt()
 }
 
 #[cfg(test)]
@@ -91,7 +98,7 @@ mod tests {
         let viewport = create_test_viewport(4.0, 4.0);
         let dc_max = calculate_dc_max(&viewport);
         // sqrt(2^2 + 2^2) = sqrt(8) ≈ 2.828
-        assert!((dc_max - 2.828).abs() < 0.01);
+        assert!((dc_max.to_f64() - 2.828).abs() < 0.01);
     }
 
     #[test]

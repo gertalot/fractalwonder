@@ -112,7 +112,7 @@ pub fn compute_pixel_perturbation_hdr_bla(
     tau_sq: f64,
 ) -> MandelbrotData {
     let mut dz = HDRComplex::ZERO;
-    let mut drho = HDRComplex::ZERO; // Derivative delta
+    let mut drho = HDRComplex::ZERO;
     let mut m: usize = 0;
     let mut glitched = false;
 
@@ -129,13 +129,10 @@ pub fn compute_pixel_perturbation_hdr_bla(
         };
     }
 
-    // Check if reference escaped (short orbit that will wrap)
     let reference_escaped = orbit.escaped_at.is_some();
-
     let mut n = 0u32;
 
     while n < max_iterations {
-        // Reference exhaustion detection: m exceeded orbit length
         if reference_escaped && m >= orbit_len {
             glitched = true;
         }
@@ -152,7 +149,6 @@ pub fn compute_pixel_perturbation_hdr_bla(
         let z_mag_sq = z_re.square().add(&z_im.square()).to_f64();
         let z_m_mag_sq = z_m_re * z_m_re + z_m_im * z_m_im;
         // Use HDRFloat for dz_mag_sq to prevent f64 underflow at deep zoom
-        // where |δz|² can be as small as 10^-1800 (beyond f64's ~10^-308 limit)
         let dz_mag_sq = dz.norm_sq_hdr();
 
         // 1. Escape check
@@ -179,36 +175,32 @@ pub fn compute_pixel_perturbation_hdr_bla(
             glitched = true;
         }
 
-        // 3. Rebase check
-        // NOTE: Rebasing is a precision technique, NOT a Mandelbrot iteration.
-        // The iteration count n should NOT increment during rebase.
-        // Compare using HDRFloat to handle deep zoom where values exceed f64 range
-        let z_mag_sq_hdr = z_re.square().add(&z_im.square());
-        if z_mag_sq_hdr.sub(&dz_mag_sq).is_negative() {
+        // 3. Rebase check: use f64 comparison so rebase triggers correctly
+        // (HDRFloat preserves tiny dz values, preventing rebase from triggering)
+        let dz_mag_sq_f64 = dz.norm_sq();
+        if z_mag_sq < dz_mag_sq_f64 {
             dz = HDRComplex { re: z_re, im: z_im };
             drho = HDRComplex {
                 re: rho_re,
                 im: rho_im,
-            }; // Also rebase derivative
+            };
             m = 0;
-            // Do NOT increment n - rebase is not a real iteration
             continue;
         }
 
         // 4. Try BLA acceleration
-        if let Some(bla) = bla_table.find_valid(m, &dz_mag_sq) {
+        let bla_entry = bla_table.find_valid(m, &dz_mag_sq);
+
+        if let Some(bla) = bla_entry {
             // Apply BLA: δz_new = A·δz + B·δc
-            // Now uses HDRComplex multiplication - no f64 overflow possible
             let a_dz = bla.a.mul(&dz);
             let b_dc = bla.b.mul(&delta_c);
             dz = a_dz.add(&b_dc);
 
-            // NOTE: During BLA skip, drho is NOT updated (less accurate but functional)
             m += bla.l as usize;
             n += bla.l;
         } else {
-            // 5. Standard delta iteration (no valid BLA)
-            // CRITICAL: Store old dz before updating - needed for derivative calculation
+            // 5. Standard delta iteration
             let old_dz = dz;
 
             let two_z_dz_re = dz
@@ -230,8 +222,6 @@ pub fn compute_pixel_perturbation_hdr_bla(
             };
 
             // Derivative delta iteration: δρ' = 2·Z_m·δρ + 2·δz·Der_m + 2·δz·δρ
-            // Uses old_dz (the value BEFORE the update above)
-            // Term 1: 2·Z_m·δρ (complex multiplication)
             let two_z_drho_re = drho
                 .re
                 .mul_f64(z_m_re)
@@ -243,7 +233,6 @@ pub fn compute_pixel_perturbation_hdr_bla(
                 .add(&drho.im.mul_f64(z_m_re))
                 .mul_f64(2.0);
 
-            // Term 2: 2·δz·Der_m (complex multiplication, using old_dz)
             let two_dz_der_re = old_dz
                 .re
                 .mul_f64(der_m_re)
@@ -255,7 +244,6 @@ pub fn compute_pixel_perturbation_hdr_bla(
                 .add(&old_dz.im.mul_f64(der_m_re))
                 .mul_f64(2.0);
 
-            // Term 3: 2·δz·δρ (complex multiplication, using old_dz)
             let two_dz_drho_re = old_dz
                 .re
                 .mul(&drho.re)
@@ -277,7 +265,6 @@ pub fn compute_pixel_perturbation_hdr_bla(
         }
     }
 
-    // Interior point - no surface normal needed
     MandelbrotData {
         iterations: max_iterations,
         max_iterations,
@@ -292,10 +279,6 @@ pub fn compute_pixel_perturbation_hdr_bla(
 use fractalwonder_core::ComplexDelta;
 
 /// Generic perturbation iteration for any ComplexDelta type.
-///
-/// Computes the Mandelbrot iteration using perturbation theory with
-/// the provided delta type. The compiler monomorphizes this into
-/// type-specific code with zero runtime overhead.
 pub fn compute_pixel_perturbation<D: ComplexDelta>(
     orbit: &ReferenceOrbit,
     delta_c: D,
@@ -315,34 +298,25 @@ pub fn compute_pixel_perturbation<D: ComplexDelta>(
         };
     }
 
-    // Check if reference escaped at iteration 0
     let reference_escaped = orbit.escaped_at.is_some();
-
-    // Initialize deltas with matching precision
     let mut dz = delta_c.zero();
     let mut drho = delta_c.zero();
-
     let mut m: usize = 0;
     let mut n: u32 = 0;
     let mut glitched = false;
 
     while n < max_iterations {
-        // Glitch if we've run past a finite orbit
         if reference_escaped && m >= orbit_len {
             glitched = true;
         }
 
-        // Get Z_m and Der_m with wrap-around
         let z_m = orbit.orbit[m % orbit_len];
         let der_m = orbit.derivative[m % orbit_len];
         let z_m_complex = D::from_f64_pair(z_m.0, z_m.1);
         let der_m_complex = D::from_f64_pair(der_m.0, der_m.1);
 
-        // Full z = Z_m + δz
         let z = z_m_complex.add(&dz);
         let z_norm_sq = z.norm_sq();
-
-        // Full derivative ρ = Der_m + δρ
         let rho = der_m_complex.add(&drho);
 
         // Escape check
@@ -392,7 +366,6 @@ pub fn compute_pixel_perturbation<D: ComplexDelta>(
         n += 1;
     }
 
-    // Interior point - no surface normal needed
     MandelbrotData {
         iterations: max_iterations,
         max_iterations,

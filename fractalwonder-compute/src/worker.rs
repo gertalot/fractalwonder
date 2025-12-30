@@ -278,7 +278,13 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             // BLA helps at deep zoom where iteration counts are high.
             // Phil Thompson enables BLA at scale > 1e25 (dc_max < ~1e-25).
             // Reference: https://philthompson.me/2023/Faster-Mandelbrot-Set-Rendering-with-BLA-Bivariate-Linear-Approximation.html
-            let dc_max_log2 = dc_max.log2();
+            // dc_max is now HDRFloat to prevent underflow at deep zoom
+            let dc_max_log2 = if dc_max.is_zero() {
+                f64::NEG_INFINITY
+            } else {
+                // log2(head * 2^exp) = log2(head) + exp
+                (dc_max.head as f64).log2() + dc_max.exp as f64
+            };
             let bla_useful = dc_max_log2 < -80.0; // Roughly 10^-25 (scale > 1e25)
 
             let bla_table = if bla_enabled && bla_useful {
@@ -288,13 +294,14 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     derivative: derivative.clone(),
                     escaped_at,
                 };
-                let table = BlaTable::compute(&ref_orbit, dc_max);
+                let table = BlaTable::compute(&ref_orbit, &dc_max);
                 web_sys::console::log_1(
                     &format!(
-                        "[Worker] Built BLA table: {} entries, {} levels (dc_max={:.2e})",
+                        "[Worker] Built BLA table: {} entries, {} levels (dc_max: head={:.2e}, exp={})",
                         table.entries.len(),
                         table.num_levels,
-                        dc_max
+                        dc_max.head,
+                        dc_max.exp
                     )
                     .into(),
                 );
@@ -303,8 +310,8 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                 if bla_enabled && !bla_useful {
                     web_sys::console::log_1(
                         &format!(
-                            "[Worker] Skipping BLA table: dc_max={:.2e} too large (log2={:.0})",
-                            dc_max, dc_max_log2
+                            "[Worker] Skipping BLA table: dc_max (head={:.2e}, exp={}) too large (log2={:.0})",
+                            dc_max.head, dc_max.exp, dc_max_log2
                         )
                         .into(),
                     );
@@ -448,12 +455,12 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                                     tau_sq,
                                 )
                             } else {
-                                // Fallback if table wasn't built
                                 compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq)
                             }
                         } else {
                             compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq)
                         };
+
                         data.push(ComputeData::Mandelbrot(result));
 
                         delta_c.re = delta_c.re.add(&delta_step.re);

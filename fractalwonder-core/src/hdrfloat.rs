@@ -5,10 +5,11 @@
 //! enabling deep GPU zoom without f64 dependency.
 
 use crate::BigFloat;
+use serde::{Deserialize, Serialize};
 
 /// High Dynamic Range Float with ~48-bit mantissa precision.
 /// Value = (head + tail) × 2^exp
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct HDRFloat {
     /// Primary mantissa, normalized to [0.5, 1.0)
     pub head: f32,

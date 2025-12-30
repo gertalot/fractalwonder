@@ -6,7 +6,7 @@
 use super::glitch_resolution::GlitchResolver;
 use super::helpers::{calculate_dc_max, calculate_render_max_iterations, validate_viewport};
 use crate::config::get_config;
-use fractalwonder_core::{BigFloat, MainToWorker, PixelRect, Viewport};
+use fractalwonder_core::{BigFloat, HDRFloat, MainToWorker, PixelRect, Viewport};
 use std::collections::HashSet;
 
 /// Request to compute a reference orbit.
@@ -39,8 +39,9 @@ struct PerturbationState {
     delta_step: (BigFloat, BigFloat),
     /// Glitch detection threshold squared
     tau_sq: f64,
-    /// Maximum |delta_c| for BLA table construction
-    dc_max: f64,
+    /// Maximum |delta_c| for BLA table construction.
+    /// Uses HDRFloat to prevent underflow at deep zoom (f64 underflows below ~10^-308).
+    dc_max: HDRFloat,
     /// Enable BLA for iteration skipping
     bla_enabled: bool,
     /// Force HDRFloat for all calculations (debug option)
@@ -55,7 +56,7 @@ impl Default for PerturbationState {
             max_iterations: 0,
             delta_step: (BigFloat::zero(64), BigFloat::zero(64)),
             tau_sq: 1e-6,
-            dc_max: 0.0,
+            dc_max: HDRFloat::ZERO,
             bla_enabled: true,
             force_hdr_float: false,
         }
@@ -101,7 +102,7 @@ impl PerturbationCoordinator {
     }
 
     /// Get dc_max for BLA.
-    pub fn dc_max(&self) -> f64 {
+    pub fn dc_max(&self) -> HDRFloat {
         self.state.dc_max
     }
 

@@ -5,7 +5,7 @@
 
 use crate::workers::quadtree::{Bounds, QuadtreeCell};
 use fractalwonder_compute::ReferenceOrbit;
-use fractalwonder_core::{pixel_to_fractal, MainToWorker, PixelRect, Viewport};
+use fractalwonder_core::{pixel_to_fractal, HDRFloat, MainToWorker, PixelRect, Viewport};
 use std::collections::{HashMap, HashSet};
 
 /// Key for identifying quadtree cells: (x, y, width, height)
@@ -231,7 +231,7 @@ impl GlitchResolver {
     /// Returns Vec of (orbit_id, broadcast_data) for orbits not yet assigned an ID.
     pub fn orbits_to_broadcast(
         &mut self,
-        dc_max: f64,
+        dc_max: HDRFloat,
         bla_enabled: bool,
     ) -> Vec<(u32, MainToWorker)> {
         let mut broadcasts = Vec::new();

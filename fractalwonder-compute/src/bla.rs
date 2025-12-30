@@ -48,7 +48,8 @@ impl BlaEntry {
     /// Result skips l_x + l_y iterations.
     ///
     /// All arithmetic uses HDRFloat to prevent overflow at deep zoom levels.
-    pub fn merge(x: &BlaEntry, y: &BlaEntry, dc_max: f64) -> BlaEntry {
+    /// dc_max must be HDRFloat to prevent underflow at deep zoom (10^-270 underflows in f64).
+    pub fn merge(x: &BlaEntry, y: &BlaEntry, dc_max: &HDRFloat) -> BlaEntry {
         // A_merged = A_y * A_x (HDRComplex multiplication - no overflow!)
         let a = y.a.mul(&x.a);
 
@@ -61,9 +62,8 @@ impl BlaEntry {
         let b_x_mag = x.b.norm_hdr();
         let a_x_mag = x.a.norm_hdr();
 
-        // All HDRFloat arithmetic - no f64 overflow possible
-        let dc_max_hdr = HDRFloat::from_f64(dc_max);
-        let b_dc = b_x_mag.mul(&dc_max_hdr);
+        // All HDRFloat arithmetic - no f64 overflow/underflow possible
+        let b_dc = b_x_mag.mul(dc_max);
         let r_adjusted_num = r_y.sub(&b_dc);
 
         // max(0, r_adjusted_num) - check if negative via sign
@@ -101,14 +101,17 @@ pub struct BlaTable {
 
 impl BlaTable {
     /// Compute BLA table from a reference orbit.
-    pub fn compute(orbit: &ReferenceOrbit, dc_max: f64) -> Self {
+    ///
+    /// dc_max must be HDRFloat to prevent underflow at deep zoom levels
+    /// where the viewport width (10^-270) underflows in f64.
+    pub fn compute(orbit: &ReferenceOrbit, dc_max: &HDRFloat) -> Self {
         let m = orbit.orbit.len();
         if m == 0 {
             return Self {
                 entries: vec![],
                 level_offsets: vec![0],
                 num_levels: 0,
-                dc_max,
+                dc_max: dc_max.to_f64(), // For logging only
             };
         }
 
@@ -154,7 +157,7 @@ impl BlaTable {
             entries,
             level_offsets,
             num_levels: num_levels_actual,
-            dc_max,
+            dc_max: dc_max.to_f64(), // For logging only - may underflow at deep zoom
         }
     }
 
@@ -258,8 +261,8 @@ mod tests {
         let x = BlaEntry::from_orbit_point(1.0, 0.0); // Z = 1
         let y = BlaEntry::from_orbit_point(0.5, 0.0); // Z = 0.5
 
-        let dc_max = 0.001; // Small delta_c
-        let merged = BlaEntry::merge(&x, &y, dc_max);
+        let dc_max = HDRFloat::from_f64(0.001); // Small delta_c
+        let merged = BlaEntry::merge(&x, &y, &dc_max);
 
         // l should be 2
         assert_eq!(merged.l, 2);
@@ -280,8 +283,8 @@ mod tests {
         let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
         let orbit = ReferenceOrbit::compute(&c_ref, 100);
 
-        let dc_max = 0.01;
-        let table = BlaTable::compute(&orbit, dc_max);
+        let dc_max = HDRFloat::from_f64(0.01);
+        let table = BlaTable::compute(&orbit, &dc_max);
 
         // Level 0 should have orbit.len() entries
         assert!(table.entries.len() >= orbit.orbit.len());
@@ -298,7 +301,7 @@ mod tests {
         let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
         let orbit = ReferenceOrbit::compute(&c_ref, 16);
 
-        let table = BlaTable::compute(&orbit, 0.01);
+        let table = BlaTable::compute(&orbit, &HDRFloat::from_f64(0.01));
 
         // 16 entries -> should have ~log2(16)+1 = 5 levels
         // Level 0: 16 entries (skip 1)
@@ -322,7 +325,7 @@ mod tests {
         let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
         let orbit = ReferenceOrbit::compute(&c_ref, 16);
 
-        let table = BlaTable::compute(&orbit, 0.01);
+        let table = BlaTable::compute(&orbit, &HDRFloat::from_f64(0.01));
 
         // Level 0 entries skip 1
         assert_eq!(table.entries[0].l, 1);
@@ -342,7 +345,7 @@ mod tests {
     fn bla_table_find_valid_returns_none_for_large_dz() {
         let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
         let orbit = ReferenceOrbit::compute(&c_ref, 100);
-        let table = BlaTable::compute(&orbit, 0.01);
+        let table = BlaTable::compute(&orbit, &HDRFloat::from_f64(0.01));
 
         // With |δz|² = 1.0 (huge), no BLA should be valid
         let large_dz = HDRFloat::from_f64(1.0);
@@ -355,7 +358,7 @@ mod tests {
         let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
         let orbit = ReferenceOrbit::compute(&c_ref, 100);
         // Use small dc_max so merged entries have r > 0
-        let table = BlaTable::compute(&orbit, 1e-10);
+        let table = BlaTable::compute(&orbit, &HDRFloat::from_f64(1e-10));
 
         // At m=0, Z_0 = 0 so r = 0, no BLA valid there.
         // At m=1 onwards, |Z_m| > 0 so r > 0 and BLA can be valid.
@@ -377,7 +380,7 @@ mod tests {
         // This means no BLA is valid at m=0, which is correct.
         let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
         let orbit = ReferenceOrbit::compute(&c_ref, 100);
-        let table = BlaTable::compute(&orbit, 0.01);
+        let table = BlaTable::compute(&orbit, &HDRFloat::from_f64(0.01));
 
         // Even with |δz|² = 0, BLA at m=0 should be None (r = 0)
         let result = table.find_valid(0, &HDRFloat::ZERO);
