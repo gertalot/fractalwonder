@@ -2,6 +2,7 @@ mod bla;
 mod mandelbrot;
 mod perturbation;
 mod test_image;
+pub mod tile_render;
 pub mod worker;
 
 use fractalwonder_core::Viewport;

@@ -1,12 +1,7 @@
 // fractalwonder-compute/src/worker.rs
-use crate::{
-    compute_pixel_perturbation, compute_pixel_perturbation_hdr_bla, BlaTable, MandelbrotRenderer,
-    ReferenceOrbit, Renderer, TestImageRenderer,
-};
-use fractalwonder_core::{
-    BigFloat, ComplexDelta, ComputeData, F64Complex, HDRComplex, HDRFloat, MainToWorker, Viewport,
-    WorkerToMain,
-};
+use crate::tile_render::{render_tile, TileRenderInput};
+use crate::{BlaTable, MandelbrotRenderer, ReferenceOrbit, Renderer, TestImageRenderer};
+use fractalwonder_core::{BigFloat, ComputeData, MainToWorker, Viewport, WorkerToMain};
 use js_sys::Date;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -375,94 +370,18 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             let orbit = cached.to_reference_orbit();
             let start_time = Date::now();
 
-            // Check if deltas fit in f64 range (roughly 10^-300 to 10^300)
-            // log2 of ~10^-300 is about -1000, so we use -900 as safe threshold
-            // force_hdr_float overrides this check for debugging deep zoom issues
-            let delta_log2 = delta_c_origin
-                .0
-                .log2_approx()
-                .max(delta_c_origin.1.log2_approx());
-            let deltas_fit_f64 = !force_hdr_float && delta_log2 > -900.0 && delta_log2 < 900.0;
+            let input = TileRenderInput {
+                delta_c_origin,
+                delta_c_step,
+                tile_width: tile.width,
+                tile_height: tile.height,
+                max_iterations,
+                tau_sq,
+                bla_enabled,
+                force_hdr_float,
+            };
 
-            let mut data = Vec::with_capacity((tile.width * tile.height) as usize);
-
-            // Two-tier dispatch based on delta magnitude:
-            // 1. Deltas fit in f64 range: Use fast f64 path (most common case)
-            // 2. Otherwise: Use HDRFloat (handles arbitrary exponent range)
-            //
-            // NOTE: BigFloat is intentionally NOT used for pixel calculations.
-            // BigFloat should ONLY be used for reference orbit computation.
-            // HDRFloat provides sufficient precision for pixel deltas at any zoom level.
-
-            if deltas_fit_f64 {
-                // Fast path: f64 arithmetic
-                // Note: BLA is disabled for f64 path because at zoom levels where f64
-                // deltas are valid, the BLA validity radius (r_sq) becomes too small
-                // after merging, providing no iteration skipping benefit.
-                let delta_origin = (delta_c_origin.0.to_f64(), delta_c_origin.1.to_f64());
-                let delta_step = (delta_c_step.0.to_f64(), delta_c_step.1.to_f64());
-
-                let mut delta_c_row = delta_origin;
-
-                for _py in 0..tile.height {
-                    let mut delta_c = delta_c_row;
-
-                    for _px in 0..tile.width {
-                        let result = compute_pixel_perturbation(
-                            &orbit,
-                            F64Complex::from_f64_pair(delta_c.0, delta_c.1),
-                            max_iterations,
-                            tau_sq,
-                        );
-                        data.push(ComputeData::Mandelbrot(result));
-
-                        delta_c.0 += delta_step.0;
-                    }
-
-                    delta_c_row.1 += delta_step.1;
-                }
-            } else {
-                // HDRFloat path: handles arbitrary exponent range with ~48-bit mantissa
-                // This is sufficient for pixel calculations at any zoom depth.
-                let delta_origin = HDRComplex {
-                    re: HDRFloat::from_bigfloat(&delta_c_origin.0),
-                    im: HDRFloat::from_bigfloat(&delta_c_origin.1),
-                };
-                let delta_step = HDRComplex {
-                    re: HDRFloat::from_bigfloat(&delta_c_step.0),
-                    im: HDRFloat::from_bigfloat(&delta_c_step.1),
-                };
-
-                let mut delta_c_row = delta_origin;
-
-                for _py in 0..tile.height {
-                    let mut delta_c = delta_c_row;
-
-                    for _px in 0..tile.width {
-                        let result = if bla_enabled {
-                            if let Some(ref bla_table) = cached.bla_table {
-                                compute_pixel_perturbation_hdr_bla(
-                                    &orbit,
-                                    bla_table,
-                                    delta_c,
-                                    max_iterations,
-                                    tau_sq,
-                                )
-                            } else {
-                                // Fallback if table wasn't built
-                                compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq)
-                            }
-                        } else {
-                            compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq)
-                        };
-                        data.push(ComputeData::Mandelbrot(result));
-
-                        delta_c.re = delta_c.re.add(&delta_step.re);
-                    }
-
-                    delta_c_row.im = delta_c_row.im.add(&delta_step.im);
-                }
-            }
+            let data = render_tile(&orbit, cached.bla_table.as_ref(), &input);
 
             let compute_time_ms = Date::now() - start_time;
 

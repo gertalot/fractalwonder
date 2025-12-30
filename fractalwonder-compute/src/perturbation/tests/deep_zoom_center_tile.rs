@@ -7,11 +7,10 @@
 //! Canvas size: 773x446
 //! Tile size at this zoom: 32x32 (DEEP_ZOOM_TILE_SIZE)
 
-use super::helpers::TEST_TAU_SQ;
 use crate::bla::BlaTable;
-use crate::perturbation::{compute_pixel_perturbation, compute_pixel_perturbation_hdr_bla};
+use crate::tile_render::{render_tile, TileRenderInput};
 use crate::ReferenceOrbit;
-use fractalwonder_core::{BigFloat, HDRComplex, HDRFloat, Viewport};
+use fractalwonder_core::{BigFloat, ComputeData, HDRFloat, Viewport};
 
 // =============================================================================
 // EXACT VALUES FROM DECODED URL (Canvas: 773x446, Tile size: 32)
@@ -115,22 +114,18 @@ fn create_production_reference_orbit() -> ReferenceOrbit {
     ReferenceOrbit::compute(&c_ref, MAX_ITERATIONS)
 }
 
-/// Convert BigFloat tuple to HDRComplex (EXACT same code as worker.rs lines 426-433)
-fn bigfloat_to_hdr_complex(bf_tuple: &(BigFloat, BigFloat)) -> HDRComplex {
-    HDRComplex {
-        re: HDRFloat::from_bigfloat(&bf_tuple.0),
-        im: HDRFloat::from_bigfloat(&bf_tuple.1),
-    }
-}
 
 // =============================================================================
 // Production-Matching Tests
 // =============================================================================
 
+/// Production tau_sq value (from config default)
+const PRODUCTION_TAU_SQ: f64 = 1e-6;
+
 /// This test reproduces the EXACT failing condition from production.
-/// It computes ALL 1024 pixels (32x32) of the center tile, exactly as production does.
+/// It uses render_tile() with TileRenderInput - the EXACT production code path.
 ///
-/// Run with: cargo test deep_zoom_full_tile -- --ignored --nocapture
+/// Run with: cargo test deep_zoom_full_tile_with_bla -- --ignored --nocapture
 #[test]
 #[ignore]
 fn deep_zoom_full_tile_with_bla() {
@@ -141,24 +136,24 @@ fn deep_zoom_full_tile_with_bla() {
     let tile_x = 384u32;
     let tile_y = 192u32;
 
-    println!("=== DEEP ZOOM FULL TILE TEST ===");
+    println!("=== DEEP ZOOM FULL TILE TEST (PRODUCTION CODE PATH) ===");
     println!("Canvas: {}x{}", CANVAS_WIDTH, CANVAS_HEIGHT);
     println!("Tile: ({}, {}, {}, {})", tile_x, tile_y, TILE_SIZE, TILE_SIZE);
     println!("Viewport width: {}", VIEWPORT_WIDTH_STR);
     println!("Viewport height: {}", VIEWPORT_HEIGHT_STR);
     println!();
 
-    // Calculate dc_max EXACTLY as production does
+    // Calculate dc_max EXACTLY as production does (helpers.rs:51-55)
     let dc_max = calculate_dc_max(&viewport);
     println!("dc_max = {:e} (log2 = {:.1})", dc_max.to_f64(), dc_max.log2());
 
-    // Simulate JSON round-trip for dc_max (like production)
+    // Simulate JSON round-trip for dc_max (production: coordinator -> worker message)
     let dc_max_json = serde_json::to_string(&dc_max).expect("serialize dc_max");
     let dc_max: HDRFloat = serde_json::from_str(&dc_max_json).expect("deserialize dc_max");
     println!("dc_max after JSON: {:e} (log2 = {:.1})", dc_max.to_f64(), dc_max.log2());
     println!();
 
-    // Compute reference orbit
+    // Compute reference orbit (worker.rs:240)
     println!("Computing reference orbit ({} iterations)...", MAX_ITERATIONS);
     let orbit = create_production_reference_orbit();
     println!(
@@ -167,8 +162,7 @@ fn deep_zoom_full_tile_with_bla() {
         orbit.escaped_at
     );
 
-    // Simulate JSON round-trip for orbit (like production)
-    // In production: ReferenceOrbitComplete -> main thread -> StoreReferenceOrbit -> worker
+    // Simulate JSON round-trip for orbit (production: ReferenceOrbitComplete -> StoreReferenceOrbit)
     let orbit_json = serde_json::to_string(&orbit.orbit).expect("serialize orbit");
     let derivative_json = serde_json::to_string(&orbit.derivative).expect("serialize derivative");
     let orbit_data: Vec<(f64, f64)> = serde_json::from_str(&orbit_json).expect("deserialize orbit");
@@ -183,7 +177,7 @@ fn deep_zoom_full_tile_with_bla() {
     println!("Orbit after JSON round-trip: {} points", orbit.orbit.len());
     println!();
 
-    // Build BLA table
+    // Build BLA table (worker.rs:286)
     let bla_table = BlaTable::compute(&orbit, dc_max);
     println!(
         "BLA table: {} entries, {} levels",
@@ -192,11 +186,11 @@ fn deep_zoom_full_tile_with_bla() {
     );
     println!();
 
-    // Calculate delta values EXACTLY as coordinator.rs does
+    // Calculate delta values EXACTLY as coordinator.rs:269-278 does
     let delta_c_origin = calculate_delta_c_origin(tile_x, tile_y, &viewport, canvas_size);
     let delta_c_step = calculate_delta_c_step(&viewport, canvas_size);
 
-    // Simulate JSON round-trip for deltas (like production)
+    // Simulate JSON round-trip for deltas (production: RenderTilePerturbation message)
     let origin_json = serde_json::to_string(&delta_c_origin).expect("serialize origin");
     let step_json = serde_json::to_string(&delta_c_step).expect("serialize step");
     let delta_c_origin: (BigFloat, BigFloat) =
@@ -216,49 +210,39 @@ fn deep_zoom_full_tile_with_bla() {
     );
     println!();
 
-    // Convert to HDRComplex (EXACTLY as worker.rs does)
-    let delta_origin = bigfloat_to_hdr_complex(&delta_c_origin);
-    let delta_step = bigfloat_to_hdr_complex(&delta_c_step);
+    // Create TileRenderInput EXACTLY as worker.rs:373-382 does
+    let input = TileRenderInput {
+        delta_c_origin,
+        delta_c_step,
+        tile_width: TILE_SIZE,
+        tile_height: TILE_SIZE,
+        max_iterations: MAX_ITERATIONS,
+        tau_sq: PRODUCTION_TAU_SQ,
+        bla_enabled: true,
+        force_hdr_float: false,
+    };
 
-    // Compute ALL pixels in the tile (EXACTLY as worker.rs lines 436-464)
     println!(
-        "Computing {} pixels ({} x {})...",
-        TILE_SIZE * TILE_SIZE,
-        TILE_SIZE,
-        TILE_SIZE
+        "Calling render_tile() with {} x {} pixels, bla_enabled=true...",
+        TILE_SIZE, TILE_SIZE
     );
 
-    let mut results = Vec::with_capacity((TILE_SIZE * TILE_SIZE) as usize);
-    let mut delta_c_row = delta_origin;
-
-    for py in 0..TILE_SIZE {
-        let mut delta_c = delta_c_row;
-
-        for _px in 0..TILE_SIZE {
-            let result = compute_pixel_perturbation_hdr_bla(
-                &orbit,
-                &bla_table,
-                delta_c,
-                MAX_ITERATIONS,
-                TEST_TAU_SQ,
-            );
-            results.push(result);
-
-            delta_c.re = delta_c.re.add(&delta_step.re);
-        }
-
-        delta_c_row.im = delta_c_row.im.add(&delta_step.im);
-
-        // Progress indicator
-        if (py + 1) % 8 == 0 {
-            println!("  Row {}/{} complete", py + 1, TILE_SIZE);
-        }
-    }
+    // Call render_tile() - the EXACT production code path (worker.rs:384)
+    let results = render_tile(&orbit, Some(&bla_table), &input);
 
     // Analyze results
-    let escaped_count = results.iter().filter(|r| r.escaped).count();
-    let glitched_count = results.iter().filter(|r| r.glitched).count();
-    let in_set_count = results.iter().filter(|r| !r.escaped).count();
+    let escaped_count = results
+        .iter()
+        .filter(|r| matches!(r, ComputeData::Mandelbrot(m) if m.escaped))
+        .count();
+    let glitched_count = results
+        .iter()
+        .filter(|r| matches!(r, ComputeData::Mandelbrot(m) if m.glitched))
+        .count();
+    let in_set_count = results
+        .iter()
+        .filter(|r| matches!(r, ComputeData::Mandelbrot(m) if !m.escaped))
+        .count();
 
     println!();
     println!("=== RESULTS ===");
@@ -274,7 +258,7 @@ fn deep_zoom_full_tile_with_bla() {
     }
 }
 
-/// Same test WITHOUT BLA to compare
+/// Same test WITHOUT BLA - uses render_tile() with bla_enabled=false
 #[test]
 #[ignore]
 fn deep_zoom_full_tile_without_bla() {
@@ -283,7 +267,7 @@ fn deep_zoom_full_tile_without_bla() {
     let tile_x = 384u32;
     let tile_y = 192u32;
 
-    println!("=== DEEP ZOOM FULL TILE (NO BLA) ===");
+    println!("=== DEEP ZOOM FULL TILE (NO BLA, PRODUCTION CODE PATH) ===");
 
     let orbit = create_production_reference_orbit();
     println!(
@@ -292,10 +276,23 @@ fn deep_zoom_full_tile_without_bla() {
         orbit.escaped_at
     );
 
+    // JSON round-trip for orbit
+    let orbit_json = serde_json::to_string(&orbit.orbit).expect("serialize orbit");
+    let derivative_json = serde_json::to_string(&orbit.derivative).expect("serialize derivative");
+    let orbit_data: Vec<(f64, f64)> = serde_json::from_str(&orbit_json).expect("deserialize orbit");
+    let derivative_data: Vec<(f64, f64)> =
+        serde_json::from_str(&derivative_json).expect("deserialize derivative");
+    let orbit = ReferenceOrbit {
+        c_ref: orbit.c_ref,
+        orbit: orbit_data,
+        derivative: derivative_data,
+        escaped_at: orbit.escaped_at,
+    };
+
     let delta_c_origin = calculate_delta_c_origin(tile_x, tile_y, &viewport, canvas_size);
     let delta_c_step = calculate_delta_c_step(&viewport, canvas_size);
 
-    // JSON round-trip
+    // JSON round-trip for deltas
     let origin_json = serde_json::to_string(&delta_c_origin).expect("serialize origin");
     let step_json = serde_json::to_string(&delta_c_step).expect("serialize step");
     let delta_c_origin: (BigFloat, BigFloat) =
@@ -303,35 +300,35 @@ fn deep_zoom_full_tile_without_bla() {
     let delta_c_step: (BigFloat, BigFloat) =
         serde_json::from_str(&step_json).expect("deserialize step");
 
-    let delta_origin = bigfloat_to_hdr_complex(&delta_c_origin);
-    let delta_step = bigfloat_to_hdr_complex(&delta_c_step);
+    // Create TileRenderInput with bla_enabled=false (worker.rs:373-382)
+    let input = TileRenderInput {
+        delta_c_origin,
+        delta_c_step,
+        tile_width: TILE_SIZE,
+        tile_height: TILE_SIZE,
+        max_iterations: MAX_ITERATIONS,
+        tau_sq: PRODUCTION_TAU_SQ,
+        bla_enabled: false, // <-- Key difference: no BLA
+        force_hdr_float: false,
+    };
 
-    println!("Computing {} pixels...", TILE_SIZE * TILE_SIZE);
+    println!("Calling render_tile() with {} x {} pixels, bla_enabled=false...", TILE_SIZE, TILE_SIZE);
 
-    let mut results = Vec::with_capacity((TILE_SIZE * TILE_SIZE) as usize);
-    let mut delta_c_row = delta_origin;
+    // Call render_tile() - the EXACT production code path (worker.rs:384)
+    let results = render_tile(&orbit, None, &input);
 
-    for py in 0..TILE_SIZE {
-        let mut delta_c = delta_c_row;
-
-        for _px in 0..TILE_SIZE {
-            let result =
-                compute_pixel_perturbation(&orbit, delta_c, MAX_ITERATIONS, TEST_TAU_SQ);
-            results.push(result);
-
-            delta_c.re = delta_c.re.add(&delta_step.re);
-        }
-
-        delta_c_row.im = delta_c_row.im.add(&delta_step.im);
-
-        if (py + 1) % 8 == 0 {
-            println!("  Row {}/{}", py + 1, TILE_SIZE);
-        }
-    }
-
-    let escaped_count = results.iter().filter(|r| r.escaped).count();
-    let in_set_count = results.iter().filter(|r| !r.escaped).count();
-    let glitched_count = results.iter().filter(|r| r.glitched).count();
+    let escaped_count = results
+        .iter()
+        .filter(|r| matches!(r, ComputeData::Mandelbrot(m) if m.escaped))
+        .count();
+    let in_set_count = results
+        .iter()
+        .filter(|r| matches!(r, ComputeData::Mandelbrot(m) if !m.escaped))
+        .count();
+    let glitched_count = results
+        .iter()
+        .filter(|r| matches!(r, ComputeData::Mandelbrot(m) if m.glitched))
+        .count();
 
     println!();
     println!("Total: {}, Escaped: {}, In set: {}, Glitched: {}",
@@ -350,13 +347,27 @@ fn deep_zoom_sanity_check() {
 
     let viewport = create_production_viewport();
     let delta_c_origin = calculate_delta_c_origin(384, 192, &viewport, (CANVAS_WIDTH, CANVAS_HEIGHT));
-    let delta_origin = bigfloat_to_hdr_complex(&delta_c_origin);
+    let delta_c_step = calculate_delta_c_step(&viewport, (CANVAS_WIDTH, CANVAS_HEIGHT));
 
-    let result = compute_pixel_perturbation(&orbit, delta_origin, 1000, TEST_TAU_SQ);
-    println!(
-        "Sanity check (1000 iter): escaped={}, iterations={}, glitched={}",
-        result.escaped, result.iterations, result.glitched
-    );
+    // Use render_tile with a 1x1 tile for single pixel test
+    let input = TileRenderInput {
+        delta_c_origin,
+        delta_c_step,
+        tile_width: 1,
+        tile_height: 1,
+        max_iterations: 1000,
+        tau_sq: PRODUCTION_TAU_SQ,
+        bla_enabled: false,
+        force_hdr_float: false,
+    };
+
+    let results = render_tile(&orbit, None, &input);
+    if let Some(ComputeData::Mandelbrot(result)) = results.first() {
+        println!(
+            "Sanity check (1000 iter): escaped={}, iterations={}, glitched={}",
+            result.escaped, result.iterations, result.glitched
+        );
+    }
 }
 
 /// Verify HDRFloat dc_max does NOT underflow at extreme zoom.
@@ -384,6 +395,7 @@ fn dc_max_at_extreme_zoom() {
 }
 
 /// Test all 4 center tiles to identify which one(s) fail.
+/// Uses render_tile() with 1x1 tiles for quick first-pixel check.
 #[test]
 #[ignore]
 fn deep_zoom_all_center_tiles() {
@@ -406,30 +418,34 @@ fn deep_zoom_all_center_tiles() {
     let orbit = create_production_reference_orbit();
     let bla_table = BlaTable::compute(&orbit, dc_max);
 
-    println!("=== ALL 4 CENTER TILES ===");
+    println!("=== ALL 4 CENTER TILES (PRODUCTION CODE PATH) ===");
     println!("Orbit: {} points", orbit.orbit.len());
     println!("BLA: {} entries, {} levels", bla_table.entries.len(), bla_table.num_levels);
     println!();
 
+    let delta_c_step = calculate_delta_c_step(&viewport, canvas_size);
+
     for (tile_x, tile_y) in center_tiles {
         let delta_c_origin = calculate_delta_c_origin(tile_x, tile_y, &viewport, canvas_size);
-        let delta_c_step = calculate_delta_c_step(&viewport, canvas_size);
 
-        let delta_origin = bigfloat_to_hdr_complex(&delta_c_origin);
-        let _delta_step = bigfloat_to_hdr_complex(&delta_c_step);
+        // Use render_tile with 1x1 tile for first pixel only
+        let input = TileRenderInput {
+            delta_c_origin,
+            delta_c_step: delta_c_step.clone(),
+            tile_width: 1,
+            tile_height: 1,
+            max_iterations: MAX_ITERATIONS,
+            tau_sq: PRODUCTION_TAU_SQ,
+            bla_enabled: true,
+            force_hdr_float: false,
+        };
 
-        // Just compute first pixel for quick check
-        let result = compute_pixel_perturbation_hdr_bla(
-            &orbit,
-            &bla_table,
-            delta_origin,
-            MAX_ITERATIONS,
-            TEST_TAU_SQ,
-        );
-
-        println!(
-            "Tile ({}, {}): escaped={}, iter={}, glitched={}",
-            tile_x, tile_y, result.escaped, result.iterations, result.glitched
-        );
+        let results = render_tile(&orbit, Some(&bla_table), &input);
+        if let Some(ComputeData::Mandelbrot(result)) = results.first() {
+            println!(
+                "Tile ({}, {}): escaped={}, iter={}, glitched={}",
+                tile_x, tile_y, result.escaped, result.iterations, result.glitched
+            );
+        }
     }
 }
