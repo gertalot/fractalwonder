@@ -405,10 +405,8 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             // HDRFloat provides sufficient precision for pixel deltas at any zoom level.
 
             if deltas_fit_f64 {
-                // Fast path: f64 arithmetic
-                // Note: BLA is disabled for f64 path because at zoom levels where f64
-                // deltas are valid, the BLA validity radius (r_sq) becomes too small
-                // after merging, providing no iteration skipping benefit.
+                // Fast path: f64 arithmetic (most zooms up to ~10^270)
+                // BLA is not implemented for f64 - would need f64 BLA coefficients.
                 let delta_origin = (delta_c_origin.0.to_f64(), delta_c_origin.1.to_f64());
                 let delta_step = (delta_c_step.0.to_f64(), delta_c_step.1.to_f64());
 

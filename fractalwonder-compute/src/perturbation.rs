@@ -174,6 +174,7 @@ pub fn compute_pixel_perturbation_hdr_bla(
                 rho_re.to_f64(),
                 rho_im.to_f64(),
             );
+
             return (
                 MandelbrotData::new(
                     n,

@@ -193,8 +193,6 @@ impl BlaTable {
         // Use threshold of 1 to be conservative and preserve pixel differences.
         let max_b_dc_exp = 0; // 2^0 = 1
 
-        // Skip fast path - always use main search loop which properly enforces max_skip
-
         // Search from highest level (largest skips) down to level 0
         for level in (0..self.num_levels).rev() {
             let level_start = self.level_offsets[level];
@@ -224,10 +222,14 @@ impl BlaTable {
 
             // Check validity: |δz|² < r²
             // Using HDRFloat comparison: a < b iff (a - b).is_negative()
-            if dz_mag_sq.sub(&entry.r_sq).is_negative() {
+            let diff = dz_mag_sq.sub(&entry.r_sq);
+            let validity_check = diff.is_negative();
+
+            if validity_check {
                 // Check if B coefficient would cause overflow: |B| * dc_max < threshold
                 let b_norm = entry.b.norm_hdr();
                 let b_dc = b_norm.mul(dc_max);
+
                 if b_dc.exp <= max_b_dc_exp {
                     return Some(entry);
                 }

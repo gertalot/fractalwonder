@@ -215,8 +215,9 @@ impl WorkerPool {
             };
             web_sys::console::log_1(
                 &format!(
-                    "[WorkerPool] Tile ({},{}): {}/{} glitched, {:.1}% BLA",
-                    tile.x, tile.y, glitched_count, data.len(), bla_pct
+                    "[WorkerPool] Tile ({},{}): {}/{} glitched, {:.1}% BLA ({}/{})",
+                    tile.x, tile.y, glitched_count, data.len(), bla_pct,
+                    bla_iterations, total_iterations
                 )
                 .into(),
             );
