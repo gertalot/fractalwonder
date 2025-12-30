@@ -21,7 +21,7 @@ fn bla_version_matches_non_bla_for_escaping_point() {
     let result_no_bla = compute_pixel_perturbation(&orbit, delta_c, 500, TEST_TAU_SQ);
 
     // BLA version
-    let result_bla =
+    let (result_bla, _stats) =
         compute_pixel_perturbation_hdr_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
 
     assert_eq!(result_no_bla.escaped, result_bla.escaped);
@@ -41,7 +41,7 @@ fn bla_version_matches_non_bla_for_in_set_point() {
     let bla_table = BlaTable::compute(&orbit, &dc_max);
 
     let result_no_bla = compute_pixel_perturbation(&orbit, delta_c, 500, TEST_TAU_SQ);
-    let result_bla =
+    let (result_bla, _stats) =
         compute_pixel_perturbation_hdr_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
 
     assert_eq!(result_no_bla.escaped, result_bla.escaped);
@@ -71,7 +71,7 @@ fn bla_matches_non_bla_for_many_deltas() {
         let bla_table = BlaTable::compute(&orbit, &dc_max);
 
         let result_no_bla = compute_pixel_perturbation(&orbit, delta_c, 1000, TEST_TAU_SQ);
-        let result_bla =
+        let (result_bla, _stats) =
             compute_pixel_perturbation_hdr_bla(&orbit, &bla_table, delta_c, 1000, TEST_TAU_SQ);
 
         assert_eq!(
@@ -102,7 +102,7 @@ fn bla_handles_rebasing() {
     let bla_table = BlaTable::compute(&orbit, &HDRFloat::from_f64(0.01));
 
     let result_no_bla = compute_pixel_perturbation(&orbit, delta_c, 500, TEST_TAU_SQ);
-    let result_bla =
+    let (result_bla, _stats) =
         compute_pixel_perturbation_hdr_bla(&orbit, &bla_table, delta_c, 500, TEST_TAU_SQ);
 
     assert_eq!(

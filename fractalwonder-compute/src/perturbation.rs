@@ -5,6 +5,15 @@
 
 use fractalwonder_core::{BigFloat, HDRComplex, HDRFloat, MandelbrotData};
 
+/// BLA statistics for a single pixel computation.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BlaStats {
+    /// Iterations skipped via BLA.
+    pub bla_iterations: u32,
+    /// Total iterations (BLA + standard).
+    pub total_iterations: u32,
+}
+
 /// Compute normalized z/ρ direction for 3D lighting.
 /// Returns (re, im) of the unit vector, or (0, 0) if degenerate.
 /// This works at any zoom level since we normalize to a unit vector.
@@ -104,29 +113,35 @@ impl ReferenceOrbit {
 }
 
 /// Compute pixel using perturbation with HDRFloat deltas and BLA acceleration.
+/// Returns pixel data and BLA statistics for performance monitoring.
 pub fn compute_pixel_perturbation_hdr_bla(
     orbit: &ReferenceOrbit,
     bla_table: &BlaTable,
     delta_c: HDRComplex,
     max_iterations: u32,
     tau_sq: f64,
-) -> MandelbrotData {
+) -> (MandelbrotData, BlaStats) {
     let mut dz = HDRComplex::ZERO;
     let mut drho = HDRComplex::ZERO;
     let mut m: usize = 0;
     let mut glitched = false;
+    let mut bla_iters: u32 = 0;
+    let mut standard_iters: u32 = 0;
 
     let orbit_len = orbit.orbit.len();
     if orbit_len == 0 {
-        return MandelbrotData {
-            iterations: 0,
-            max_iterations,
-            escaped: false,
-            glitched: true,
-            final_z_norm_sq: 0.0,
-            surface_normal_re: 0.0,
-            surface_normal_im: 0.0,
-        };
+        return (
+            MandelbrotData {
+                iterations: 0,
+                max_iterations,
+                escaped: false,
+                glitched: true,
+                final_z_norm_sq: 0.0,
+                surface_normal_re: 0.0,
+                surface_normal_im: 0.0,
+            },
+            BlaStats::default(),
+        );
     }
 
     let reference_escaped = orbit.escaped_at.is_some();
@@ -159,14 +174,20 @@ pub fn compute_pixel_perturbation_hdr_bla(
                 rho_re.to_f64(),
                 rho_im.to_f64(),
             );
-            return MandelbrotData::new(
-                n,
-                max_iterations,
-                true,
-                glitched,
-                z_mag_sq as f32,
-                sn_re,
-                sn_im,
+            return (
+                MandelbrotData::new(
+                    n,
+                    max_iterations,
+                    true,
+                    glitched,
+                    z_mag_sq as f32,
+                    sn_re,
+                    sn_im,
+                ),
+                BlaStats {
+                    bla_iterations: bla_iters,
+                    total_iterations: bla_iters + standard_iters,
+                },
             );
         }
 
@@ -189,7 +210,7 @@ pub fn compute_pixel_perturbation_hdr_bla(
         }
 
         // 4. Try BLA acceleration
-        let bla_entry = bla_table.find_valid(m, &dz_mag_sq);
+        let bla_entry = bla_table.find_valid(m, &dz_mag_sq, bla_table.dc_max());
 
         if let Some(bla) = bla_entry {
             // Apply BLA: δz_new = A·δz + B·δc
@@ -197,6 +218,7 @@ pub fn compute_pixel_perturbation_hdr_bla(
             let b_dc = bla.b.mul(&delta_c);
             dz = a_dz.add(&b_dc);
 
+            bla_iters += bla.l;
             m += bla.l as usize;
             n += bla.l;
         } else {
@@ -260,20 +282,27 @@ pub fn compute_pixel_perturbation_hdr_bla(
                 im: two_z_drho_im.add(&two_dz_der_im).add(&two_dz_drho_im),
             };
 
+            standard_iters += 1;
             m += 1;
             n += 1;
         }
     }
 
-    MandelbrotData {
-        iterations: max_iterations,
-        max_iterations,
-        escaped: false,
-        glitched,
-        final_z_norm_sq: 0.0,
-        surface_normal_re: 0.0,
-        surface_normal_im: 0.0,
-    }
+    (
+        MandelbrotData {
+            iterations: max_iterations,
+            max_iterations,
+            escaped: false,
+            glitched,
+            final_z_norm_sq: 0.0,
+            surface_normal_re: 0.0,
+            surface_normal_im: 0.0,
+        },
+        BlaStats {
+            bla_iterations: bla_iters,
+            total_iterations: bla_iters + standard_iters,
+        },
+    )
 }
 
 use fractalwonder_core::ComplexDelta;

@@ -85,6 +85,12 @@ pub enum WorkerToMain {
         tile: PixelRect,
         data: Vec<ComputeData>,
         compute_time_ms: f64,
+        /// Total iterations skipped via BLA across all pixels in tile.
+        #[serde(default)]
+        bla_iterations: u64,
+        /// Total iterations computed (BLA + standard) across all pixels.
+        #[serde(default)]
+        total_iterations: u64,
     },
 
     /// Worker encountered an error.
@@ -171,6 +177,8 @@ mod tests {
                 surface_normal_im: 0.0,
             })],
             compute_time_ms: 12.5,
+            bla_iterations: 50,
+            total_iterations: 100,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: WorkerToMain = serde_json::from_str(&json).unwrap();

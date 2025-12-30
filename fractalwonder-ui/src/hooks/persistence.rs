@@ -285,7 +285,10 @@ fn decode_state(encoded: &str) -> Option<PersistedState> {
         Ok(s) => s,
         Err(e) => {
             log::warn!("URL decode: JSON deserialize failed: {e}");
-            log::debug!("URL decode: JSON content preview: {}", &json[..json.len().min(500)]);
+            log::debug!(
+                "URL decode: JSON content preview: {}",
+                &json[..json.len().min(500)]
+            );
             return None;
         }
     };

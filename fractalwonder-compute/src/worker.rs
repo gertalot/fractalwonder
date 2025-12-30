@@ -203,6 +203,8 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                 tile,
                 data,
                 compute_time_ms,
+                bla_iterations: 0,
+                total_iterations: 0,
             });
 
             // Request next work
@@ -391,6 +393,8 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             let deltas_fit_f64 = !force_hdr_float && delta_log2 > -900.0 && delta_log2 < 900.0;
 
             let mut data = Vec::with_capacity((tile.width * tile.height) as usize);
+            let mut tile_bla_iters: u64 = 0;
+            let mut tile_total_iters: u64 = 0;
 
             // Two-tier dispatch based on delta magnitude:
             // 1. Deltas fit in f64 range: Use fast f64 path (most common case)
@@ -420,6 +424,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                             max_iterations,
                             tau_sq,
                         );
+                        tile_total_iters += result.iterations as u64;
                         data.push(ComputeData::Mandelbrot(result));
 
                         delta_c.0 += delta_step.0;
@@ -445,23 +450,30 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     let mut delta_c = delta_c_row;
 
                     for _px in 0..tile.width {
-                        let result = if bla_enabled {
+                        if bla_enabled {
                             if let Some(ref bla_table) = cached.bla_table {
-                                compute_pixel_perturbation_hdr_bla(
+                                let (result, stats) = compute_pixel_perturbation_hdr_bla(
                                     &orbit,
                                     bla_table,
                                     delta_c,
                                     max_iterations,
                                     tau_sq,
-                                )
+                                );
+                                tile_bla_iters += stats.bla_iterations as u64;
+                                tile_total_iters += stats.total_iterations as u64;
+                                data.push(ComputeData::Mandelbrot(result));
                             } else {
-                                compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq)
+                                let result =
+                                    compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq);
+                                tile_total_iters += result.iterations as u64;
+                                data.push(ComputeData::Mandelbrot(result));
                             }
                         } else {
-                            compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq)
-                        };
-
-                        data.push(ComputeData::Mandelbrot(result));
+                            let result =
+                                compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq);
+                            tile_total_iters += result.iterations as u64;
+                            data.push(ComputeData::Mandelbrot(result));
+                        }
 
                         delta_c.re = delta_c.re.add(&delta_step.re);
                     }
@@ -477,6 +489,8 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                 tile,
                 data,
                 compute_time_ms,
+                bla_iterations: tile_bla_iters,
+                total_iterations: tile_total_iters,
             });
 
             post_message(&WorkerToMain::RequestWork {

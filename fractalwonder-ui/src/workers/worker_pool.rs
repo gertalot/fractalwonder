@@ -54,7 +54,9 @@ fn create_workers(count: usize, pool: Rc<RefCell<WorkerPool>>) -> Result<Vec<Wor
         let pool_clone = Rc::clone(&pool);
         let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
             let Some(msg_str) = e.data().as_string() else {
-                web_sys::console::error_1(&format!("[WorkerPool] Worker {worker_id} non-string msg").into());
+                web_sys::console::error_1(
+                    &format!("[WorkerPool] Worker {worker_id} non-string msg").into(),
+                );
                 return;
             };
             match serde_json::from_str::<WorkerToMain>(&msg_str) {
@@ -187,6 +189,8 @@ impl WorkerPool {
         tile: PixelRect,
         data: Vec<ComputeData>,
         compute_time_ms: f64,
+        bla_iterations: u64,
+        total_iterations: u64,
     ) {
         if render_id != self.current_render_id {
             web_sys::console::warn_1(
@@ -204,20 +208,20 @@ impl WorkerPool {
                 .iter()
                 .filter(|d| matches!(d, ComputeData::Mandelbrot(m) if m.glitched))
                 .count();
+            let bla_pct = if total_iterations > 0 {
+                (bla_iterations as f64 / total_iterations as f64) * 100.0
+            } else {
+                0.0
+            };
+            web_sys::console::log_1(
+                &format!(
+                    "[WorkerPool] Tile ({},{}): {}/{} glitched, {:.1}% BLA",
+                    tile.x, tile.y, glitched_count, data.len(), bla_pct
+                )
+                .into(),
+            );
             if glitched_count > 0 {
-                web_sys::console::log_1(
-                    &format!(
-                        "[WorkerPool] Tile ({},{}): {}/{} pixels glitched",
-                        tile.x,
-                        tile.y,
-                        glitched_count,
-                        data.len()
-                    )
-                    .into(),
-                );
-                self.perturbation
-                    .glitch_resolver_mut()
-                    .record_glitched_tile(tile);
+                self.perturbation.glitch_resolver_mut().record_glitched_tile(tile);
             }
         }
 
@@ -385,7 +389,16 @@ impl WorkerPool {
                 tile,
                 data,
                 compute_time_ms,
-            } => self.handle_tile_complete(render_id, tile, data, compute_time_ms),
+                bla_iterations,
+                total_iterations,
+            } => self.handle_tile_complete(
+                render_id,
+                tile,
+                data,
+                compute_time_ms,
+                bla_iterations,
+                total_iterations,
+            ),
             WorkerToMain::Error { message } => self.handle_error(worker_id, message),
             WorkerToMain::ReferenceOrbitComplete {
                 render_id,

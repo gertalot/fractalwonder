@@ -95,8 +95,9 @@ pub struct BlaTable {
     pub entries: Vec<BlaEntry>,
     pub level_offsets: Vec<usize>,
     pub num_levels: usize,
-    #[allow(dead_code)] // Will be used in validity checks in future optimizations
-    dc_max: f64,
+    /// Maximum |delta_c| for BLA validity checks.
+    /// Uses HDRFloat to prevent underflow at deep zoom (f64 underflows below ~10^-308).
+    dc_max: HDRFloat,
 }
 
 impl BlaTable {
@@ -111,7 +112,7 @@ impl BlaTable {
                 entries: vec![],
                 level_offsets: vec![0],
                 num_levels: 0,
-                dc_max: dc_max.to_f64(), // For logging only
+                dc_max: *dc_max,
             };
         }
 
@@ -157,8 +158,13 @@ impl BlaTable {
             entries,
             level_offsets,
             num_levels: num_levels_actual,
-            dc_max: dc_max.to_f64(), // For logging only - may underflow at deep zoom
+            dc_max: *dc_max,
         }
+    }
+
+    /// Get dc_max for validity checks during find_valid.
+    pub fn dc_max(&self) -> &HDRFloat {
+        &self.dc_max
     }
 
     /// Find the largest valid BLA at reference index `m` for current |δz|².
@@ -166,40 +172,38 @@ impl BlaTable {
     ///
     /// Uses HDRFloat for dz_mag_sq to prevent f64 underflow at deep zoom levels
     /// where |δz|² can be as small as 10^-1800.
-    pub fn find_valid(&self, m: usize, dz_mag_sq: &HDRFloat) -> Option<&BlaEntry> {
+    pub fn find_valid(
+        &self,
+        m: usize,
+        dz_mag_sq: &HDRFloat,
+        dc_max: &HDRFloat,
+    ) -> Option<&BlaEntry> {
         if self.entries.is_empty() {
             return None;
         }
 
-        // Fast path: when |δz|² = 0, try highest level first (common case at iteration start)
-        // But still verify r_sq > 0 (accounts for dc_max)
-        if dz_mag_sq.is_zero() {
-            let highest_level = self.num_levels - 1;
-            let level_start = self.level_offsets[highest_level];
-            let skip_size = 1usize << highest_level;
-            let idx_in_level = m / skip_size;
-            let entry_idx = level_start + idx_in_level;
+        // Limit BLA to level-0 only (skip 1 iteration at a time).
+        // This fixes center tile uniform color bug at deep zoom but is slow.
+        // TODO: Find a way to only limit center tile, not all tiles.
+        let max_skip: u32 = 1;
 
-            let level_end = if highest_level + 1 < self.level_offsets.len() {
-                self.level_offsets[highest_level + 1]
-            } else {
-                self.entries.len()
-            };
+        // Maximum allowed |B| * dc_max to prevent overflow when applying BLA.
+        // After BLA: dz_new = A*dz + B*dc. If |B*dc| becomes large, accumulated
+        // errors cause all pixels to escape at identical iterations (uniform color).
+        // Use threshold of 1 to be conservative and preserve pixel differences.
+        let max_b_dc_exp = 0; // 2^0 = 1
 
-            if entry_idx < level_end {
-                let entry = &self.entries[entry_idx];
-                // Only return if r_sq > 0 (BLA is actually valid for this dc_max)
-                if !entry.r_sq.is_zero() && !entry.r_sq.is_negative() {
-                    return Some(entry);
-                }
-            }
-            // Fall through to linear search if highest level invalid
-        }
+        // Skip fast path - always use main search loop which properly enforces max_skip
 
         // Search from highest level (largest skips) down to level 0
         for level in (0..self.num_levels).rev() {
             let level_start = self.level_offsets[level];
             let skip_size = 1usize << level; // 2^level iterations per entry at this level
+
+            // Skip levels that would exceed max_skip
+            if skip_size > max_skip as usize {
+                continue;
+            }
 
             // Index within this level for reference index m
             let idx_in_level = m / skip_size;
@@ -221,7 +225,13 @@ impl BlaTable {
             // Check validity: |δz|² < r²
             // Using HDRFloat comparison: a < b iff (a - b).is_negative()
             if dz_mag_sq.sub(&entry.r_sq).is_negative() {
-                return Some(entry);
+                // Check if B coefficient would cause overflow: |B| * dc_max < threshold
+                let b_norm = entry.b.norm_hdr();
+                let b_dc = b_norm.mul(dc_max);
+                if b_dc.exp <= max_b_dc_exp {
+                    return Some(entry);
+                }
+                // If B is too large, try lower level (smaller skip, smaller B)
             }
         }
 
@@ -349,7 +359,7 @@ mod tests {
 
         // With |δz|² = 1.0 (huge), no BLA should be valid
         let large_dz = HDRFloat::from_f64(1.0);
-        let result = table.find_valid(0, &large_dz);
+        let result = table.find_valid(0, &large_dz, table.dc_max());
         assert!(result.is_none(), "Large |δz| should invalidate all BLAs");
     }
 
@@ -363,7 +373,7 @@ mod tests {
         // At m=0, Z_0 = 0 so r = 0, no BLA valid there.
         // At m=1 onwards, |Z_m| > 0 so r > 0 and BLA can be valid.
         // Test at m=1 where the reference orbit has non-zero magnitude.
-        let result = table.find_valid(1, &HDRFloat::ZERO);
+        let result = table.find_valid(1, &HDRFloat::ZERO, table.dc_max());
         assert!(
             result.is_some(),
             "Zero |δz| at m=1 should allow BLA (r > 0)"
@@ -383,7 +393,7 @@ mod tests {
         let table = BlaTable::compute(&orbit, &HDRFloat::from_f64(0.01));
 
         // Even with |δz|² = 0, BLA at m=0 should be None (r = 0)
-        let result = table.find_valid(0, &HDRFloat::ZERO);
+        let result = table.find_valid(0, &HDRFloat::ZERO, table.dc_max());
         assert!(result.is_none(), "BLA at m=0 should be None since Z_0 = 0");
     }
 }

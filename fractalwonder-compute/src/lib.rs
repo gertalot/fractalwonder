@@ -9,7 +9,7 @@ use fractalwonder_core::Viewport;
 pub use bla::{BlaEntry, BlaTable};
 pub use mandelbrot::MandelbrotRenderer;
 pub use perturbation::{
-    compute_pixel_perturbation, compute_pixel_perturbation_hdr_bla, ReferenceOrbit,
+    compute_pixel_perturbation, compute_pixel_perturbation_hdr_bla, BlaStats, ReferenceOrbit,
 };
 pub use test_image::TestImageRenderer;
 
