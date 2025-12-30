@@ -521,7 +521,10 @@ impl WorkerPool {
 
         self.current_viewport = Some(viewport);
         self.canvas_size = canvas_size;
-        self.pending_tiles = tiles.into();
+        // DEBUG: At extreme zoom (>10^250), only render center tile (384,224) to diagnose hang
+        self.pending_tiles = if zoom_exponent > 250.0 {
+            tiles.into_iter().filter(|t| t.x == 384 && t.y == 224).collect()
+        } else { tiles.into() };
         self.render_start_time = Some(performance_now());
         self.progress
             .set(RenderProgress::new(self.pending_tiles.len() as u32));

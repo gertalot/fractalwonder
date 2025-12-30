@@ -71,6 +71,12 @@ impl HDRComplex {
         re_sq.add(&im_sq).to_f64()
     }
 
+    /// Squared magnitude as HDRFloat (for extreme zoom where f64 would underflow).
+    #[inline]
+    pub fn norm_sq_hdr(&self) -> HDRFloat {
+        self.re.square().add(&self.im.square())
+    }
+
     /// Check if zero.
     #[inline]
     pub fn is_zero(&self) -> bool {
