@@ -151,7 +151,9 @@ pub fn compute_pixel_perturbation_hdr_bla(
 
         let z_mag_sq = z_re.square().add(&z_im.square()).to_f64();
         let z_m_mag_sq = z_m_re * z_m_re + z_m_im * z_m_im;
-        let dz_mag_sq = dz.norm_sq();
+        // Use HDRFloat for dz_mag_sq to prevent f64 underflow at deep zoom
+        // where |δz|² can be as small as 10^-1800 (beyond f64's ~10^-308 limit)
+        let dz_mag_sq = dz.norm_sq_hdr();
 
         // 1. Escape check
         if z_mag_sq > 65536.0 {
@@ -180,7 +182,9 @@ pub fn compute_pixel_perturbation_hdr_bla(
         // 3. Rebase check
         // NOTE: Rebasing is a precision technique, NOT a Mandelbrot iteration.
         // The iteration count n should NOT increment during rebase.
-        if z_mag_sq < dz_mag_sq {
+        // Compare using HDRFloat to handle deep zoom where values exceed f64 range
+        let z_mag_sq_hdr = z_re.square().add(&z_im.square());
+        if z_mag_sq_hdr.sub(&dz_mag_sq).is_negative() {
             dz = HDRComplex { re: z_re, im: z_im };
             drho = HDRComplex {
                 re: rho_re,
@@ -192,7 +196,7 @@ pub fn compute_pixel_perturbation_hdr_bla(
         }
 
         // 4. Try BLA acceleration
-        if let Some(bla) = bla_table.find_valid(m, dz_mag_sq) {
+        if let Some(bla) = bla_table.find_valid(m, &dz_mag_sq) {
             // Apply BLA: δz_new = A·δz + B·δc
             // Now uses HDRComplex multiplication - no f64 overflow possible
             let a_dz = bla.a.mul(&dz);

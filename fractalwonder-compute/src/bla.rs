@@ -160,17 +160,17 @@ impl BlaTable {
 
     /// Find the largest valid BLA at reference index `m` for current |δz|².
     /// Returns None if no BLA is valid (fallback to standard iteration).
-    pub fn find_valid(&self, m: usize, dz_mag_sq: f64) -> Option<&BlaEntry> {
+    ///
+    /// Uses HDRFloat for dz_mag_sq to prevent f64 underflow at deep zoom levels
+    /// where |δz|² can be as small as 10^-1800.
+    pub fn find_valid(&self, m: usize, dz_mag_sq: &HDRFloat) -> Option<&BlaEntry> {
         if self.entries.is_empty() {
             return None;
         }
 
-        // Convert dz_mag_sq to HDRFloat for comparison with r_sq
-        let dz_mag_sq_hdr = HDRFloat::from_f64(dz_mag_sq);
-
         // Fast path: when |δz|² = 0, try highest level first (common case at iteration start)
         // But still verify r_sq > 0 (accounts for dc_max)
-        if dz_mag_sq == 0.0 {
+        if dz_mag_sq.is_zero() {
             let highest_level = self.num_levels - 1;
             let level_start = self.level_offsets[highest_level];
             let skip_size = 1usize << highest_level;
@@ -217,7 +217,7 @@ impl BlaTable {
 
             // Check validity: |δz|² < r²
             // Using HDRFloat comparison: a < b iff (a - b).is_negative()
-            if dz_mag_sq_hdr.sub(&entry.r_sq).is_negative() {
+            if dz_mag_sq.sub(&entry.r_sq).is_negative() {
                 return Some(entry);
             }
         }
@@ -345,7 +345,8 @@ mod tests {
         let table = BlaTable::compute(&orbit, 0.01);
 
         // With |δz|² = 1.0 (huge), no BLA should be valid
-        let result = table.find_valid(0, 1.0);
+        let large_dz = HDRFloat::from_f64(1.0);
+        let result = table.find_valid(0, &large_dz);
         assert!(result.is_none(), "Large |δz| should invalidate all BLAs");
     }
 
@@ -359,7 +360,7 @@ mod tests {
         // At m=0, Z_0 = 0 so r = 0, no BLA valid there.
         // At m=1 onwards, |Z_m| > 0 so r > 0 and BLA can be valid.
         // Test at m=1 where the reference orbit has non-zero magnitude.
-        let result = table.find_valid(1, 0.0);
+        let result = table.find_valid(1, &HDRFloat::ZERO);
         assert!(
             result.is_some(),
             "Zero |δz| at m=1 should allow BLA (r > 0)"
@@ -379,7 +380,7 @@ mod tests {
         let table = BlaTable::compute(&orbit, 0.01);
 
         // Even with |δz|² = 0, BLA at m=0 should be None (r = 0)
-        let result = table.find_valid(0, 0.0);
+        let result = table.find_valid(0, &HDRFloat::ZERO);
         assert!(result.is_none(), "BLA at m=0 should be None since Z_0 = 0");
     }
 }
