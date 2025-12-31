@@ -182,26 +182,16 @@ impl BlaTable {
             return None;
         }
 
-        // Limit BLA to level-0 only (skip 1 iteration at a time).
-        // This fixes center tile uniform color bug at deep zoom but is slow.
-        // TODO: Find a way to only limit center tile, not all tiles.
-        let max_skip: u32 = 1;
-
-        // Maximum allowed |B| * dc_max to prevent overflow when applying BLA.
+        // Maximum allowed |B| * dc_max to prevent coefficient explosion.
         // After BLA: dz_new = A*dz + B*dc. If |B*dc| becomes large, accumulated
         // errors cause all pixels to escape at identical iterations (uniform color).
-        // Use threshold of 1 to be conservative and preserve pixel differences.
-        let max_b_dc_exp = 0; // 2^0 = 1
+        // Threshold of 2^0 = 1 is conservative to preserve pixel differences.
+        let max_b_dc_exp = 0;
 
         // Search from highest level (largest skips) down to level 0
         for level in (0..self.num_levels).rev() {
             let level_start = self.level_offsets[level];
             let skip_size = 1usize << level; // 2^level iterations per entry at this level
-
-            // Skip levels that would exceed max_skip
-            if skip_size > max_skip as usize {
-                continue;
-            }
 
             // Index within this level for reference index m
             let idx_in_level = m / skip_size;
