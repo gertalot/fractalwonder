@@ -1,20 +1,11 @@
 // fractalwonder-compute/src/worker.rs
-use crate::{
-    compute_pixel_perturbation, compute_pixel_perturbation_hdr_bla, BlaTable, MandelbrotRenderer,
-    ReferenceOrbit, Renderer, TestImageRenderer,
-};
-use fractalwonder_core::{
-    BigFloat, ComplexDelta, ComputeData, F64Complex, HDRComplex, HDRFloat, MainToWorker, Viewport,
-    WorkerToMain,
-};
+use crate::{render_tile_f64, render_tile_hdr, BlaTable, ReferenceOrbit, TileConfig};
+use fractalwonder_core::{BigFloat, HDRFloat, MainToWorker, WorkerToMain};
 use js_sys::Date;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
-
-/// Boxed renderer trait object for dynamic dispatch.
-type BoxedRenderer = Box<dyn Renderer<Data = ComputeData>>;
 
 /// Cached reference orbit for perturbation rendering.
 struct CachedOrbit {
@@ -36,59 +27,16 @@ impl CachedOrbit {
     }
 }
 
-/// Worker state including renderer and orbit cache.
+/// Worker state for orbit cache.
 struct WorkerState {
-    renderer: Option<BoxedRenderer>,
     orbit_cache: HashMap<u32, CachedOrbit>,
 }
 
 impl WorkerState {
     fn new() -> Self {
         Self {
-            renderer: None,
             orbit_cache: HashMap::new(),
         }
-    }
-}
-
-fn create_renderer(renderer_id: &str) -> Option<BoxedRenderer> {
-    match renderer_id {
-        "test_image" => Some(Box::new(TestImageRendererWrapper)),
-        "mandelbrot" => Some(Box::new(MandelbrotRendererWrapper {
-            max_iterations: 1000,
-        })),
-        _ => None,
-    }
-}
-
-// Wrapper to unify renderer output types
-struct TestImageRendererWrapper;
-
-impl Renderer for TestImageRendererWrapper {
-    type Data = ComputeData;
-
-    fn render(&self, viewport: &Viewport, canvas_size: (u32, u32)) -> Vec<Self::Data> {
-        TestImageRenderer
-            .render(viewport, canvas_size)
-            .into_iter()
-            .map(ComputeData::TestImage)
-            .collect()
-    }
-}
-
-struct MandelbrotRendererWrapper {
-    max_iterations: u32,
-}
-
-impl Renderer for MandelbrotRendererWrapper {
-    type Data = ComputeData;
-
-    fn render(&self, viewport: &Viewport, canvas_size: (u32, u32)) -> Vec<Self::Data> {
-        MandelbrotRenderer::new(self.max_iterations)
-            .render(viewport, canvas_size)
-            .into_iter()
-            .map(ComputeData::Mandelbrot)
-            .collect()
     }
 }
 
@@ -126,93 +74,6 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
     };
 
     match msg {
-        MainToWorker::Initialize { renderer_id } => {
-            web_sys::console::log_1(
-                &format!("[Worker] Initialize with renderer: {}", renderer_id).into(),
-            );
-            match create_renderer(&renderer_id) {
-                Some(r) => {
-                    state.renderer = Some(r);
-                    // Signal ready for work
-                    post_message(&WorkerToMain::RequestWork { render_id: None });
-                }
-                None => {
-                    post_message(&WorkerToMain::Error {
-                        message: format!("Unknown renderer: {}", renderer_id),
-                    });
-                }
-            }
-        }
-
-        MainToWorker::RenderTile {
-            render_id,
-            viewport_json,
-            tile,
-        } => {
-            let Some(r) = state.renderer.as_ref() else {
-                post_message(&WorkerToMain::Error {
-                    message: "Renderer not initialized".to_string(),
-                });
-                return;
-            };
-
-            // Parse viewport
-            let viewport: Viewport = match serde_json::from_str(&viewport_json) {
-                Ok(v) => v,
-                Err(e) => {
-                    post_message(&WorkerToMain::Error {
-                        message: format!("Failed to parse viewport: {}", e),
-                    });
-                    return;
-                }
-            };
-
-            let start_time = Date::now();
-
-            // Render tile
-            let data = r.render(&viewport, (tile.width, tile.height));
-
-            let compute_time_ms = Date::now() - start_time;
-
-            // Detect all-black tiles (all points in set = potential rendering bug)
-            let in_set_count = data
-                .iter()
-                .filter(|d| match d {
-                    fractalwonder_core::ComputeData::Mandelbrot(m) => !m.escaped,
-                    _ => false,
-                })
-                .count();
-            let total_pixels = data.len();
-            if in_set_count == total_pixels && total_pixels > 0 {
-                web_sys::console::warn_1(
-                    &format!(
-                        "[Worker] ALL-BLACK tile at ({},{}) {}x{}: {}/{} in set. viewport center=({}, {}), width={}",
-                        tile.x, tile.y, tile.width, tile.height,
-                        in_set_count, total_pixels,
-                        viewport.center.0.to_f64(),
-                        viewport.center.1.to_f64(),
-                        viewport.width.to_f64()
-                    )
-                    .into(),
-                );
-            }
-
-            // Send result
-            post_message(&WorkerToMain::TileComplete {
-                render_id,
-                tile,
-                data,
-                compute_time_ms,
-                bla_iterations: 0,
-                total_iterations: 0,
-            });
-
-            // Request next work
-            post_message(&WorkerToMain::RequestWork {
-                render_id: Some(render_id),
-            });
-        }
-
         MainToWorker::NoWork => {
             // Idle - wait for next message
         }
@@ -342,7 +203,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             delta_c_step_json,
             max_iterations,
             tau_sq,
-            bigfloat_threshold_bits: _, // No longer used: pixel calculations use HDRFloat, not BigFloat
+            bigfloat_threshold_bits: _,
             bla_enabled,
             force_hdr_float,
         } => {
@@ -358,16 +219,16 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     }
                 };
 
-            let delta_c_step: (BigFloat, BigFloat) = match serde_json::from_str(&delta_c_step_json)
-            {
-                Ok(d) => d,
-                Err(e) => {
-                    post_message(&WorkerToMain::Error {
-                        message: format!("Failed to parse delta_c_step: {}", e),
-                    });
-                    return;
-                }
-            };
+            let delta_c_step: (BigFloat, BigFloat) =
+                match serde_json::from_str(&delta_c_step_json) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        post_message(&WorkerToMain::Error {
+                            message: format!("Failed to parse delta_c_step: {}", e),
+                        });
+                        return;
+                    }
+                };
 
             // Get cached orbit
             let cached = match state.orbit_cache.get(&orbit_id) {
@@ -383,116 +244,45 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             let orbit = cached.to_reference_orbit();
             let start_time = Date::now();
 
-            // Check if deltas fit in f64 range (roughly 10^-300 to 10^300)
-            // log2 of ~10^-300 is about -1000, so we use -900 as safe threshold
-            // force_hdr_float overrides this check for debugging deep zoom issues
+            let config = TileConfig {
+                size: (tile.width, tile.height),
+                max_iterations,
+                tau_sq,
+                bla_enabled,
+            };
+
+            // Dispatch based on delta magnitude
             let delta_log2 = delta_c_origin
                 .0
                 .log2_approx()
                 .max(delta_c_origin.1.log2_approx());
-            let deltas_fit_f64 = !force_hdr_float && delta_log2 > -900.0 && delta_log2 < 900.0;
+            let use_f64 = !force_hdr_float && delta_log2 > -900.0 && delta_log2 < 900.0;
 
-            let mut data = Vec::with_capacity((tile.width * tile.height) as usize);
-            let mut tile_bla_iters: u64 = 0;
-            let mut tile_total_iters: u64 = 0;
-
-            // Two-tier dispatch based on delta magnitude:
-            // 1. Deltas fit in f64 range: Use fast f64 path (most common case)
-            // 2. Otherwise: Use HDRFloat (handles arbitrary exponent range)
-            //
-            // NOTE: BigFloat is intentionally NOT used for pixel calculations.
-            // BigFloat should ONLY be used for reference orbit computation.
-            // HDRFloat provides sufficient precision for pixel deltas at any zoom level.
-
-            if deltas_fit_f64 {
-                // Fast path: f64 arithmetic (most zooms up to ~10^270)
-                // BLA is not implemented for f64 - would need f64 BLA coefficients.
+            let result = if use_f64 {
                 let delta_origin = (delta_c_origin.0.to_f64(), delta_c_origin.1.to_f64());
                 let delta_step = (delta_c_step.0.to_f64(), delta_c_step.1.to_f64());
-
-                let mut delta_c_row = delta_origin;
-
-                for _py in 0..tile.height {
-                    let mut delta_c = delta_c_row;
-
-                    for _px in 0..tile.width {
-                        let result = compute_pixel_perturbation(
-                            &orbit,
-                            F64Complex::from_f64_pair(delta_c.0, delta_c.1),
-                            max_iterations,
-                            tau_sq,
-                        );
-                        tile_total_iters += result.iterations as u64;
-                        data.push(ComputeData::Mandelbrot(result));
-
-                        delta_c.0 += delta_step.0;
-                    }
-
-                    delta_c_row.1 += delta_step.1;
-                }
+                render_tile_f64(&orbit, delta_origin, delta_step, &config)
             } else {
-                // HDRFloat path: handles arbitrary exponent range with ~48-bit mantissa
-                // This is sufficient for pixel calculations at any zoom depth.
-                let delta_origin = HDRComplex {
-                    re: HDRFloat::from_bigfloat(&delta_c_origin.0),
-                    im: HDRFloat::from_bigfloat(&delta_c_origin.1),
-                };
-                let delta_step = HDRComplex {
-                    re: HDRFloat::from_bigfloat(&delta_c_step.0),
-                    im: HDRFloat::from_bigfloat(&delta_c_step.1),
-                };
-
-                let mut delta_c_row = delta_origin;
-
-                for _py in 0..tile.height {
-                    let mut delta_c = delta_c_row;
-
-                    for _px in 0..tile.width {
-                        if bla_enabled {
-                            if let Some(ref bla_table) = cached.bla_table {
-                                let (result, stats) = compute_pixel_perturbation_hdr_bla(
-                                    &orbit,
-                                    bla_table,
-                                    delta_c,
-                                    max_iterations,
-                                    tau_sq,
-                                );
-                                tile_bla_iters += stats.bla_iterations as u64;
-                                tile_total_iters += stats.total_iterations as u64;
-                                data.push(ComputeData::Mandelbrot(result));
-                            } else {
-                                let result = compute_pixel_perturbation(
-                                    &orbit,
-                                    delta_c,
-                                    max_iterations,
-                                    tau_sq,
-                                );
-                                tile_total_iters += result.iterations as u64;
-                                data.push(ComputeData::Mandelbrot(result));
-                            }
-                        } else {
-                            let result =
-                                compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq);
-                            tile_total_iters += result.iterations as u64;
-                            data.push(ComputeData::Mandelbrot(result));
-                        }
-
-                        delta_c.re = delta_c.re.add(&delta_step.re);
-                    }
-
-                    delta_c_row.im = delta_c_row.im.add(&delta_step.im);
-                }
-            }
+                let delta_origin = (
+                    HDRFloat::from_bigfloat(&delta_c_origin.0),
+                    HDRFloat::from_bigfloat(&delta_c_origin.1),
+                );
+                let delta_step = (
+                    HDRFloat::from_bigfloat(&delta_c_step.0),
+                    HDRFloat::from_bigfloat(&delta_c_step.1),
+                );
+                render_tile_hdr(&orbit, cached.bla_table.as_ref(), delta_origin, delta_step, &config)
+            };
 
             let compute_time_ms = Date::now() - start_time;
 
             post_message(&WorkerToMain::TileComplete {
                 render_id,
                 tile,
-                data,
+                data: result.data,
                 compute_time_ms,
-                bla_iterations: tile_bla_iters,
-                total_iterations: tile_total_iters,
+                bla_iterations: result.stats.bla_iterations,
+                total_iterations: result.stats.total_iterations,
             });
 
             post_message(&WorkerToMain::RequestWork {
