@@ -455,4 +455,32 @@ mod tests {
         assert!((f64_entry.b.1 - 0.0).abs() < 1e-14);
         assert_eq!(f64_entry.l, 1);
     }
+
+    #[test]
+    fn bla_entry_f64_returns_none_on_overflow() {
+        // Create entry with HDRFloat coefficients that overflow f64
+        let huge = HDRFloat {
+            head: 1.0,
+            tail: 0.0,
+            exp: 1100,
+        }; // ~2^1100, way beyond f64
+        let entry = BlaEntry {
+            a: HDRComplex {
+                re: huge,
+                im: HDRFloat::ZERO,
+            },
+            b: HDRComplex {
+                re: HDRFloat::from_f64(1.0),
+                im: HDRFloat::ZERO,
+            },
+            l: 1,
+            r_sq: HDRFloat::from_f64(1e-10),
+        };
+
+        let f64_entry = BlaEntryF64::try_from_hdr(&entry);
+        assert!(
+            f64_entry.is_none(),
+            "Should return None when coefficient overflows f64"
+        );
+    }
 }
