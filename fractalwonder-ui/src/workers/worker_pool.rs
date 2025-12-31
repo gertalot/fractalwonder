@@ -1,4 +1,4 @@
-use crate::config::get_config;
+use crate::config::{get_config, get_cpu_threads};
 use crate::rendering::RenderProgress;
 use crate::workers::perturbation::{OrbitData, PerturbationCoordinator};
 use crate::workers::worker_pool_types::{
@@ -97,16 +97,20 @@ impl WorkerPool {
     where
         F: Fn(TileResult) + 'static,
     {
-        // Determine worker count from config (0 = use hardware concurrency)
-        let config_worker_count = get_config(renderer_id).map(|c| c.worker_count).unwrap_or(0);
+        // Determine worker count from runtime setting (or config default):
+        // - Positive value: use that exact number of workers
+        // - Zero or negative: use hardware_concurrency + value (e.g., -1 leaves one core free)
+        let config = get_config(renderer_id);
+        let cpu_threads = get_cpu_threads(config);
 
-        let worker_count = if config_worker_count == 0 {
-            web_sys::window()
-                .map(|w| w.navigator().hardware_concurrency() as usize)
-                .unwrap_or(4)
-                .max(1) - 1
+        let hardware_concurrency = web_sys::window()
+            .map(|w| w.navigator().hardware_concurrency() as i32)
+            .unwrap_or(4);
+
+        let worker_count = if cpu_threads > 0 {
+            cpu_threads as usize
         } else {
-            config_worker_count
+            (hardware_concurrency + cpu_threads).max(1) as usize
         };
 
         let pool = Rc::new(RefCell::new(Self {
@@ -184,6 +188,7 @@ impl WorkerPool {
         bla_iterations: u64,
         total_iterations: u64,
         rebase_count: u64,
+        used_f64: bool,
     ) {
         if render_id != self.current_render_id {
             web_sys::console::warn_1(
@@ -206,9 +211,10 @@ impl WorkerPool {
             } else {
                 0.0
             };
+            let precision = if used_f64 { "f64" } else { "HDRFloat" };
             web_sys::console::log_1(
                 &format!(
-                    "[WorkerPool] Tile ({},{}): {}/{} glitched, {:.1}% BLA ({}/{}), {} rebases",
+                    "[WorkerPool] Tile ({},{}): {}/{} glitched, {:.1}% BLA ({}/{}), {} rebases, {}",
                     tile.x,
                     tile.y,
                     glitched_count,
@@ -216,7 +222,8 @@ impl WorkerPool {
                     bla_pct,
                     bla_iterations,
                     total_iterations,
-                    rebase_count
+                    rebase_count,
+                    precision
                 )
                 .into(),
             );
@@ -394,6 +401,7 @@ impl WorkerPool {
                 bla_iterations,
                 total_iterations,
                 rebase_count,
+                used_f64,
             } => self.handle_tile_complete(
                 render_id,
                 tile,
@@ -402,6 +410,7 @@ impl WorkerPool {
                 bla_iterations,
                 total_iterations,
                 rebase_count,
+                used_f64,
             ),
             WorkerToMain::Error { message } => self.handle_error(worker_id, message),
             WorkerToMain::ReferenceOrbitComplete {

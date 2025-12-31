@@ -571,6 +571,9 @@ mod tests {
 
         // With |δz|² = 1.0 (huge), no BLA should be valid
         let result = table.find_valid_f64(0, 1.0, 0.01);
-        assert!(result.is_none(), "Large |δz| should invalidate all f64 BLAs");
+        assert!(
+            result.is_none(),
+            "Large |δz| should invalidate all f64 BLAs"
+        );
     }
 }

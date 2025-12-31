@@ -296,6 +296,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                 bla_iterations: result.stats.bla_iterations,
                 total_iterations: result.stats.total_iterations,
                 rebase_count: result.stats.rebase_count,
+                used_f64: use_f64,
             });
 
             post_message(&WorkerToMain::RequestWork {

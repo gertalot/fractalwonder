@@ -20,6 +20,16 @@ pub fn OptionsMenu(
     use_gpu: Signal<bool>,
     /// Callback when GPU toggle is clicked
     on_gpu_toggle: Callback<()>,
+    /// Current CPU threads setting (0 = all cores, negative = leave cores free)
+    cpu_threads: Signal<i32>,
+    /// Callback to increase CPU threads
+    on_cpu_threads_up: Callback<()>,
+    /// Callback to decrease CPU threads
+    on_cpu_threads_down: Callback<()>,
+    /// Whether CPU threads is at minimum bound
+    cpu_threads_at_min: Signal<bool>,
+    /// Whether CPU threads is at maximum bound
+    cpu_threads_at_max: Signal<bool>,
     /// X-ray mode enabled state
     xray_enabled: Signal<bool>,
     /// Callback when X-ray toggle is clicked
@@ -41,6 +51,17 @@ pub fn OptionsMenu(
                 on_click=on_gpu_toggle
                 label="Use GPU"
                 shortcut="[G]"
+            />
+
+            <MenuSection title="CPU Threads" />
+            <StepperMenuItem
+                value=cpu_threads
+                on_decrease=on_cpu_threads_down
+                on_increase=on_cpu_threads_up
+                format_value=|v: i32| v.to_string()
+                is_at_min=cpu_threads_at_min
+                is_at_max=cpu_threads_at_max
+                shortcut=""
             />
 
             <MenuSection title="Cycles" />

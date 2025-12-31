@@ -33,6 +33,16 @@ pub fn UIPanel(
     use_gpu: Signal<bool>,
     /// Callback to toggle GPU
     on_gpu_toggle: Callback<()>,
+    /// CPU threads setting (0 = all cores, negative = leave cores free)
+    cpu_threads: Signal<i32>,
+    /// Callback to increase CPU threads
+    on_cpu_threads_up: Callback<()>,
+    /// Callback to decrease CPU threads
+    on_cpu_threads_down: Callback<()>,
+    /// Whether CPU threads is at minimum bound
+    cpu_threads_at_min: Signal<bool>,
+    /// Whether CPU threads is at maximum bound
+    cpu_threads_at_max: Signal<bool>,
     /// Render progress signal
     render_progress: Signal<RwSignal<RenderProgress>>,
     /// UI visibility signal (from parent)
@@ -148,6 +158,11 @@ pub fn UIPanel(
                         on_cycle_down=on_cycle_down
                         use_gpu=use_gpu
                         on_gpu_toggle=on_gpu_toggle
+                        cpu_threads=cpu_threads
+                        on_cpu_threads_up=on_cpu_threads_up
+                        on_cpu_threads_down=on_cpu_threads_down
+                        cpu_threads_at_min=cpu_threads_at_min
+                        cpu_threads_at_max=cpu_threads_at_max
                         xray_enabled=xray_enabled.into()
                         on_xray_toggle=Callback::new(move |_| set_xray_enabled.update(|v| *v = !*v))
                         force_hdr_float=force_hdr_float

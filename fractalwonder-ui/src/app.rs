@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::Closure;
 
 use crate::components::PaletteEditorState;
 use crate::components::{CircularProgress, InteractiveCanvas, PaletteEditor, Toast, UIPanel};
-use crate::config::{default_config, get_config};
+use crate::config::{default_config, get_config, get_cpu_threads_override, set_cpu_threads};
 use crate::hooks::{
     apply_palette_order, load_palette_order, load_state, save_palette_order, save_state,
     use_hashchange_listener, use_ui_visibility, PersistedState,
@@ -68,6 +68,21 @@ pub fn App() -> impl IntoView {
 
     // Derive cycle_count for UI display
     let cycle_count = create_memo(move |_| render_settings.get().cycle_count);
+
+    // CPU threads setting (not persisted to URL, uses thread-local storage)
+    // Initialize from current override (or 0 for auto)
+    let (cpu_threads, set_cpu_threads_signal) =
+        create_signal(get_cpu_threads_override().unwrap_or(0));
+
+    // Hardware concurrency for bounds checking
+    let hardware_concurrency = web_sys::window()
+        .map(|w| w.navigator().hardware_concurrency() as i32)
+        .unwrap_or(4);
+
+    // Bounds for CPU threads stepper
+    let cpu_threads_at_min =
+        Signal::derive(move || cpu_threads.get() <= -(hardware_concurrency - 1));
+    let cpu_threads_at_max = Signal::derive(move || cpu_threads.get() >= hardware_concurrency);
 
     // Palette options for dropdown (load asynchronously)
     let (palette_list, set_palette_list) = create_signal(Vec::<Palette>::new());
@@ -507,6 +522,23 @@ pub fn App() -> impl IntoView {
                     set_toast_message.set(Some(msg.to_string()));
                 });
             })
+            cpu_threads=cpu_threads.into()
+            on_cpu_threads_up=Callback::new(move |_| {
+                set_cpu_threads_signal.update(|v| {
+                    *v += 1;
+                    set_cpu_threads(*v);
+                    set_toast_message.set(Some(format!("CPU Threads: {}", *v)));
+                });
+            })
+            on_cpu_threads_down=Callback::new(move |_| {
+                set_cpu_threads_signal.update(|v| {
+                    *v -= 1;
+                    set_cpu_threads(*v);
+                    set_toast_message.set(Some(format!("CPU Threads: {}", *v)));
+                });
+            })
+            cpu_threads_at_min=cpu_threads_at_min
+            cpu_threads_at_max=cpu_threads_at_max
             render_progress=render_progress.into()
             is_visible=ui_visibility.is_visible
             set_is_hovering=ui_visibility.set_is_hovering

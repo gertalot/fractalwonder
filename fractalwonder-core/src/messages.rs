@@ -84,6 +84,9 @@ pub enum WorkerToMain {
         /// Total rebase count across all pixels in tile.
         #[serde(default)]
         rebase_count: u64,
+        /// Whether f64 (true) or HDRFloat (false) arithmetic was used.
+        #[serde(default)]
+        used_f64: bool,
     },
 
     /// Worker encountered an error.

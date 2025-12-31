@@ -1,8 +1,84 @@
 //! Fractal configuration registry.
 //!
 //! Defines available fractal types with their natural bounds and metadata.
+//! Also provides runtime settings persisted to localStorage (but not URL).
 
 use fractalwonder_core::Viewport;
+use std::cell::Cell;
+
+#[cfg(target_arch = "wasm32")]
+const CPU_THREADS_STORAGE_KEY: &str = "fractalwonder_cpu_threads";
+
+// Runtime cache for CPU threads setting
+thread_local! {
+    /// Cached CPU thread count. None = not yet loaded from localStorage.
+    static CPU_THREADS_CACHE: Cell<Option<i32>> = const { Cell::new(None) };
+}
+
+/// Load CPU threads setting from localStorage.
+fn load_cpu_threads_from_storage() -> Option<i32> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let window = web_sys::window()?;
+        let storage = window.local_storage().ok()??;
+        let value = storage.get_item(CPU_THREADS_STORAGE_KEY).ok()??;
+        value.parse().ok()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        None
+    }
+}
+
+/// Save CPU threads setting to localStorage.
+fn save_cpu_threads_to_storage(value: i32) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(window) = web_sys::window() {
+            if let Ok(Some(storage)) = window.local_storage() {
+                let _ = storage.set_item(CPU_THREADS_STORAGE_KEY, &value.to_string());
+            }
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = value;
+    }
+}
+
+/// Get the current CPU threads setting, falling back to config default.
+pub fn get_cpu_threads(config: Option<&FractalConfig>) -> i32 {
+    CPU_THREADS_CACHE.with(|cell| {
+        // Load from localStorage on first access
+        if cell.get().is_none() {
+            if let Some(stored) = load_cpu_threads_from_storage() {
+                cell.set(Some(stored));
+            }
+        }
+        cell.get()
+            .unwrap_or_else(|| config.map(|c| c.worker_count).unwrap_or(0))
+    })
+}
+
+/// Set the CPU threads value and persist to localStorage.
+pub fn set_cpu_threads(value: i32) {
+    CPU_THREADS_CACHE.with(|cell| cell.set(Some(value)));
+    save_cpu_threads_to_storage(value);
+}
+
+/// Get the raw CPU threads value (None if using default).
+pub fn get_cpu_threads_override() -> Option<i32> {
+    CPU_THREADS_CACHE.with(|cell| {
+        // Load from localStorage on first access
+        if cell.get().is_none() {
+            if let Some(stored) = load_cpu_threads_from_storage() {
+                cell.set(Some(stored));
+                return Some(stored);
+            }
+        }
+        cell.get()
+    })
+}
 
 /// Determines which renderer implementation to use.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -34,8 +110,9 @@ pub struct FractalConfig {
     /// See docs/research/perturbation-theory.md Section 2.5.
     pub tau_sq: f64,
     /// Number of web workers for parallel rendering.
-    /// 0 = use all available hardware threads (hardware_concurrency).
-    pub worker_count: usize,
+    /// Positive: use that exact number of workers.
+    /// Zero or negative: use hardware_concurrency + this value (e.g., -1 leaves one core free).
+    pub worker_count: i32,
     /// Multiplier for max iterations formula: multiplier * zoom_exp^power.
     pub iteration_multiplier: f64,
     /// Power for max iterations formula: multiplier * zoom_exp^power.
