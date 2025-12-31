@@ -145,37 +145,28 @@ impl WorkerPool {
     }
 
     fn handle_ready(&mut self, worker_id: usize) {
-        self.send_to_worker(
-            worker_id,
-            &MainToWorker::Initialize {
-                renderer_id: self.renderer_id.clone(),
-            },
-        );
+        // Worker is ready - mark as initialized and check for pending work
+        let was_empty = self.initialized_workers.is_empty();
+        self.initialized_workers.insert(worker_id);
+        if was_empty {
+            if let Some(pending) = self.pending_orbit_request.take() {
+                web_sys::console::log_1(
+                    &"[WorkerPool] First worker ready, dispatching queued orbit request".into(),
+                );
+                self.send_to_worker(
+                    worker_id,
+                    &MainToWorker::ComputeReferenceOrbit {
+                        render_id: pending.request.render_id,
+                        orbit_id: pending.request.orbit_id,
+                        c_ref_json: pending.request.c_ref_json,
+                        max_iterations: pending.request.max_iterations,
+                    },
+                );
+            }
+        }
     }
 
     fn handle_request_work(&mut self, worker_id: usize, render_id: Option<u32>) {
-        if render_id.is_none() {
-            let was_empty = self.initialized_workers.is_empty();
-            self.initialized_workers.insert(worker_id);
-            if was_empty {
-                if let Some(pending) = self.pending_orbit_request.take() {
-                    web_sys::console::log_1(
-                        &"[WorkerPool] First worker ready, dispatching queued orbit request".into(),
-                    );
-                    self.send_to_worker(
-                        worker_id,
-                        &MainToWorker::ComputeReferenceOrbit {
-                            render_id: pending.request.render_id,
-                            orbit_id: pending.request.orbit_id,
-                            c_ref_json: pending.request.c_ref_json,
-                            max_iterations: pending.request.max_iterations,
-                        },
-                    );
-                    return;
-                }
-            }
-        }
-
         if render_id.is_none_or(|id| id == self.current_render_id) {
             self.dispatch_work(worker_id);
         } else {
@@ -426,72 +417,22 @@ impl WorkerPool {
             return;
         }
 
-        if self.is_perturbation_render && !self.perturbation.worker_ready_for_tiles(worker_id) {
+        if !self.perturbation.worker_ready_for_tiles(worker_id) {
             self.send_to_worker(worker_id, &MainToWorker::NoWork);
             return;
         }
 
         if let Some(tile) = self.pending_tiles.pop_front() {
-            if self.is_perturbation_render {
-                if let Some(msg) = self
-                    .perturbation
-                    .build_tile_message(self.current_render_id, tile)
-                {
-                    self.send_to_worker(worker_id, &msg);
-                } else {
-                    self.send_to_worker(worker_id, &MainToWorker::NoWork);
-                }
+            if let Some(msg) = self
+                .perturbation
+                .build_tile_message(self.current_render_id, tile)
+            {
+                self.send_to_worker(worker_id, &msg);
             } else {
-                let tile_viewport = self
-                    .current_viewport
-                    .as_ref()
-                    .map(|vp| crate::rendering::tile_to_viewport(&tile, vp, self.canvas_size));
-
-                let viewport_json = tile_viewport
-                    .and_then(|v| serde_json::to_string(&v).ok())
-                    .unwrap_or_default();
-
-                self.send_to_worker(
-                    worker_id,
-                    &MainToWorker::RenderTile {
-                        render_id: self.current_render_id,
-                        viewport_json,
-                        tile,
-                    },
-                );
+                self.send_to_worker(worker_id, &MainToWorker::NoWork);
             }
         } else {
             self.send_to_worker(worker_id, &MainToWorker::NoWork);
-        }
-    }
-
-    pub fn start_render(
-        &mut self,
-        viewport: Viewport,
-        canvas_size: (u32, u32),
-        tiles: Vec<PixelRect>,
-    ) {
-        self.is_perturbation_render = false;
-        self.current_render_id = self.current_render_id.wrapping_add(1);
-        web_sys::console::log_1(
-            &format!(
-                "[WorkerPool] Starting render #{} with {} tiles, precision={} bits",
-                self.current_render_id,
-                tiles.len(),
-                viewport.precision_bits()
-            )
-            .into(),
-        );
-        self.current_viewport = Some(viewport);
-        self.canvas_size = canvas_size;
-        self.pending_tiles = tiles.into();
-        self.render_start_time = Some(performance_now());
-
-        let total = self.pending_tiles.len() as u32;
-        self.progress.set(RenderProgress::new(total));
-
-        for worker_id in 0..self.workers.len() {
-            self.dispatch_work(worker_id);
         }
     }
 

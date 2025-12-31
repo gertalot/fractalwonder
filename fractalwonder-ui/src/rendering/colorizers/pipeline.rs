@@ -52,17 +52,14 @@ impl ColorPipeline {
     pub fn colorize_chunk(&self, data: &[ComputeData]) -> Vec<[u8; 4]> {
         data.iter()
             .map(|d| {
-                if self.render_settings.xray_enabled {
-                    if let ComputeData::Mandelbrot(m) = d {
-                        if m.glitched {
-                            if m.max_iterations == 0 {
-                                return [0, 255, 255, 255];
-                            }
-                            let normalized = m.iterations as f64 / m.max_iterations as f64;
-                            let brightness = (64.0 + normalized * 191.0) as u8;
-                            return [0, brightness, brightness, 255];
-                        }
+                let ComputeData::Mandelbrot(m) = d;
+                if self.render_settings.xray_enabled && m.glitched {
+                    if m.max_iterations == 0 {
+                        return [0, 255, 255, 255];
                     }
+                    let normalized = m.iterations as f64 / m.max_iterations as f64;
+                    let brightness = (64.0 + normalized * 191.0) as u8;
+                    return [0, brightness, brightness, 255];
                 }
 
                 if let Some(ref ctx) = self.cached_context {

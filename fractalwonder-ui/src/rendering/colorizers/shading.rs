@@ -7,7 +7,6 @@ use fractalwonder_core::{ComputeData, MandelbrotData};
 fn is_interior(data: &ComputeData) -> bool {
     match data {
         ComputeData::Mandelbrot(m) => !m.escaped,
-        ComputeData::TestImage(_) => false,
     }
 }
 
@@ -91,10 +90,7 @@ pub fn apply_slope_shading(
                 continue;
             }
 
-            let m = match &data[idx] {
-                ComputeData::Mandelbrot(m) => m,
-                _ => continue,
-            };
+            let ComputeData::Mandelbrot(m) = &data[idx];
 
             let normal = match compute_normal(m) {
                 Some(n) => n,

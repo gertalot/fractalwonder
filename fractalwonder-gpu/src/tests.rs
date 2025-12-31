@@ -16,12 +16,10 @@ fn create_reference_orbit(center_re: f64, center_im: f64, max_iter: u32) -> Refe
     ReferenceOrbit::compute(&c_ref, max_iter)
 }
 
-/// Extract MandelbrotData from ComputeData, panics if wrong variant.
+/// Extract MandelbrotData from ComputeData.
 fn as_mandelbrot(data: &ComputeData) -> &MandelbrotData {
-    match data {
-        ComputeData::Mandelbrot(m) => m,
-        _ => panic!("Expected Mandelbrot data"),
-    }
+    let ComputeData::Mandelbrot(m) = data;
+    m
 }
 
 /// Test that GPU initialization doesn't panic.

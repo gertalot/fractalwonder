@@ -162,15 +162,14 @@ impl ColorizerKind {
 /// Apply xray coloring to glitched pixels in place.
 fn apply_xray_to_glitched(pixels: &mut [[u8; 4]], data: &[ComputeData]) {
     for (pixel, d) in pixels.iter_mut().zip(data.iter()) {
-        if let ComputeData::Mandelbrot(m) = d {
-            if m.glitched {
-                if m.max_iterations == 0 {
-                    *pixel = [0, 255, 255, 255];
-                } else {
-                    let normalized = m.iterations as f64 / m.max_iterations as f64;
-                    let brightness = (64.0 + normalized * 191.0) as u8;
-                    *pixel = [0, brightness, brightness, 255];
-                }
+        let ComputeData::Mandelbrot(m) = d;
+        if m.glitched {
+            if m.max_iterations == 0 {
+                *pixel = [0, 255, 255, 255];
+            } else {
+                let normalized = m.iterations as f64 / m.max_iterations as f64;
+                let brightness = (64.0 + normalized * 191.0) as u8;
+                *pixel = [0, brightness, brightness, 255];
             }
         }
     }

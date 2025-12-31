@@ -219,16 +219,16 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     }
                 };
 
-            let delta_c_step: (BigFloat, BigFloat) =
-                match serde_json::from_str(&delta_c_step_json) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        post_message(&WorkerToMain::Error {
-                            message: format!("Failed to parse delta_c_step: {}", e),
-                        });
-                        return;
-                    }
-                };
+            let delta_c_step: (BigFloat, BigFloat) = match serde_json::from_str(&delta_c_step_json)
+            {
+                Ok(d) => d,
+                Err(e) => {
+                    post_message(&WorkerToMain::Error {
+                        message: format!("Failed to parse delta_c_step: {}", e),
+                    });
+                    return;
+                }
+            };
 
             // Get cached orbit
             let cached = match state.orbit_cache.get(&orbit_id) {
@@ -271,7 +271,13 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                     HDRFloat::from_bigfloat(&delta_c_step.0),
                     HDRFloat::from_bigfloat(&delta_c_step.1),
                 );
-                render_tile_hdr(&orbit, cached.bla_table.as_ref(), delta_origin, delta_step, &config)
+                render_tile_hdr(
+                    &orbit,
+                    cached.bla_table.as_ref(),
+                    delta_origin,
+                    delta_step,
+                    &config,
+                )
             };
 
             let compute_time_ms = Date::now() - start_time;

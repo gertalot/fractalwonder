@@ -65,7 +65,8 @@ pub fn compute_pixel_perturbation_hdr_bla(
         let rho_re = HDRFloat::from_f64(der_m_re).add(&drho.re);
         let rho_im = HDRFloat::from_f64(der_m_im).add(&drho.im);
 
-        let z_mag_sq = z_re.square().add(&z_im.square()).to_f64();
+        let z_mag_sq_hdr = z_re.square().add(&z_im.square());
+        let z_mag_sq = z_mag_sq_hdr.to_f64();
         let z_m_mag_sq = z_m_re * z_m_re + z_m_im * z_m_im;
         // Use HDRFloat for dz_mag_sq to prevent f64 underflow at deep zoom
         let dz_mag_sq = dz.norm_sq_hdr();
@@ -101,10 +102,9 @@ pub fn compute_pixel_perturbation_hdr_bla(
             glitched = true;
         }
 
-        // 3. Rebase check: use f64 comparison so rebase triggers correctly
-        // (HDRFloat preserves tiny dz values, preventing rebase from triggering)
-        let dz_mag_sq_f64 = dz.norm_sq();
-        if z_mag_sq < dz_mag_sq_f64 {
+        // 3. Rebase check: if |z| < |δz|, the perturbation dominates the full value
+        // Use HDRFloat comparison to correctly handle underflow at deep zoom
+        if z_mag_sq_hdr.sub(&dz_mag_sq).is_negative() {
             dz = HDRComplex { re: z_re, im: z_im };
             drho = HDRComplex {
                 re: rho_re,

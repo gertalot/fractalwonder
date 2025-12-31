@@ -11,7 +11,7 @@ pub mod viewport;
 
 pub use bigfloat::BigFloat;
 pub use complex_delta::{BigFloatComplex, ComplexDelta, F64Complex};
-pub use compute_data::{ComputeData, MandelbrotData, TestImageData};
+pub use compute_data::{ComputeData, MandelbrotData};
 pub use hdrcomplex::HDRComplex;
 pub use hdrfloat::HDRFloat;
 pub use messages::{MainToWorker, WorkerToMain};

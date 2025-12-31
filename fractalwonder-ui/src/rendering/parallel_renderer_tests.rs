@@ -20,9 +20,9 @@ fn make_tile_data(iterations: &[u32]) -> Vec<ComputeData> {
 fn get_iterations(buffer: &[ComputeData]) -> Vec<u32> {
     buffer
         .iter()
-        .map(|d| match d {
-            ComputeData::Mandelbrot(m) => m.iterations,
-            _ => 0,
+        .map(|d| {
+            let ComputeData::Mandelbrot(m) = d;
+            m.iterations
         })
         .collect()
 }
@@ -33,13 +33,9 @@ fn assemble_empty_tiles_returns_default_buffer() {
 
     assert_eq!(buffer.len(), 16);
     for pixel in &buffer {
-        match pixel {
-            ComputeData::Mandelbrot(m) => {
-                assert_eq!(m.iterations, 0);
-                assert!(!m.escaped);
-            }
-            _ => panic!("Expected MandelbrotData"),
-        }
+        let ComputeData::Mandelbrot(m) = pixel;
+        assert_eq!(m.iterations, 0);
+        assert!(!m.escaped);
     }
 }
 

@@ -5,16 +5,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum MainToWorker {
-    /// Initialize worker with specified renderer type.
-    Initialize { renderer_id: String },
-
-    /// Render a tile. viewport_json is JSON-serialized Viewport to preserve BigFloat precision.
-    RenderTile {
-        render_id: u32,
-        viewport_json: String,
-        tile: PixelRect,
-    },
-
     /// No work available - worker should idle.
     NoWork,
 
@@ -113,42 +103,6 @@ pub enum WorkerToMain {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn main_to_worker_initialize_roundtrip() {
-        let msg = MainToWorker::Initialize {
-            renderer_id: "mandelbrot".to_string(),
-        };
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains(r#""type":"Initialize""#));
-        assert!(json.contains(r#""renderer_id":"mandelbrot""#));
-
-        let parsed: MainToWorker = serde_json::from_str(&json).unwrap();
-        match parsed {
-            MainToWorker::Initialize { renderer_id } => assert_eq!(renderer_id, "mandelbrot"),
-            _ => panic!("Wrong variant"),
-        }
-    }
-
-    #[test]
-    fn main_to_worker_render_tile_roundtrip() {
-        let msg = MainToWorker::RenderTile {
-            render_id: 42,
-            viewport_json: r#"{"center":...}"#.to_string(),
-            tile: PixelRect::new(10, 20, 64, 64),
-        };
-        let json = serde_json::to_string(&msg).unwrap();
-        let parsed: MainToWorker = serde_json::from_str(&json).unwrap();
-        match parsed {
-            MainToWorker::RenderTile {
-                render_id, tile, ..
-            } => {
-                assert_eq!(render_id, 42);
-                assert_eq!(tile.x, 10);
-            }
-            _ => panic!("Wrong variant"),
-        }
-    }
 
     #[test]
     fn worker_to_main_ready_roundtrip() {
@@ -437,59 +391,5 @@ mod tests {
             parsed.1.precision_bits(),
             "Y precision should be preserved"
         );
-    }
-
-    #[test]
-    fn viewport_json_field_roundtrip() {
-        // Test the actual message pattern used: viewport_json is a JSON string
-        // containing BigFloat coordinates
-        use crate::Viewport;
-
-        let viewport = Viewport::from_strings(
-            "-1.10000101110000011001011000111011011110110100100101010010110010101111001",
-            "0.23456789",
-            "0.0000001",
-            "0.0000001",
-            128,
-        )
-        .unwrap();
-
-        // Serialize viewport to JSON string (as done in RenderTile message)
-        let viewport_json = serde_json::to_string(&viewport).unwrap();
-
-        // Put in message
-        let msg = MainToWorker::RenderTile {
-            render_id: 1,
-            viewport_json: viewport_json.clone(),
-            tile: PixelRect::new(0, 0, 32, 32),
-        };
-
-        // Roundtrip the message
-        let msg_json = serde_json::to_string(&msg).unwrap();
-        let parsed_msg: MainToWorker = serde_json::from_str(&msg_json).unwrap();
-
-        match parsed_msg {
-            MainToWorker::RenderTile {
-                viewport_json: parsed_vp_json,
-                ..
-            } => {
-                // Parse the inner viewport JSON
-                let parsed_viewport: Viewport = serde_json::from_str(&parsed_vp_json).unwrap();
-
-                // Center coordinates precision should match
-                assert_eq!(
-                    viewport.center.0.precision_bits(),
-                    parsed_viewport.center.0.precision_bits(),
-                    "Viewport center_x precision should be preserved"
-                );
-
-                // Values should match
-                assert_eq!(
-                    viewport.center.0, parsed_viewport.center.0,
-                    "Viewport center_x should be preserved"
-                );
-            }
-            _ => panic!("Wrong variant"),
-        }
     }
 }

@@ -51,16 +51,16 @@ fn build_sorted_histogram_values(
         .iter()
         .zip(data.iter())
         .filter_map(|(&smooth, d)| {
-            if let ComputeData::Mandelbrot(m) = d {
-                if m.escaped {
-                    return Some(if use_smooth {
-                        smooth
-                    } else {
-                        m.iterations as f64
-                    });
-                }
+            let ComputeData::Mandelbrot(m) = d;
+            if m.escaped {
+                Some(if use_smooth {
+                    smooth
+                } else {
+                    m.iterations as f64
+                })
+            } else {
+                None
             }
-            None
         })
         .collect();
 
@@ -93,7 +93,6 @@ impl Colorizer for SmoothIterationColorizer {
             .iter()
             .map(|d| match d {
                 ComputeData::Mandelbrot(m) => compute_smooth_iteration(m),
-                ComputeData::TestImage(_) => 0.0,
             })
             .collect();
 
@@ -131,7 +130,6 @@ impl Colorizer for SmoothIterationColorizer {
                 };
                 self.colorize_mandelbrot(m, smooth, context, palette, lut, render_settings)
             }
-            ComputeData::TestImage(_) => [128, 128, 128, 255],
         }
     }
 
@@ -165,7 +163,6 @@ impl SmoothIterationColorizer {
                 let smooth = compute_smooth_iteration(m);
                 self.colorize_mandelbrot(m, smooth, cached_context, palette, lut, render_settings)
             }
-            ComputeData::TestImage(_) => [128, 128, 128, 255],
         }
     }
 
@@ -315,9 +312,9 @@ mod tests {
 
         let smooth_values: Vec<f64> = data
             .iter()
-            .map(|d| match d {
-                ComputeData::Mandelbrot(m) => compute_smooth_iteration(m),
-                _ => 0.0,
+            .map(|d| {
+                let ComputeData::Mandelbrot(m) = d;
+                compute_smooth_iteration(m)
             })
             .collect();
 
