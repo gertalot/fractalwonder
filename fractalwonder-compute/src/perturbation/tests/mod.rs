@@ -7,3 +7,4 @@ mod generic_types;
 mod glitch_detection;
 mod grid;
 mod reference_orbit;
+mod tile;
