@@ -461,8 +461,12 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                                 tile_total_iters += stats.total_iterations as u64;
                                 data.push(ComputeData::Mandelbrot(result));
                             } else {
-                                let result =
-                                    compute_pixel_perturbation(&orbit, delta_c, max_iterations, tau_sq);
+                                let result = compute_pixel_perturbation(
+                                    &orbit,
+                                    delta_c,
+                                    max_iterations,
+                                    tau_sq,
+                                );
                                 tile_total_iters += result.iterations as u64;
                                 data.push(ComputeData::Mandelbrot(result));
                             }

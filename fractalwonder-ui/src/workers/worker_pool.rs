@@ -216,13 +216,20 @@ impl WorkerPool {
             web_sys::console::log_1(
                 &format!(
                     "[WorkerPool] Tile ({},{}): {}/{} glitched, {:.1}% BLA ({}/{})",
-                    tile.x, tile.y, glitched_count, data.len(), bla_pct,
-                    bla_iterations, total_iterations
+                    tile.x,
+                    tile.y,
+                    glitched_count,
+                    data.len(),
+                    bla_pct,
+                    bla_iterations,
+                    total_iterations
                 )
                 .into(),
             );
             if glitched_count > 0 {
-                self.perturbation.glitch_resolver_mut().record_glitched_tile(tile);
+                self.perturbation
+                    .glitch_resolver_mut()
+                    .record_glitched_tile(tile);
             }
         }
 
