@@ -4,6 +4,7 @@
 //! delta iterations for individual pixels.
 
 mod pixel;
+mod pixel_f64_bla;
 mod pixel_hdr_bla;
 mod reference_orbit;
 mod tile;
@@ -11,6 +12,7 @@ mod tile;
 pub use tile::{render_tile_f64, render_tile_hdr, TileConfig, TileRenderResult, TileStats};
 
 pub use pixel::compute_pixel_perturbation;
+pub use pixel_f64_bla::compute_pixel_perturbation_f64_bla;
 pub use pixel_hdr_bla::{compute_pixel_perturbation_hdr_bla, BlaStats};
 pub use reference_orbit::ReferenceOrbit;
 
