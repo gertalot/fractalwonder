@@ -212,7 +212,8 @@ mod tests {
 
         // Small delta - should trigger BLA
         let delta_c = (1e-12, 1e-12);
-        let (_result, stats) = compute_pixel_perturbation_f64_bla(&orbit, &bla_table, delta_c, 1000, 1e-6);
+        let (_result, stats) =
+            compute_pixel_perturbation_f64_bla(&orbit, &bla_table, delta_c, 1000, 1e-6);
 
         // BLA should skip some iterations
         assert!(
@@ -224,5 +225,48 @@ mod tests {
             stats.total_iterations <= 1000,
             "Should not exceed max iterations"
         );
+    }
+
+    #[test]
+    fn pixel_f64_bla_matches_hdr_bla_iteration_count() {
+        use super::super::compute_pixel_perturbation_hdr_bla;
+        use fractalwonder_core::HDRComplex;
+
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 1000);
+        let bla_table = BlaTable::compute(&orbit, &HDRFloat::from_f64(1e-10));
+
+        // Test with a very small delta that triggers BLA.
+        // BLA only activates when |dz|² < r² where r is epsilon-scale (~1e-16).
+        // Using 1e-20 ensures both f64 and HDR paths use BLA before any escape.
+        let delta_c_f64 = (1e-20, 1e-20);
+        let delta_c_hdr = HDRComplex {
+            re: HDRFloat::from_f64(1e-20),
+            im: HDRFloat::from_f64(1e-20),
+        };
+
+        let (result_f64, stats_f64) =
+            compute_pixel_perturbation_f64_bla(&orbit, &bla_table, delta_c_f64, 1000, 1e-6);
+        let (result_hdr, stats_hdr) =
+            compute_pixel_perturbation_hdr_bla(&orbit, &bla_table, delta_c_hdr, 1000, 1e-6);
+
+        // Both should not escape (point is inside set with tiny perturbation)
+        assert_eq!(
+            result_f64.escaped, result_hdr.escaped,
+            "f64 and HDR should agree on escape"
+        );
+
+        // Iteration counts should be very close (may differ slightly due to precision)
+        let iter_diff = (result_f64.iterations as i32 - result_hdr.iterations as i32).abs();
+        assert!(
+            iter_diff <= 2,
+            "Iteration counts should be close: f64={}, hdr={}",
+            result_f64.iterations,
+            result_hdr.iterations
+        );
+
+        // Both should use BLA
+        assert!(stats_f64.bla_iterations > 0, "f64 should use BLA");
+        assert!(stats_hdr.bla_iterations > 0, "HDR should use BLA");
     }
 }
