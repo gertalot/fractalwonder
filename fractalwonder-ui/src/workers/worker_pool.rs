@@ -104,7 +104,7 @@ impl WorkerPool {
             web_sys::window()
                 .map(|w| w.navigator().hardware_concurrency() as usize)
                 .unwrap_or(4)
-                .max(1)
+                .max(1) - 1
         } else {
             config_worker_count
         };
@@ -174,6 +174,7 @@ impl WorkerPool {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_tile_complete(
         &mut self,
         render_id: u32,
@@ -182,6 +183,7 @@ impl WorkerPool {
         compute_time_ms: f64,
         bla_iterations: u64,
         total_iterations: u64,
+        rebase_count: u64,
     ) {
         if render_id != self.current_render_id {
             web_sys::console::warn_1(
@@ -206,14 +208,15 @@ impl WorkerPool {
             };
             web_sys::console::log_1(
                 &format!(
-                    "[WorkerPool] Tile ({},{}): {}/{} glitched, {:.1}% BLA ({}/{})",
+                    "[WorkerPool] Tile ({},{}): {}/{} glitched, {:.1}% BLA ({}/{}), {} rebases",
                     tile.x,
                     tile.y,
                     glitched_count,
                     data.len(),
                     bla_pct,
                     bla_iterations,
-                    total_iterations
+                    total_iterations,
+                    rebase_count
                 )
                 .into(),
             );
@@ -390,6 +393,7 @@ impl WorkerPool {
                 compute_time_ms,
                 bla_iterations,
                 total_iterations,
+                rebase_count,
             } => self.handle_tile_complete(
                 render_id,
                 tile,
@@ -397,6 +401,7 @@ impl WorkerPool {
                 compute_time_ms,
                 bla_iterations,
                 total_iterations,
+                rebase_count,
             ),
             WorkerToMain::Error { message } => self.handle_error(worker_id, message),
             WorkerToMain::ReferenceOrbitComplete {

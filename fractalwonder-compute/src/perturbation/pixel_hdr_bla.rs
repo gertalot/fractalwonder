@@ -14,6 +14,8 @@ pub struct BlaStats {
     pub bla_iterations: u32,
     /// Total iterations (BLA + standard).
     pub total_iterations: u32,
+    /// Number of times rebasing occurred.
+    pub rebase_count: u32,
 }
 
 /// Compute pixel using perturbation with HDRFloat deltas and BLA acceleration.
@@ -31,6 +33,7 @@ pub fn compute_pixel_perturbation_hdr_bla(
     let mut glitched = false;
     let mut bla_iters: u32 = 0;
     let mut standard_iters: u32 = 0;
+    let mut rebase_count: u32 = 0;
 
     let orbit_len = orbit.orbit.len();
     if orbit_len == 0 {
@@ -93,6 +96,7 @@ pub fn compute_pixel_perturbation_hdr_bla(
                 BlaStats {
                     bla_iterations: bla_iters,
                     total_iterations: bla_iters + standard_iters,
+                    rebase_count,
                 },
             );
         }
@@ -111,6 +115,7 @@ pub fn compute_pixel_perturbation_hdr_bla(
                 im: rho_im,
             };
             m = 0;
+            rebase_count += 1;
             continue;
         }
 
@@ -206,6 +211,7 @@ pub fn compute_pixel_perturbation_hdr_bla(
         BlaStats {
             bla_iterations: bla_iters,
             total_iterations: bla_iters + standard_iters,
+            rebase_count,
         },
     )
 }

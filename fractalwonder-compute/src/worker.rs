@@ -252,6 +252,8 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             };
 
             // Dispatch based on delta magnitude
+            // TODO: Implement f64+BLA path for best performance (see docs/plans/bla-f64-path.md)
+            // Currently f64 path has no BLA support, HDR path has BLA but is slower
             let delta_log2 = delta_c_origin
                 .0
                 .log2_approx()
@@ -289,6 +291,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                 compute_time_ms,
                 bla_iterations: result.stats.bla_iterations,
                 total_iterations: result.stats.total_iterations,
+                rebase_count: result.stats.rebase_count,
             });
 
             post_message(&WorkerToMain::RequestWork {

@@ -15,6 +15,8 @@ pub struct TileStats {
     pub bla_iterations: u64,
     /// Total iterations computed (BLA + standard) across all pixels.
     pub total_iterations: u64,
+    /// Total rebase count across all pixels.
+    pub rebase_count: u64,
 }
 
 /// Result of rendering a tile.
@@ -139,6 +141,7 @@ pub fn render_tile_hdr(
                     );
                     stats.bla_iterations += pixel_stats.bla_iterations as u64;
                     stats.total_iterations += pixel_stats.total_iterations as u64;
+                    stats.rebase_count += pixel_stats.rebase_count as u64;
                     data.push(ComputeData::Mandelbrot(result));
                 } else {
                     // BLA enabled but no table - fall back to generic HDRComplex path

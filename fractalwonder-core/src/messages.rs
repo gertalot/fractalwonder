@@ -81,6 +81,9 @@ pub enum WorkerToMain {
         /// Total iterations computed (BLA + standard) across all pixels.
         #[serde(default)]
         total_iterations: u64,
+        /// Total rebase count across all pixels in tile.
+        #[serde(default)]
+        rebase_count: u64,
     },
 
     /// Worker encountered an error.
@@ -133,6 +136,7 @@ mod tests {
             compute_time_ms: 12.5,
             bla_iterations: 50,
             total_iterations: 100,
+            rebase_count: 5,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: WorkerToMain = serde_json::from_str(&json).unwrap();

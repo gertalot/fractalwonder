@@ -223,16 +223,15 @@ impl BlaTable {
             let diff = dz_mag_sq.sub(&entry.r_sq);
             let validity_check = diff.is_negative();
 
-            if validity_check {
-                // Check if B coefficient would cause overflow: |B| * dc_max < threshold
-                let b_norm = entry.b.norm_hdr();
-                let b_dc = b_norm.mul(dc_max);
+            // Check B coefficient: |B| * dc_max must not be too large
+            let b_norm = entry.b.norm_hdr();
+            let b_dc = b_norm.mul(dc_max);
+            let b_check = b_dc.exp <= max_b_dc_exp;
 
-                if b_dc.exp <= max_b_dc_exp {
-                    return Some(entry);
-                }
-                // If B is too large, try lower level (smaller skip, smaller B)
+            if validity_check && b_check {
+                return Some(entry);
             }
+            // If B is too large or validity check fails, try lower level
         }
 
         None
