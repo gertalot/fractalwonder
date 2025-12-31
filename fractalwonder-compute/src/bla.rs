@@ -26,7 +26,6 @@ pub struct BlaEntry {
 /// BLA entry with f64 coefficients for fast-path rendering.
 /// Created from HDR entry when coefficients fit in f64 range.
 #[derive(Clone, Debug)]
-#[allow(dead_code)] // Used in subsequent BLA f64 implementation tasks
 pub struct BlaEntryF64 {
     /// Complex coefficient A as (re, im)
     pub a: (f64, f64),
@@ -38,7 +37,6 @@ pub struct BlaEntryF64 {
     pub r_sq: f64,
 }
 
-#[allow(dead_code)] // Used in subsequent BLA f64 implementation tasks
 impl BlaEntryF64 {
     /// Try to convert from HDR entry. Returns None if any coefficient overflows f64.
     pub fn try_from_hdr(entry: &BlaEntry) -> Option<Self> {
@@ -281,6 +279,70 @@ impl BlaTable {
 
         None
     }
+
+    /// Find the largest valid BLA at reference index `m` for current |δz|², returning f64 coefficients.
+    /// Returns None if no BLA is valid or if coefficients overflow f64 range.
+    ///
+    /// This is the f64-optimized version for moderate zoom levels where BLA coefficients
+    /// fit in f64 range. Falls back gracefully when coefficients overflow.
+    pub fn find_valid_f64(&self, m: usize, dz_mag_sq: f64, dc_max: f64) -> Option<BlaEntryF64> {
+        if self.entries.is_empty() {
+            return None;
+        }
+
+        let max_b_dc_exp = 0;
+
+        for level in (0..=self.num_levels.saturating_sub(1)).rev() {
+            let level_start = self.level_offsets[level];
+            let skip_size = 1usize << level;
+
+            if !m.is_multiple_of(skip_size) {
+                continue;
+            }
+
+            let idx_in_level = m / skip_size;
+            let entry_idx = level_start + idx_in_level;
+
+            let level_end = if level + 1 < self.level_offsets.len() {
+                self.level_offsets[level + 1]
+            } else {
+                self.entries.len()
+            };
+
+            if entry_idx >= level_end {
+                continue;
+            }
+
+            let entry = &self.entries[entry_idx];
+
+            // Convert r_sq to f64 for comparison
+            let r_sq_f64 = entry.r_sq.to_f64();
+            if !r_sq_f64.is_finite() || r_sq_f64 <= 0.0 {
+                continue;
+            }
+
+            // Validity check: |δz|² < r²
+            if dz_mag_sq >= r_sq_f64 {
+                continue;
+            }
+
+            // B coefficient check: |B| * dc_max must not be too large
+            let b_norm = entry.b.norm_hdr();
+            let dc_max_hdr = HDRFloat::from_f64(dc_max);
+            let b_dc = b_norm.mul(&dc_max_hdr);
+            if b_dc.exp > max_b_dc_exp {
+                continue;
+            }
+
+            // Try to convert to f64 - returns None if overflow
+            if let Some(f64_entry) = BlaEntryF64::try_from_hdr(entry) {
+                return Some(f64_entry);
+            }
+            // If conversion failed, try lower level
+        }
+
+        None
+    }
 }
 
 #[cfg(test)]
@@ -482,5 +544,22 @@ mod tests {
             f64_entry.is_none(),
             "Should return None when coefficient overflows f64"
         );
+    }
+
+    #[test]
+    fn bla_table_find_valid_f64_returns_some_for_tiny_dz() {
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 100);
+        let table = BlaTable::compute(&orbit, &HDRFloat::from_f64(1e-10));
+
+        // At m=1, Z_m != 0, so r > 0 and BLA should be valid
+        let dc_max = 1e-10;
+        let result = table.find_valid_f64(1, 0.0, dc_max);
+        assert!(result.is_some(), "Zero |δz|² at m=1 should allow f64 BLA");
+
+        let bla = result.unwrap();
+        assert!(bla.l >= 1);
+        assert!(bla.a.0.is_finite());
+        assert!(bla.r_sq > 0.0);
     }
 }
