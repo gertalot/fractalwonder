@@ -562,4 +562,15 @@ mod tests {
         assert!(bla.a.0.is_finite());
         assert!(bla.r_sq > 0.0);
     }
+
+    #[test]
+    fn bla_table_find_valid_f64_returns_none_for_large_dz() {
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 100);
+        let table = BlaTable::compute(&orbit, &HDRFloat::from_f64(0.01));
+
+        // With |δz|² = 1.0 (huge), no BLA should be valid
+        let result = table.find_valid_f64(0, 1.0, 0.01);
+        assert!(result.is_none(), "Large |δz| should invalidate all f64 BLAs");
+    }
 }
