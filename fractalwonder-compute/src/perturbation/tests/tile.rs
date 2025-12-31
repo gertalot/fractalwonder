@@ -21,7 +21,7 @@ fn render_tile_f64_produces_correct_pixel_count() {
     let delta_origin = (0.1, 0.1);
     let delta_step = (0.01, 0.01);
 
-    let result = render_tile_f64(&orbit, delta_origin, delta_step, &config);
+    let result = render_tile_f64(&orbit, None, delta_origin, delta_step, &config);
 
     assert_eq!(result.data.len(), 16, "4x4 tile should produce 16 pixels");
     assert!(
@@ -50,7 +50,7 @@ fn render_tile_f64_escapes_outside_set() {
     let delta_origin = (2.5, 2.5);
     let delta_step = (0.1, 0.1);
 
-    let result = render_tile_f64(&orbit, delta_origin, delta_step, &config);
+    let result = render_tile_f64(&orbit, None, delta_origin, delta_step, &config);
 
     // All pixels should escape quickly
     for pixel in &result.data {

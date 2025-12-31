@@ -251,9 +251,7 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
                 bla_enabled,
             };
 
-            // Dispatch based on delta magnitude
-            // TODO: Implement f64+BLA path for best performance (see docs/plans/bla-f64-path.md)
-            // Currently f64 path has no BLA support, HDR path has BLA but is slower
+            // Dispatch based on delta magnitude: use f64 when deltas fit, HDRFloat otherwise
             let delta_log2 = delta_c_origin
                 .0
                 .log2_approx()
@@ -263,7 +261,13 @@ fn handle_message(state: &mut WorkerState, data: JsValue) {
             let result = if use_f64 {
                 let delta_origin = (delta_c_origin.0.to_f64(), delta_c_origin.1.to_f64());
                 let delta_step = (delta_c_step.0.to_f64(), delta_c_step.1.to_f64());
-                render_tile_f64(&orbit, delta_origin, delta_step, &config)
+                render_tile_f64(
+                    &orbit,
+                    cached.bla_table.as_ref(),
+                    delta_origin,
+                    delta_step,
+                    &config,
+                )
             } else {
                 let delta_origin = (
                     HDRFloat::from_bigfloat(&delta_c_origin.0),

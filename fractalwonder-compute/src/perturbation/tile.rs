@@ -3,7 +3,10 @@
 //! Provides pure functions for rendering tiles using pre-computed reference orbits.
 //! Supports both f64 (fast path) and HDRFloat (deep zoom) precision.
 
-use super::{compute_pixel_perturbation, compute_pixel_perturbation_hdr_bla, ReferenceOrbit};
+use super::{
+    compute_pixel_perturbation, compute_pixel_perturbation_f64_bla,
+    compute_pixel_perturbation_hdr_bla, ReferenceOrbit,
+};
 use crate::BlaTable;
 use fractalwonder_core::{ComplexDelta, ComputeData, F64Complex, HDRComplex, HDRFloat};
 
@@ -38,26 +41,27 @@ pub struct TileConfig {
     pub max_iterations: u32,
     /// Glitch detection threshold squared (τ²).
     pub tau_sq: f64,
-    /// Enable BLA acceleration (only applies to HDRFloat path).
-    #[allow(dead_code)] // Used by HDRFloat tile renderer (Task 5)
+    /// Enable BLA acceleration.
     pub bla_enabled: bool,
 }
 
-/// Render a tile using f64 precision (fast path for moderate zoom levels).
+/// Render a tile using f64 precision with optional BLA acceleration.
 ///
 /// This path is used when delta values fit comfortably in f64 range (~10^±300).
-/// BLA is not supported in this path.
+/// BLA acceleration is applied when available and enabled.
 ///
 /// # Arguments
 /// * `orbit` - Pre-computed reference orbit
+/// * `bla_table` - Optional BLA table for iteration skipping
 /// * `delta_origin` - Delta from reference point to top-left pixel (re, im)
 /// * `delta_step` - Delta step between pixels (re, im)
 /// * `config` - Tile rendering configuration
 ///
 /// # Returns
-/// Computed pixel data and rendering statistics
+/// Computed pixel data and rendering statistics including BLA metrics
 pub fn render_tile_f64(
     orbit: &ReferenceOrbit,
+    bla_table: Option<&BlaTable>,
     delta_origin: (f64, f64),
     delta_step: (f64, f64),
     config: &TileConfig,
@@ -72,14 +76,41 @@ pub fn render_tile_f64(
         let mut delta_c = delta_c_row;
 
         for _px in 0..config.size.0 {
-            let result = compute_pixel_perturbation(
-                orbit,
-                F64Complex::from_f64_pair(delta_c.0, delta_c.1),
-                config.max_iterations,
-                config.tau_sq,
-            );
-            stats.total_iterations += result.iterations as u64;
-            data.push(ComputeData::Mandelbrot(result));
+            if config.bla_enabled {
+                if let Some(bla) = bla_table {
+                    let (result, pixel_stats) = compute_pixel_perturbation_f64_bla(
+                        orbit,
+                        bla,
+                        delta_c,
+                        config.max_iterations,
+                        config.tau_sq,
+                    );
+                    stats.bla_iterations += pixel_stats.bla_iterations as u64;
+                    stats.total_iterations += pixel_stats.total_iterations as u64;
+                    stats.rebase_count += pixel_stats.rebase_count as u64;
+                    data.push(ComputeData::Mandelbrot(result));
+                } else {
+                    // BLA enabled but no table - fall back to generic f64 path
+                    let result = compute_pixel_perturbation(
+                        orbit,
+                        F64Complex::from_f64_pair(delta_c.0, delta_c.1),
+                        config.max_iterations,
+                        config.tau_sq,
+                    );
+                    stats.total_iterations += result.iterations as u64;
+                    data.push(ComputeData::Mandelbrot(result));
+                }
+            } else {
+                // BLA disabled - use generic f64 path
+                let result = compute_pixel_perturbation(
+                    orbit,
+                    F64Complex::from_f64_pair(delta_c.0, delta_c.1),
+                    config.max_iterations,
+                    config.tau_sq,
+                );
+                stats.total_iterations += result.iterations as u64;
+                data.push(ComputeData::Mandelbrot(result));
+            }
 
             delta_c.0 += delta_step.0;
         }
@@ -179,4 +210,39 @@ pub fn render_tile_hdr(
     }
 
     TileRenderResult { data, stats }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bla::BlaTable;
+    use crate::ReferenceOrbit;
+    use fractalwonder_core::{BigFloat, HDRFloat};
+
+    #[test]
+    fn render_tile_f64_with_bla_uses_bla() {
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 1000);
+        let bla_table = BlaTable::compute(&orbit, &HDRFloat::from_f64(1e-10));
+
+        let config = TileConfig {
+            size: (4, 4),
+            max_iterations: 1000,
+            tau_sq: 1e-6,
+            bla_enabled: true,
+        };
+
+        // Small deltas to trigger BLA
+        let delta_origin = (1e-12, 1e-12);
+        let delta_step = (1e-14, 1e-14);
+
+        let result = render_tile_f64(&orbit, Some(&bla_table), delta_origin, delta_step, &config);
+
+        // Should have used BLA for at least some iterations
+        assert!(
+            result.stats.bla_iterations > 0,
+            "BLA should be used in f64 path, got bla_iters={}",
+            result.stats.bla_iterations
+        );
+    }
 }
