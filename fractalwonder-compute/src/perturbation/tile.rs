@@ -24,3 +24,17 @@ pub struct TileRenderResult {
     /// Rendering statistics.
     pub stats: TileStats,
 }
+
+/// Configuration for tile rendering.
+#[derive(Clone, Debug)]
+#[allow(dead_code)] // Will be used in upcoming tile rendering functions
+pub struct TileConfig {
+    /// Tile dimensions (width, height).
+    pub size: (u32, u32),
+    /// Maximum iterations for escape check.
+    pub max_iterations: u32,
+    /// Glitch detection threshold squared (τ²).
+    pub tau_sq: f64,
+    /// Enable BLA acceleration (only applies to HDRFloat path).
+    pub bla_enabled: bool,
+}
