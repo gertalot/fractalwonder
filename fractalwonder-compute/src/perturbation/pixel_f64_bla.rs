@@ -202,4 +202,27 @@ mod tests {
         assert!(result.escaped, "Point at c=2+0i should escape");
         assert!(result.iterations < 10, "Should escape quickly");
     }
+
+    #[test]
+    fn pixel_f64_bla_skips_iterations() {
+        // Create orbit for point inside set
+        let c_ref = (BigFloat::with_precision(-0.5, 128), BigFloat::zero(128));
+        let orbit = ReferenceOrbit::compute(&c_ref, 1000);
+        let bla_table = BlaTable::compute(&orbit, &HDRFloat::from_f64(1e-10));
+
+        // Small delta - should trigger BLA
+        let delta_c = (1e-12, 1e-12);
+        let (_result, stats) = compute_pixel_perturbation_f64_bla(&orbit, &bla_table, delta_c, 1000, 1e-6);
+
+        // BLA should skip some iterations
+        assert!(
+            stats.bla_iterations > 0,
+            "BLA should skip iterations, got bla_iters={}",
+            stats.bla_iterations
+        );
+        assert!(
+            stats.total_iterations <= 1000,
+            "Should not exceed max iterations"
+        );
+    }
 }
