@@ -23,6 +23,51 @@ pub struct BlaEntry {
     pub r_sq: HDRFloat,
 }
 
+/// BLA entry with f64 coefficients for fast-path rendering.
+/// Created from HDR entry when coefficients fit in f64 range.
+#[derive(Clone, Debug)]
+#[allow(dead_code)] // Used in subsequent BLA f64 implementation tasks
+pub struct BlaEntryF64 {
+    /// Complex coefficient A as (re, im)
+    pub a: (f64, f64),
+    /// Complex coefficient B as (re, im)
+    pub b: (f64, f64),
+    /// Number of iterations to skip
+    pub l: u32,
+    /// Validity radius squared
+    pub r_sq: f64,
+}
+
+#[allow(dead_code)] // Used in subsequent BLA f64 implementation tasks
+impl BlaEntryF64 {
+    /// Try to convert from HDR entry. Returns None if any coefficient overflows f64.
+    pub fn try_from_hdr(entry: &BlaEntry) -> Option<Self> {
+        let a_re = entry.a.re.to_f64();
+        let a_im = entry.a.im.to_f64();
+        let b_re = entry.b.re.to_f64();
+        let b_im = entry.b.im.to_f64();
+        let r_sq = entry.r_sq.to_f64();
+
+        // Check for overflow (inf) or underflow to zero when non-zero
+        if !a_re.is_finite() || !a_im.is_finite() {
+            return None;
+        }
+        if !b_re.is_finite() || !b_im.is_finite() {
+            return None;
+        }
+        if !r_sq.is_finite() {
+            return None;
+        }
+
+        Some(Self {
+            a: (a_re, a_im),
+            b: (b_re, b_im),
+            l: entry.l,
+            r_sq,
+        })
+    }
+}
+
 impl BlaEntry {
     /// Create a single-iteration BLA from a reference orbit point Z = (z_re, z_im).
     pub fn from_orbit_point(z_re: f64, z_im: f64) -> Self {
@@ -394,5 +439,20 @@ mod tests {
         // Even with |δz|² = 0, BLA at m=0 should be None (r = 0)
         let result = table.find_valid(0, &HDRFloat::ZERO, table.dc_max());
         assert!(result.is_none(), "BLA at m=0 should be None since Z_0 = 0");
+    }
+
+    #[test]
+    fn bla_entry_f64_from_hdr_entry() {
+        let entry = BlaEntry::from_orbit_point(1.0, 0.5);
+        let f64_entry = BlaEntryF64::try_from_hdr(&entry);
+
+        assert!(f64_entry.is_some());
+        let f64_entry = f64_entry.unwrap();
+
+        assert!((f64_entry.a.0 - 2.0).abs() < 1e-14);
+        assert!((f64_entry.a.1 - 1.0).abs() < 1e-14);
+        assert!((f64_entry.b.0 - 1.0).abs() < 1e-14);
+        assert!((f64_entry.b.1 - 0.0).abs() < 1e-14);
+        assert_eq!(f64_entry.l, 1);
     }
 }
