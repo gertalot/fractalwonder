@@ -189,9 +189,17 @@ impl BlaTable {
         let max_b_dc_exp = 0;
 
         // Search from highest level (largest skips) down to level 0
-        for level in (0..self.num_levels).rev() {
+        for level in (0..=self.num_levels.saturating_sub(1)).rev() {
             let level_start = self.level_offsets[level];
             let skip_size = 1usize << level; // 2^level iterations per entry at this level
+
+            // BUG FIX: Only use higher-level BLA when m is aligned to skip_size.
+            // Level n entry i was built from orbit points Z_{i*2^n} to Z_{i*2^n + 2^n - 1}.
+            // These coefficients are only valid when applied starting at m = i * 2^n.
+            // If m is not aligned, the BLA would use wrong orbit points.
+            if !m.is_multiple_of(skip_size) {
+                continue;
+            }
 
             // Index within this level for reference index m
             let idx_in_level = m / skip_size;

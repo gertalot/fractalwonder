@@ -218,7 +218,10 @@ impl ParallelRenderer {
 
         // DEBUG: Only render center 4 tiles for BLA debugging
         let tiles: Vec<_> = tiles.into_iter().take(4).collect();
-        log::warn!("DEBUG: Rendering only {} center tiles for BLA debugging", tiles.len());
+        log::warn!(
+            "DEBUG: Rendering only {} center tiles for BLA debugging",
+            tiles.len()
+        );
 
         // Start render with GPU perturbation or CPU fallback
         // Check runtime use_gpu option (user-controllable) AND config gpu_enabled (fractal type)
