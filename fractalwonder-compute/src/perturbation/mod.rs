@@ -6,6 +6,10 @@
 mod pixel;
 mod pixel_hdr_bla;
 mod reference_orbit;
+mod tile;
+
+#[allow(unused_imports)] // Will be used by consumers in upcoming tasks
+pub use tile::{TileRenderResult, TileStats};
 
 pub use pixel::compute_pixel_perturbation;
 pub use pixel_hdr_bla::{compute_pixel_perturbation_hdr_bla, BlaStats};
