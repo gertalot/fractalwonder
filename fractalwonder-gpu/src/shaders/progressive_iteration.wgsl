@@ -224,6 +224,10 @@ struct Uniforms {
     orbit_len: u32,
     _pad6a: u32,
     _pad6b: u32,
+
+    bla_enabled: u32,
+    bla_num_levels: u32,
+    bla_level_offsets: array<u32, 32>,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -250,6 +254,22 @@ struct Uniforms {
 
 // Final value output buffer: 4 f32s per pixel (z_re, z_im, der_re, der_im)
 @group(0) @binding(10) var<storage, read_write> final_values: array<f32>;
+
+// BLA (Bivariate Linear Approximation) data
+// 16 f32s per entry: A (6), B (6), r_sq (3), l (1)
+@group(0) @binding(11) var<storage, read> bla_data: array<f32>;
+
+struct BlaEntry {
+    a: HDRComplex,
+    b: HDRComplex,
+    r_sq: HDRFloat,
+    l: u32,
+}
+
+struct BlaResult {
+    valid: bool,
+    entry: BlaEntry,
+}
 
 // z_state layout: 6 f32s per pixel [z_re.head, z_re.tail, z_re.exp, z_im.head, z_im.tail, z_im.exp]
 fn load_z_re(idx: u32) -> HDRFloat {
