@@ -71,12 +71,32 @@ mod tests {
         let entry = BlaEntry::from_orbit_point(1.5, 0.5);
         let gpu_entry = GpuBlaEntry::from_bla_entry(&entry);
 
+        // Coefficient A (real)
         assert_eq!(gpu_entry.a_re_head, entry.a.re.head);
         assert_eq!(gpu_entry.a_re_tail, entry.a.re.tail);
         assert_eq!(gpu_entry.a_re_exp, entry.a.re.exp);
+
+        // Coefficient A (imaginary)
         assert_eq!(gpu_entry.a_im_head, entry.a.im.head);
+        assert_eq!(gpu_entry.a_im_tail, entry.a.im.tail);
+        assert_eq!(gpu_entry.a_im_exp, entry.a.im.exp);
+
+        // Coefficient B (real)
         assert_eq!(gpu_entry.b_re_head, entry.b.re.head);
+        assert_eq!(gpu_entry.b_re_tail, entry.b.re.tail);
+        assert_eq!(gpu_entry.b_re_exp, entry.b.re.exp);
+
+        // Coefficient B (imaginary)
+        assert_eq!(gpu_entry.b_im_head, entry.b.im.head);
+        assert_eq!(gpu_entry.b_im_tail, entry.b.im.tail);
+        assert_eq!(gpu_entry.b_im_exp, entry.b.im.exp);
+
+        // Validity radius squared
         assert_eq!(gpu_entry.r_sq_head, entry.r_sq.head);
+        assert_eq!(gpu_entry.r_sq_tail, entry.r_sq.tail);
+        assert_eq!(gpu_entry.r_sq_exp, entry.r_sq.exp);
+
+        // Iterations to skip
         assert_eq!(gpu_entry.l, entry.l);
     }
 }
