@@ -1,6 +1,7 @@
 //! GPU BLA table serialization.
 
 use bytemuck::{Pod, Zeroable};
+use fractalwonder_compute::BlaEntry;
 
 /// GPU-serializable BLA entry (64 bytes, 16 f32-equivalent values).
 /// Layout: A (6), B (6), r_sq (3), l (1) = 16 values
@@ -32,34 +33,33 @@ pub struct GpuBlaEntry {
     pub l: u32,
 }
 
+impl GpuBlaEntry {
+    /// Convert from CPU BlaEntry to GPU format.
+    pub fn from_bla_entry(entry: &BlaEntry) -> Self {
+        Self {
+            a_re_head: entry.a.re.head,
+            a_re_tail: entry.a.re.tail,
+            a_re_exp: entry.a.re.exp,
+            a_im_head: entry.a.im.head,
+            a_im_tail: entry.a.im.tail,
+            a_im_exp: entry.a.im.exp,
+            b_re_head: entry.b.re.head,
+            b_re_tail: entry.b.re.tail,
+            b_re_exp: entry.b.re.exp,
+            b_im_head: entry.b.im.head,
+            b_im_tail: entry.b.im.tail,
+            b_im_exp: entry.b.im.exp,
+            r_sq_head: entry.r_sq.head,
+            r_sq_tail: entry.r_sq.tail,
+            r_sq_exp: entry.r_sq.exp,
+            l: entry.l,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fractalwonder_compute::BlaEntry;
-
-    impl GpuBlaEntry {
-        /// Convert from CPU BlaEntry to GPU format.
-        fn from_bla_entry(entry: &BlaEntry) -> Self {
-            Self {
-                a_re_head: entry.a.re.head,
-                a_re_tail: entry.a.re.tail,
-                a_re_exp: entry.a.re.exp,
-                a_im_head: entry.a.im.head,
-                a_im_tail: entry.a.im.tail,
-                a_im_exp: entry.a.im.exp,
-                b_re_head: entry.b.re.head,
-                b_re_tail: entry.b.re.tail,
-                b_re_exp: entry.b.re.exp,
-                b_im_head: entry.b.im.head,
-                b_im_tail: entry.b.im.tail,
-                b_im_exp: entry.b.im.exp,
-                r_sq_head: entry.r_sq.head,
-                r_sq_tail: entry.r_sq.tail,
-                r_sq_exp: entry.r_sq.exp,
-                l: entry.l,
-            }
-        }
-    }
 
     #[test]
     fn gpu_bla_entry_size_is_64_bytes() {
