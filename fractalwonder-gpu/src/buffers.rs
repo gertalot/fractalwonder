@@ -48,6 +48,11 @@ pub struct ProgressiveGpuUniforms {
     pub reference_escaped: u32,
     pub orbit_len: u32,
     pub _pad6: [u32; 2],
+
+    // BLA configuration
+    pub bla_enabled: u32,
+    pub bla_num_levels: u32,
+    pub bla_level_offsets: [u32; 32],
 }
 
 impl ProgressiveGpuUniforms {
@@ -66,6 +71,9 @@ impl ProgressiveGpuUniforms {
         dc_step: ((f32, f32, i32), (f32, f32, i32)),
         reference_escaped: bool,
         orbit_len: u32,
+        bla_enabled: bool,
+        bla_num_levels: u32,
+        bla_level_offsets: &[usize],
     ) -> Self {
         Self {
             image_width,
@@ -99,6 +107,15 @@ impl ProgressiveGpuUniforms {
             reference_escaped: if reference_escaped { 1 } else { 0 },
             orbit_len,
             _pad6: [0, 0],
+            bla_enabled: if bla_enabled { 1 } else { 0 },
+            bla_num_levels,
+            bla_level_offsets: {
+                let mut offsets = [0u32; 32];
+                for (i, &offset) in bla_level_offsets.iter().take(32).enumerate() {
+                    offsets[i] = offset as u32;
+                }
+                offsets
+            },
         }
     }
 }
