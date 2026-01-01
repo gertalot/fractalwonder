@@ -156,6 +156,7 @@ fn progressive_renderer_basic_render() {
                 iterations_per_dispatch,
                 tau_sq,
                 orbit.escaped_at.is_some(),
+                None, // BLA table
             )
             .await
             .expect("Progressive render should succeed");
@@ -297,6 +298,7 @@ fn gpu_orbit_precision_matches_cpu() {
                     iterations_per_dispatch,
                     tau_sq,
                     orbit.escaped_at.is_some(),
+                    None, // BLA table
                 )
                 .await
                 .expect("GPU render should succeed");
