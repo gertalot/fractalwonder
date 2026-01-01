@@ -41,9 +41,20 @@ impl ReferenceOrbit {
         let mut escaped_at = None;
 
         for n in 0..max_iterations {
-            // Store current Z_n and Der_n as f64
-            orbit.push((x.to_f64(), y.to_f64()));
-            derivative.push((der_x.to_f64(), der_y.to_f64()));
+            // Convert to f64 for storage
+            let orbit_val = (x.to_f64(), y.to_f64());
+            let der_val = (der_x.to_f64(), der_y.to_f64());
+
+            // Check for f64 overflow in derivative (can exceed f64 range at deep zooms
+            // where derivative grows as ~512^n after n iterations)
+            if !der_val.0.is_finite() || !der_val.1.is_finite() {
+                escaped_at = Some(n);
+                break;
+            }
+
+            // Store current Z_n and Der_n
+            orbit.push(orbit_val);
+            derivative.push(der_val);
 
             // Check escape: |z|^2 > 65536
             let x_sq = x.mul(&x);

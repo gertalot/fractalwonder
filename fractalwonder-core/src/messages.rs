@@ -140,6 +140,7 @@ mod tests {
             bla_iterations: 50,
             total_iterations: 100,
             rebase_count: 5,
+            used_f64: true,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: WorkerToMain = serde_json::from_str(&json).unwrap();
