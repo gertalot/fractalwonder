@@ -477,3 +477,4 @@ fn hdr_complex_delta_norm_sq() {
 }
 
 // NOTE: sqrt() and div() tests are in hdrfloat_extended_arithmetic.rs
+// NOTE: Deep zoom tests (10^300+) are in hdrfloat_deep_zoom.rs

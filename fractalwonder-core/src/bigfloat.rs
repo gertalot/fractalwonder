@@ -1,4 +1,4 @@
-use dashu_base::{Abs, Approximation};
+use dashu_base::{Abs, Approximation, Sign};
 use dashu_float::ops::SquareRoot;
 use dashu_float::{DBig, FBig};
 use serde::{Deserialize, Serialize};
@@ -38,30 +38,70 @@ fn exceeds_f64_exponent_range(s: &str) -> bool {
 
 /// Estimate log2 from BINARY (base-2) string representation from FBig::to_string().
 /// FBig outputs in base-2 format like "0.00000...001..." where zeros are binary zeros.
+///
+/// This function now parses the significant bits after leading zeros to provide
+/// accurate mantissa precision, not just integer approximation.
 fn estimate_log2_from_binary_string(s: &str) -> f64 {
     // Strip leading sign if present (log2 of absolute value)
     let unsigned_str = s.strip_prefix('-').unwrap_or(s);
 
-    // Handle small values: "0.000...001..."
-    // Count leading zeros after decimal point - each zero is one power of 2
+    // Handle small values: "0.000...001bbb..."
+    // The value is 0.1bbb... × 2^-(leading_zeros+1) where 0.1bbb... ∈ [0.5, 1.0)
     if let Some(after_decimal) = unsigned_str.strip_prefix("0.") {
         let leading_zeros = after_decimal.chars().take_while(|&c| c == '0').count();
-        // In binary: 0.000...001 with n zeros = 2^-(n+1)
-        // log2(2^-(n+1)) = -(n+1)
-        return -(leading_zeros as f64 + 1.0);
+
+        // Parse significant bits after leading zeros to compute mantissa
+        // The mantissa starts with implicit "0.1" (value 0.5), then adds
+        // subsequent bits: 0.1b₁b₂b₃... = 0.5 + b₁×0.25 + b₂×0.125 + ...
+        let sig_bits_start = leading_zeros;
+        let sig_chars: Vec<char> = after_decimal
+            .chars()
+            .skip(sig_bits_start)
+            .take(24) // Parse up to 24 bits for f64 precision
+            .collect();
+
+        let mantissa = if sig_chars.is_empty() || sig_chars[0] != '1' {
+            // Shouldn't happen for non-zero values, but fallback to 0.5
+            0.5
+        } else {
+            // Build mantissa: 0.1b₁b₂... = 0.5 + Σ(bᵢ × 2^-(i+1))
+            let mut m = 0.5_f64;
+            let mut weight = 0.25_f64;
+            for &c in sig_chars.iter().skip(1) {
+                if c == '1' {
+                    m += weight;
+                }
+                weight *= 0.5;
+            }
+            m
+        };
+
+        // log2(value) = log2(mantissa) + exponent
+        // where exponent = -(leading_zeros + 1)
+        let exponent = -(leading_zeros as f64 + 1.0);
+        return mantissa.log2() + exponent;
     }
 
     // Handle large values: count digits before decimal point
     // In binary, n digits before decimal = 2^(n-1) magnitude
     if let Some(dot_pos) = unsigned_str.find('.') {
         let integer_part = &unsigned_str[..dot_pos];
-        // Remove any sign
         let digits: String = integer_part
             .chars()
             .filter(|c| *c == '0' || *c == '1')
             .collect();
         if !digits.is_empty() {
-            return (digits.len() - 1) as f64;
+            // Parse significant bits for mantissa
+            let mut m = 0.0_f64;
+            let mut weight = 0.5_f64;
+            for c in digits.chars() {
+                if c == '1' {
+                    m += weight;
+                }
+                weight *= 0.5;
+            }
+            let exponent = digits.len() as f64;
+            return m.log2() + exponent;
         }
     } else {
         // No decimal point - count all binary digits
@@ -70,7 +110,16 @@ fn estimate_log2_from_binary_string(s: &str) -> f64 {
             .filter(|c| *c == '0' || *c == '1')
             .collect();
         if !digits.is_empty() {
-            return (digits.len() - 1) as f64;
+            let mut m = 0.0_f64;
+            let mut weight = 0.5_f64;
+            for c in digits.chars() {
+                if c == '1' {
+                    m += weight;
+                }
+                weight *= 0.5;
+            }
+            let exponent = digits.len() as f64;
+            return m.log2() + exponent;
         }
     }
 
@@ -334,6 +383,14 @@ impl BigFloat {
                 value: BigFloatValue::Arbitrary(v.clone().abs()),
                 precision_bits: self.precision_bits,
             },
+        }
+    }
+
+    /// Check if this BigFloat is negative.
+    pub fn is_negative(&self) -> bool {
+        match &self.value {
+            BigFloatValue::F64(v) => *v < 0.0,
+            BigFloatValue::Arbitrary(v) => v.sign() == Sign::Negative,
         }
     }
 

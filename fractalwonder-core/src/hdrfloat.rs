@@ -163,8 +163,15 @@ impl HDRFloat {
         } else {
             // Slow path: compute via log2
             // mantissa = 2^(log2(bf) - exp)
+            // NOTE: log2_approx returns log2 of absolute value, so we must
+            // preserve the sign separately to avoid losing it for negative values.
             let mantissa_log2 = log2_approx - exp as f64;
-            libm::exp2(mantissa_log2)
+            let abs_mantissa = libm::exp2(mantissa_log2);
+            if bf.is_negative() {
+                -abs_mantissa
+            } else {
+                abs_mantissa
+            }
         };
 
         // Split f64 mantissa into head + tail
