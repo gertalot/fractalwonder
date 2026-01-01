@@ -23,14 +23,18 @@ pub fn validate_viewport(viewport: &Viewport) -> Result<(), String> {
 }
 
 /// Calculate maximum iterations for a render based on zoom level.
+///
+/// Uses log2_approx() instead of to_f64() to handle extreme zoom depths
+/// beyond f64 range (e.g., 10^308+).
 pub fn calculate_render_max_iterations(viewport: &Viewport, config: Option<&FractalConfig>) -> u32 {
-    let vp_width = viewport.width.to_f64();
-
-    // Calculate zoom exponent from viewport width
-    // Default Mandelbrot width is ~4, so zoom = 4 / width
-    let zoom = 4.0 / vp_width;
-    let zoom_exponent = if zoom.is_finite() && zoom > 0.0 {
-        zoom.log10()
+    // Calculate zoom exponent from viewport width using log2_approx to handle
+    // extreme values that overflow/underflow f64.
+    // zoom = 4 / width, so log10(zoom) = log10(4) - log10(width)
+    // log10(x) = log2(x) * log10(2)
+    let log2_width = viewport.width.log2_approx();
+    let log2_zoom = 2.0 - log2_width; // log2(4) = 2
+    let zoom_exponent = if log2_zoom.is_finite() {
+        log2_zoom * std::f64::consts::LOG10_2
     } else {
         0.0
     };
@@ -110,5 +114,29 @@ mod tests {
         let deep_iter = calculate_render_max_iterations(&deep, None);
 
         assert!(deep_iter > shallow_iter);
+    }
+
+    #[test]
+    fn calculate_max_iterations_handles_extreme_zoom_beyond_f64() {
+        // Test zoom at 10^308 - beyond f64 range for direct computation
+        // Width ~1.5e-309 would underflow/overflow with to_f64() approach
+        let extreme_viewport = Viewport {
+            center: (
+                BigFloat::with_precision(0.273, 2000),
+                BigFloat::with_precision(0.006, 2000),
+            ),
+            width: BigFloat::from_string("1.5e-309", 2000).unwrap(),
+            height: BigFloat::from_string("1.0e-309", 2000).unwrap(),
+        };
+
+        let iter = calculate_render_max_iterations(&extreme_viewport, None);
+
+        // At 10^308 zoom, should get much more than 1000 iterations
+        // (the bug caused fallback to zoom_exponent=0 → only 1000 iter)
+        assert!(
+            iter > 10000,
+            "At 10^308 zoom, expected >10000 iterations, got {}",
+            iter
+        );
     }
 }
