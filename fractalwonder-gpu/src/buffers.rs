@@ -126,6 +126,10 @@ pub struct ProgressiveGpuBuffers {
     // final_values: combined z_re, z_im, der_re, der_im (4 f32s per pixel)
     pub final_values: wgpu::Buffer,
 
+    // BLA acceleration data (read-only)
+    pub bla_data: wgpu::Buffer,
+    pub bla_entry_count: u32,
+
     // Staging buffers for CPU readback
     pub staging_results: wgpu::Buffer,
     pub staging_glitches: wgpu::Buffer,
@@ -142,7 +146,12 @@ pub struct ProgressiveGpuBuffers {
 impl ProgressiveGpuBuffers {
     /// Create buffers sized for a row-set.
     /// row_set_pixel_count = (image_height / row_set_count) * image_width (rounded up)
-    pub fn new(device: &wgpu::Device, orbit_len: u32, row_set_pixel_count: u32) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        orbit_len: u32,
+        row_set_pixel_count: u32,
+        bla_entry_count: u32,
+    ) -> Self {
         let pixel_count = row_set_pixel_count as usize;
 
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
@@ -276,6 +285,14 @@ impl ProgressiveGpuBuffers {
             mapped_at_creation: false,
         });
 
+        // BLA data: 16 f32s per entry (64 bytes)
+        let bla_data = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_bla_data"),
+            size: (bla_entry_count as usize * 16 * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Self {
             uniforms,
             reference_orbit,
@@ -293,6 +310,8 @@ impl ProgressiveGpuBuffers {
             staging_z_norm_sq,
             staging_final_values,
             sync_staging,
+            bla_data,
+            bla_entry_count,
             orbit_capacity: orbit_len,
             row_set_pixel_count,
         }
