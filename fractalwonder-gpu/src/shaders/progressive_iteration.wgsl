@@ -540,6 +540,23 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             continue;
         }
 
+        // BLA acceleration: try to skip multiple iterations
+        if uniforms.bla_enabled != 0u {
+            let bla = bla_find_valid(m, dz_mag_sq_hdr, orbit_len);
+
+            if bla.valid {
+                // Apply: δz_new = A·δz + B·δc
+                let a_dz = hdr_complex_mul(bla.entry.a, dz);
+                let b_dc = hdr_complex_mul(bla.entry.b, dc);
+                dz = hdr_complex_add(a_dz, b_dc);
+
+                // Skip iterations
+                m = m + bla.entry.l;
+                n = n + bla.entry.l;
+                continue;
+            }
+        }
+
         // Delta iteration: dz' = 2*z_m*dz + dz^2 + dc
         // Use z_m HDRFloat values for full precision multiplication
         // Store old dz for derivative calculation
