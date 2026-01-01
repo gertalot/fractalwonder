@@ -20,6 +20,7 @@ pub struct ProgressiveGpuRenderer {
     buffers: Option<ProgressiveGpuBuffers>,
     cached_orbit_id: Option<u32>,
     cached_row_set_pixel_count: u32,
+    cached_bla_entry_count: u32,
 }
 
 impl ProgressiveGpuRenderer {
@@ -31,6 +32,7 @@ impl ProgressiveGpuRenderer {
             buffers: None,
             cached_orbit_id: None,
             cached_row_set_pixel_count: 0,
+            cached_bla_entry_count: 0,
         }
     }
 
@@ -61,6 +63,7 @@ impl ProgressiveGpuRenderer {
         iterations_per_dispatch: u32,
         tau_sq: f32,
         reference_escaped: bool,
+        bla_table: Option<&fractalwonder_compute::BlaTable>,
     ) -> Result<ProgressiveRowSetResult, GpuError> {
         let start = Self::now();
 
@@ -68,23 +71,29 @@ impl ProgressiveGpuRenderer {
             Self::calculate_row_set_pixel_count(image_width, image_height, row_set_count);
 
         // Recreate buffers if needed
+        let bla_entry_count = bla_table.map(|t| t.entries.len() as u32).unwrap_or(0);
+
         let needs_new_buffers = self.buffers.as_ref().map(|b| b.orbit_capacity).unwrap_or(0)
             < orbit.len() as u32
-            || self.cached_row_set_pixel_count < row_set_pixel_count;
+            || self.cached_row_set_pixel_count < row_set_pixel_count
+            || self.cached_bla_entry_count < bla_entry_count;
 
         if needs_new_buffers {
             log::info!(
-                "Creating progressive buffers for orbit len {}, row_set pixels {}",
+                "Creating progressive buffers for orbit len {}, row_set pixels {}, bla entries {}",
                 orbit.len(),
-                row_set_pixel_count
+                row_set_pixel_count,
+                bla_entry_count
             );
             self.buffers = Some(ProgressiveGpuBuffers::new(
                 &self.context.device,
                 orbit.len() as u32,
                 row_set_pixel_count,
+                bla_entry_count.max(1), // At least 1 to avoid zero-size buffer
             ));
             self.cached_orbit_id = None;
             self.cached_row_set_pixel_count = row_set_pixel_count;
+            self.cached_bla_entry_count = bla_entry_count;
         }
 
         let buffers = self.buffers.as_ref().unwrap();
@@ -131,6 +140,21 @@ impl ProgressiveGpuRenderer {
                 0,
                 bytemuck::cast_slice(&orbit_data),
             );
+
+            // Upload BLA table if provided
+            if let Some(bla) = bla_table {
+                let gpu_entries: Vec<crate::GpuBlaEntry> = bla
+                    .entries
+                    .iter()
+                    .map(crate::GpuBlaEntry::from_bla_entry)
+                    .collect();
+                self.context.queue.write_buffer(
+                    &buffers.bla_data,
+                    0,
+                    bytemuck::cast_slice(&gpu_entries),
+                );
+            }
+
             self.cached_orbit_id = Some(orbit_id);
         }
 
@@ -157,6 +181,9 @@ impl ProgressiveGpuRenderer {
                 dc_step,
                 reference_escaped,
                 orbit.len() as u32,
+                bla_table.is_some(),
+                bla_table.map(|t| t.num_levels as u32).unwrap_or(0),
+                bla_table.map(|t| &t.level_offsets[..]).unwrap_or(&[]),
             );
 
             // Wait for dispatch to complete using sync buffer
@@ -275,6 +302,9 @@ impl ProgressiveGpuRenderer {
         dc_step: ((f32, f32, i32), (f32, f32, i32)),
         reference_escaped: bool,
         orbit_len: u32,
+        bla_enabled: bool,
+        bla_num_levels: u32,
+        bla_level_offsets: &[usize],
     ) {
         let buffers = self.buffers.as_ref().unwrap();
 
@@ -292,6 +322,9 @@ impl ProgressiveGpuRenderer {
             dc_step,
             reference_escaped,
             orbit_len,
+            bla_enabled,
+            bla_num_levels,
+            bla_level_offsets,
         );
 
         self.context
@@ -348,6 +381,10 @@ impl ProgressiveGpuRenderer {
                     wgpu::BindGroupEntry {
                         binding: 10,
                         resource: buffers.final_values.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 11,
+                        resource: buffers.bla_data.as_entire_binding(),
                     },
                 ],
             });
