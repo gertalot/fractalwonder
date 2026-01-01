@@ -238,7 +238,9 @@ struct Uniforms {
 
     bla_enabled: u32,
     bla_num_levels: u32,
-    bla_level_offsets: array<u32, 32>,
+    // Packed as vec4s for uniform buffer 16-byte alignment requirement
+    // Access: bla_level_offsets[level / 4][level % 4]
+    bla_level_offsets: array<vec4<u32>, 8>,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -333,7 +335,7 @@ fn bla_find_valid(m: u32, dz_mag_sq: HDRFloat, orbit_len: u32) -> BlaResult {
             continue;
         }
 
-        let level_offset = uniforms.bla_level_offsets[level];
+        let level_offset = uniforms.bla_level_offsets[level / 4][level % 4];
         let idx = level_offset + m / skip;
         let entry = bla_load(idx);
 
