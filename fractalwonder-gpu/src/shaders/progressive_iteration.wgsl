@@ -183,6 +183,17 @@ fn hdr_from_parts(head: f32, tail: f32, exp: i32) -> HDRFloat {
     return HDRFloat(head, tail, exp);
 }
 
+fn hdr_complex_mul(a: HDRComplex, b: HDRComplex) -> HDRComplex {
+    // (a.re + i*a.im) * (b.re + i*b.im) = (a.re*b.re - a.im*b.im) + i*(a.re*b.im + a.im*b.re)
+    let re = hdr_sub(hdr_mul(a.re, b.re), hdr_mul(a.im, b.im));
+    let im = hdr_add(hdr_mul(a.re, b.im), hdr_mul(a.im, b.re));
+    return HDRComplex(re, im);
+}
+
+fn hdr_complex_add(a: HDRComplex, b: HDRComplex) -> HDRComplex {
+    return HDRComplex(hdr_add(a.re, b.re), hdr_add(a.im, b.im));
+}
+
 // ============================================================
 // Progressive Iteration Shader
 // ============================================================
@@ -285,6 +296,54 @@ fn bla_load(idx: u32) -> BlaEntry {
         HDRFloat(bla_data[base + 12u], bla_data[base + 13u], bitcast<i32>(bitcast<u32>(bla_data[base + 14u]))),
         bitcast<u32>(bla_data[base + 15u])
     );
+}
+
+fn bla_find_valid(m: u32, dz_mag_sq: HDRFloat, orbit_len: u32) -> BlaResult {
+    let num_levels = uniforms.bla_num_levels;
+
+    // Empty result for early returns
+    let empty_entry = BlaEntry(HDR_COMPLEX_ZERO, HDR_COMPLEX_ZERO, HDR_ZERO, 0u);
+
+    if num_levels == 0u {
+        return BlaResult(false, empty_entry);
+    }
+
+    // Bounds check: m must be within level 0 entries
+    if m >= orbit_len {
+        return BlaResult(false, empty_entry);
+    }
+
+    // Quick reject: if level 0 entry is invalid, all levels are invalid
+    let base_entry = bla_load(m);
+    if !hdr_less_than(dz_mag_sq, base_entry.r_sq) {
+        return BlaResult(false, empty_entry);
+    }
+
+    // Search from highest level down
+    for (var level = i32(num_levels) - 1; level >= 0; level--) {
+        let skip = 1u << u32(level);
+
+        // Alignment: m must be multiple of skip
+        if (m % skip) != 0u {
+            continue;
+        }
+
+        // Bounds: don't skip past orbit end
+        if m + skip > orbit_len {
+            continue;
+        }
+
+        let level_offset = uniforms.bla_level_offsets[level];
+        let idx = level_offset + m / skip;
+        let entry = bla_load(idx);
+
+        // Validity: |δz|² < r²
+        if hdr_less_than(dz_mag_sq, entry.r_sq) {
+            return BlaResult(true, entry);
+        }
+    }
+
+    return BlaResult(false, empty_entry);
 }
 
 // z_state layout: 6 f32s per pixel [z_re.head, z_re.tail, z_re.exp, z_im.head, z_im.tail, z_im.exp]
