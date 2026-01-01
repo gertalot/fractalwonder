@@ -1,5 +1,6 @@
 //! GPU-accelerated Mandelbrot rendering using wgpu.
 
+mod bla_upload;
 mod buffers;
 mod device;
 mod error;
@@ -8,6 +9,7 @@ mod progressive_renderer;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 
+pub use bla_upload::GpuBlaEntry;
 pub use buffers::{ProgressiveGpuBuffers, ProgressiveGpuUniforms};
 pub use device::{GpuAvailability, GpuContext};
 pub use error::GpuError;
