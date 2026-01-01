@@ -271,6 +271,22 @@ struct BlaResult {
     entry: BlaEntry,
 }
 
+fn bla_load(idx: u32) -> BlaEntry {
+    let base = idx * 16u;
+    return BlaEntry(
+        HDRComplex(
+            HDRFloat(bla_data[base], bla_data[base + 1u], bitcast<i32>(bitcast<u32>(bla_data[base + 2u]))),
+            HDRFloat(bla_data[base + 3u], bla_data[base + 4u], bitcast<i32>(bitcast<u32>(bla_data[base + 5u])))
+        ),
+        HDRComplex(
+            HDRFloat(bla_data[base + 6u], bla_data[base + 7u], bitcast<i32>(bitcast<u32>(bla_data[base + 8u]))),
+            HDRFloat(bla_data[base + 9u], bla_data[base + 10u], bitcast<i32>(bitcast<u32>(bla_data[base + 11u])))
+        ),
+        HDRFloat(bla_data[base + 12u], bla_data[base + 13u], bitcast<i32>(bitcast<u32>(bla_data[base + 14u]))),
+        bitcast<u32>(bla_data[base + 15u])
+    );
+}
+
 // z_state layout: 6 f32s per pixel [z_re.head, z_re.tail, z_re.exp, z_im.head, z_im.tail, z_im.exp]
 fn load_z_re(idx: u32) -> HDRFloat {
     let base = idx * 6u;
