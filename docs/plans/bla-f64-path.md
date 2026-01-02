@@ -1058,3 +1058,105 @@ Expected speedup: **33x faster** than HDR+BLA, **50x faster** than f64 no BLA.
 2. **Deep zoom where f64 underflows**: Worker dispatch uses HDR path (existing delta_log2 check)
 3. **Rebase with large δz**: After rebase, δz may be too large for high-level BLA, but lower levels still work
 4. **dc_max underflows in f64**: At extreme zoom (10^308+), dc_max underflows - use HDR path
+
+---
+
+## BLA Derivative Tracking Implementation (Completed 2026-01-03)
+
+**Problem:** BLA skips iterations for position (δz) but previously didn't update the derivative (δρ), causing 3D lighting artifacts (semi-circular patterns) at deep zoom levels.
+
+**Solution:** Extended BLA entries with D and E coefficients to track derivative updates during BLA skips.
+
+### Mathematical Formulas
+
+**Position update (existing):**
+```
+δz_new = A·δz + B·δc
+```
+
+**Derivative update (new):**
+```
+δρ_new = A·δρ + D·δz + E·δc
+```
+
+Where:
+- A, B: existing BLA coefficients for position
+- D: coefficient for δz contribution to derivative
+- E: coefficient for δc contribution to derivative
+
+**Single-step formulas (from_orbit_point):**
+```
+D = 2·Der_m
+E = 0
+```
+
+**Merge formulas (combining two BLA entries X and Y):**
+```
+D_merged = A_y·D_x + D_y·A_x
+E_merged = A_y·E_x + D_y·B_x + E_y
+```
+
+**Key insight:** C = A mathematically (derivative of position w.r.t. δρ is identical to derivative of position w.r.t. δz), so C is not stored separately.
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `fractalwonder-compute/src/bla.rs` | Extended `BlaEntry` and `BlaEntryF64` with D and E fields; updated `from_orbit_point`, `merge`, `try_from_hdr`, `BlaTable::compute` |
+| `fractalwonder-compute/src/perturbation/pixel_hdr_bla.rs` | Applied derivative formula in BLA block |
+| `fractalwonder-compute/src/perturbation/pixel_f64_bla.rs` | Applied derivative formula in BLA block |
+| `fractalwonder-gpu/src/bla_upload.rs` | Extended `GpuBlaEntry` to 112 bytes (28 f32s) with D and E fields |
+| `fractalwonder-gpu/src/buffers.rs` | Updated buffer allocation from 16→28 f32s per entry |
+| `fractalwonder-gpu/src/shaders/progressive_iteration.wgsl` | Extended shader `BlaEntry` struct, updated `bla_load`, applied derivative formula |
+
+### Struct Changes
+
+**BlaEntry (CPU HDR):**
+```rust
+pub struct BlaEntry {
+    pub a: HDRComplex,
+    pub b: HDRComplex,
+    pub d: HDRComplex,  // δz contribution to δρ
+    pub e: HDRComplex,  // δc contribution to δρ
+    pub l: u32,
+    pub r_sq: HDRFloat,
+}
+```
+
+**BlaEntryF64 (CPU f64):**
+```rust
+pub struct BlaEntryF64 {
+    pub a: (f64, f64),
+    pub b: (f64, f64),
+    pub d: (f64, f64),  // δz contribution to δρ
+    pub e: (f64, f64),  // δc contribution to δρ
+    pub l: u32,
+    pub r_sq: f64,
+}
+```
+
+**GpuBlaEntry (GPU):**
+- Size increased from 64 bytes (16 f32s) to 112 bytes (28 f32s)
+- Added: d_re_head, d_re_tail, d_re_exp, d_im_head, d_im_tail, d_im_exp (6 f32s)
+- Added: e_re_head, e_re_tail, e_re_exp, e_im_head, e_im_tail, e_im_exp (6 f32s)
+
+### Commits (Branch: fix/3d-at-deep-zoom)
+
+1. `5e416e2` - refactor(bla): add d and e coefficient fields to BlaEntry
+2. `2e56703` - refactor(bla): add d and e coefficient fields to BlaEntryF64
+3. `b1450b4` - feat(bla): compute D and E coefficients in from_orbit_point
+4. `c7f5654` - feat(bla): add D and E merge formulas
+5. `e1f2089` - feat(bla): pass derivatives to from_orbit_point in table construction
+6. `e480d2f` - feat(perturbation): apply derivative coefficients in HDR BLA path
+7. `8d26aa3` - feat(perturbation): apply derivative coefficients in f64 BLA path
+8. `c45bebe` - feat(gpu): extend GpuBlaEntry with D and E coefficients
+9. `04d02b1` - feat(gpu): increase BLA buffer size to 28 f32s per entry
+10. `b6657c7` - feat(gpu): extend shader BlaEntry struct with D and E
+11. `485008d` - feat(gpu): apply derivative coefficients in shader BLA block
+
+### Verification
+
+- All 168 tests pass
+- Clippy clean (no warnings)
+- WASM builds successfully
+- Manual verification at zoom 2.55 × 10^301 confirmed smooth 3D lighting without artifacts
