@@ -134,6 +134,13 @@ impl BlaEntry {
         // B_merged = A_y * B_x + B_y
         let b = y.a.mul(&x.b).add(&y.b);
 
+        // Derivative coefficients
+        // D_merged = C_y·D_x + D_y·A_x (note: C_y = A_y)
+        let d = y.a.mul(&x.d).add(&y.d.mul(&x.a));
+
+        // E_merged = C_y·E_x + D_y·B_x + E_y (note: C_y = A_y)
+        let e = y.a.mul(&x.e).add(&y.d.mul(&x.b)).add(&y.e);
+
         // r_merged = min(r_x, max(0, (r_y - |B_x|·dc_max) / |A_x|))
         let r_x = x.r_sq.sqrt();
         let r_y = y.r_sq.sqrt();
@@ -162,9 +169,8 @@ impl BlaEntry {
         BlaEntry {
             a,
             b,
-            // D and E are placeholders - proper merge formula in Task 4
-            d: HDRComplex::ZERO,
-            e: HDRComplex::ZERO,
+            d,
+            e,
             l: x.l + y.l,
             r_sq: r.square(),
         }
