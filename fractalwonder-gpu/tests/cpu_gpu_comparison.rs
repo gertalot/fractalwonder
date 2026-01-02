@@ -52,6 +52,60 @@ mod tests {
         (orbit, bla_table)
     }
 
+    fn render_cpu_pixels(
+        viewport: &Viewport,
+        orbit: &ReferenceOrbit,
+        bla_table: &BlaTable,
+    ) -> Vec<MandelbrotData> {
+        println!("Rendering {} CPU pixels...", TEST_COL_END - TEST_COL_START + 1);
+
+        // Compute delta_origin for tile at (TEST_COL_START, TEST_ROW)
+        // Matches coordinator.rs:253-262
+        let norm_x = TEST_COL_START as f64 / IMAGE_WIDTH as f64 - 0.5;
+        let norm_y = TEST_ROW as f64 / IMAGE_HEIGHT as f64 - 0.5;
+
+        let norm_x_bf = BigFloat::with_precision(norm_x, PRECISION_BITS);
+        let norm_y_bf = BigFloat::with_precision(norm_y, PRECISION_BITS);
+
+        let delta_origin_re = norm_x_bf.mul(&viewport.width);
+        let delta_origin_im = norm_y_bf.mul(&viewport.height);
+
+        let delta_origin = (
+            HDRFloat::from_bigfloat(&delta_origin_re),
+            HDRFloat::from_bigfloat(&delta_origin_im),
+        );
+
+        // Compute delta_step
+        // Matches coordinator.rs:185-188
+        let canvas_width_bf = BigFloat::with_precision(IMAGE_WIDTH as f64, PRECISION_BITS);
+        let canvas_height_bf = BigFloat::with_precision(IMAGE_HEIGHT as f64, PRECISION_BITS);
+        let step_re = viewport.width.div(&canvas_width_bf);
+        let step_im = viewport.height.div(&canvas_height_bf);
+
+        let delta_step = (
+            HDRFloat::from_bigfloat(&step_re),
+            HDRFloat::from_bigfloat(&step_im),
+        );
+
+        let config = TileConfig {
+            size: (TEST_COL_END - TEST_COL_START + 1, 1), // 32x1 tile
+            max_iterations: MAX_ITERATIONS,
+            tau_sq: TAU_SQ,
+            bla_enabled: true,
+        };
+
+        let result = render_tile_hdr(orbit, Some(bla_table), delta_origin, delta_step, &config);
+
+        result
+            .data
+            .into_iter()
+            .map(|cd| {
+                let ComputeData::Mandelbrot(m) = cd;
+                m
+            })
+            .collect()
+    }
+
     #[test]
     fn compare_cpu_gpu_mandelbrot_output() {
         let viewport = parse_viewport();
@@ -60,7 +114,10 @@ mod tests {
             (viewport.width.log2_approx() * 0.301) as i32
         );
 
-        let (_orbit, _bla_table) = compute_orbit_and_bla(&viewport);
-        println!("Orbit and BLA ready.");
+        let (orbit, bla_table) = compute_orbit_and_bla(&viewport);
+
+        let cpu_pixels = render_cpu_pixels(&viewport, &orbit, &bla_table);
+        println!("CPU rendered {} pixels", cpu_pixels.len());
+        println!("  First pixel iterations: {}", cpu_pixels[0].iterations);
     }
 }
