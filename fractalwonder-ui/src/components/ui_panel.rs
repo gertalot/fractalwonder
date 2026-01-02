@@ -208,19 +208,36 @@ pub fn UIPanel(
                                 let progress_signal = render_progress.get();
                                 let progress = progress_signal.get();
 
-                                if progress.total_steps > 0 && !progress.is_complete() {
-                                    // During render: show progress and elapsed time
-                                    format!(
-                                        "Rendering: {}/{} ({:.1}s)",
-                                        progress.completed_steps,
-                                        progress.total_steps,
-                                        progress.elapsed_ms / 1000.0
-                                    )
-                                } else if progress.is_complete() && progress.total_steps > 0 {
-                                    // After completion: show total render time
-                                    format!("Rendered in {:.2}s", progress.elapsed_ms / 1000.0)
-                                } else {
-                                    String::new()
+                                match progress.phase {
+                                    crate::rendering::RenderPhase::Idle => String::new(),
+                                    crate::rendering::RenderPhase::ComputingOrbit
+                                    | crate::rendering::RenderPhase::BuildingBla
+                                    | crate::rendering::RenderPhase::Colorizing => {
+                                        // Indeterminate phases: show label + elapsed time
+                                        format!(
+                                            "{} ({:.1}s)",
+                                            progress.phase.label(),
+                                            progress.elapsed_ms / 1000.0
+                                        )
+                                    }
+                                    crate::rendering::RenderPhase::Rendering => {
+                                        // Determinate phase: show progress + elapsed time
+                                        format!(
+                                            "{}: {}/{} ({:.1}s)",
+                                            progress.phase.label(),
+                                            progress.completed_steps,
+                                            progress.total_steps,
+                                            progress.elapsed_ms / 1000.0
+                                        )
+                                    }
+                                    crate::rendering::RenderPhase::Complete => {
+                                        // Complete: show total time
+                                        format!(
+                                            "{} in {:.2}s",
+                                            progress.phase.label(),
+                                            progress.elapsed_ms / 1000.0
+                                        )
+                                    }
                                 }
                             }}
                         </span>
@@ -228,9 +245,8 @@ pub fn UIPanel(
                         {move || {
                             let progress_signal = render_progress.get();
                             let progress = progress_signal.get();
-                            let is_rendering = progress.total_steps > 0 && !progress.is_complete();
 
-                            if is_rendering {
+                            if progress.is_active() {
                                 view! {
                                     <button
                                         class="text-white/50 hover:text-white/90 transition-colors cursor-pointer text-sm leading-none"
