@@ -57,7 +57,10 @@ mod tests {
         orbit: &ReferenceOrbit,
         bla_table: &BlaTable,
     ) -> Vec<MandelbrotData> {
-        println!("Rendering {} CPU pixels...", TEST_COL_END - TEST_COL_START + 1);
+        println!(
+            "Rendering {} CPU pixels...",
+            TEST_COL_END - TEST_COL_START + 1
+        );
 
         // Compute delta_origin for tile at (TEST_COL_START, TEST_ROW)
         // Matches coordinator.rs:253-262
@@ -212,7 +215,10 @@ mod tests {
         };
 
         let mut renderer = ProgressiveGpuRenderer::new(ctx);
-        println!("Rendering GPU pixels (full image, extracting row {})...", TEST_ROW);
+        println!(
+            "Rendering GPU pixels (full image, extracting row {})...",
+            TEST_ROW
+        );
 
         // Compute dc_origin and dc_step
         // Matches parallel_renderer.rs:411-431
@@ -245,8 +251,8 @@ mod tests {
                 dc_step,
                 IMAGE_WIDTH,
                 IMAGE_HEIGHT,
-                0,  // row_set_index
-                1,  // row_set_count (all rows in one set)
+                0, // row_set_index
+                1, // row_set_count (all rows in one set)
                 MAX_ITERATIONS,
                 10000, // iterations_per_dispatch
                 TAU_SQ as f32,
@@ -269,7 +275,11 @@ mod tests {
                     })
                     .collect();
 
-                println!("GPU extracted {} pixels from row {}", pixels.len(), TEST_ROW);
+                println!(
+                    "GPU extracted {} pixels from row {}",
+                    pixels.len(),
+                    TEST_ROW
+                );
                 Some(pixels)
             }
             Err(e) => {
