@@ -64,12 +64,28 @@ fn hdr_neg(a: HDRFloat) -> HDRFloat {
     return HDRFloat(-a.head, -a.tail, a.exp);
 }
 
+// Saturating exponent addition (prevents i32 overflow wrapping)
+fn saturating_exp_add(a: i32, b: i32) -> i32 {
+    let sum = a + b;
+    // Detect overflow: if signs of a and b match but differ from sum
+    if a > 0 && b > 0 && sum < 0 { return 2147483647; }  // i32::MAX
+    if a < 0 && b < 0 && sum > 0 { return -2147483648; } // i32::MIN
+    return sum;
+}
+
+// Saturating exponent multiplication (for squaring: exp * 2)
+fn saturating_exp_mul2(a: i32) -> i32 {
+    if a > 1073741823 { return 2147483647; }   // a * 2 would overflow
+    if a < -1073741824 { return -2147483648; } // a * 2 would underflow
+    return a * 2;
+}
+
 fn hdr_mul(a: HDRFloat, b: HDRFloat) -> HDRFloat {
     if a.head == 0.0 || b.head == 0.0 { return HDR_ZERO; }
     let p = a.head * b.head;
     let err = fma(a.head, b.head, -p);
     let tail = err + a.head * b.tail + a.tail * b.head;
-    return hdr_normalize(HDRFloat(p, tail, a.exp + b.exp));
+    return hdr_normalize(HDRFloat(p, tail, saturating_exp_add(a.exp, b.exp)));
 }
 
 fn hdr_square(a: HDRFloat) -> HDRFloat {
@@ -77,7 +93,7 @@ fn hdr_square(a: HDRFloat) -> HDRFloat {
     let p = a.head * a.head;
     let err = fma(a.head, a.head, -p);
     let tail = err + 2.0 * a.head * a.tail;
-    return hdr_normalize(HDRFloat(p, tail, a.exp * 2));
+    return hdr_normalize(HDRFloat(p, tail, saturating_exp_mul2(a.exp)));
 }
 
 fn hdr_add(a: HDRFloat, b: HDRFloat) -> HDRFloat {
@@ -123,9 +139,13 @@ fn hdr_mul_f32(a: HDRFloat, b: f32) -> HDRFloat {
 
 fn hdr_to_f32(x: HDRFloat) -> f32 {
     if x.head == 0.0 { return 0.0; }
+    // Return 0 for underflow, ±infinity for overflow (instead of clamping)
+    if x.exp < -149 { return 0.0; }
+    if x.exp > 127 {
+        return select(f32(-1e38), f32(1e38), x.head > 0.0);
+    }
     let mantissa = x.head + x.tail;
-    let clamped_exp = clamp(x.exp, -126, 127);
-    return mantissa * hdr_exp2(clamped_exp);
+    return mantissa * hdr_exp2(x.exp);
 }
 
 fn hdr_complex_square(a: HDRComplex) -> HDRComplex {
@@ -148,6 +168,32 @@ fn hdr_complex_norm_sq_hdr(a: HDRComplex) -> HDRFloat {
     let re_sq = hdr_square(a.re);
     let im_sq = hdr_square(a.im);
     return hdr_add(re_sq, im_sq);
+}
+
+// Compute normalized direction of HDRComplex as (f32, f32) unit vector.
+// This preserves direction even for values with extreme exponents by scaling
+// both components to a common exponent before converting to f32.
+fn hdr_complex_direction(a: HDRComplex) -> vec2<f32> {
+    // Handle zero case
+    if a.re.head == 0.0 && a.im.head == 0.0 {
+        return vec2<f32>(0.0, 0.0);
+    }
+
+    // Find the larger exponent (use max to preserve relative magnitudes)
+    let max_exp = max(a.re.exp, a.im.exp);
+
+    // Scale both components to have exponent relative to max_exp
+    // This brings them into a comparable range for f32 conversion
+    let re_scaled = (a.re.head + a.re.tail) * hdr_exp2(a.re.exp - max_exp);
+    let im_scaled = (a.im.head + a.im.tail) * hdr_exp2(a.im.exp - max_exp);
+
+    // Normalize to unit vector in f32 space
+    let norm = sqrt(re_scaled * re_scaled + im_scaled * im_scaled);
+    if norm == 0.0 {
+        return vec2<f32>(0.0, 0.0);
+    }
+
+    return vec2<f32>(re_scaled / norm, im_scaled / norm);
 }
 
 // Compare two HDRFloat values: a < b
@@ -173,10 +219,27 @@ fn hdr_greater_than(a: HDRFloat, b: HDRFloat) -> bool {
     return hdr_less_than(b, a);
 }
 
-// Create HDRFloat from f32 constant (for escape_radius_sq, tau_sq)
-fn hdr_from_f32_const(val: f32) -> HDRFloat {
+// Create normalized HDRFloat from f32 value.
+// Uses bit manipulation for efficiency with normal floats, falls back to
+// hdr_normalize for subnormals. Essential for correct HDRFloat arithmetic.
+fn hdr_from_f32(val: f32) -> HDRFloat {
     if val == 0.0 { return HDR_ZERO; }
-    return hdr_normalize(HDRFloat(val, 0.0, 0));
+
+    let bits = bitcast<u32>(val);
+    let sign = bits & 0x80000000u;
+    let biased_exp = i32((bits >> 23u) & 0xFFu);
+
+    if biased_exp == 0 {
+        // Subnormal - use normalize path
+        return hdr_normalize(HDRFloat(val, 0.0, 0));
+    }
+
+    // Normal: adjust mantissa to [0.5, 1.0) range
+    let exp = biased_exp - 126;
+    let new_mantissa_bits = (bits & 0x807FFFFFu) | 0x3F000000u;
+    let head = bitcast<f32>(new_mantissa_bits | sign);
+
+    return HDRFloat(head, 0.0, exp);
 }
 
 fn hdr_from_parts(head: f32, tail: f32, exp: i32) -> HDRFloat {
@@ -423,8 +486,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dc_step_re = hdr_from_parts(uniforms.dc_step_re_head, uniforms.dc_step_re_tail, uniforms.dc_step_re_exp);
     let dc_step_im = hdr_from_parts(uniforms.dc_step_im_head, uniforms.dc_step_im_tail, uniforms.dc_step_im_exp);
 
-    let x_hdr = HDRFloat(f32(col), 0.0, 0);
-    let y_hdr = HDRFloat(f32(global_row), 0.0, 0);
+    let x_hdr = hdr_from_f32(f32(col));
+    let y_hdr = hdr_from_f32(f32(global_row));
     let dc_re = hdr_add(dc_origin_re, hdr_mul(x_hdr, dc_step_re));
     let dc_im = hdr_add(dc_origin_im, hdr_mul(y_hdr, dc_step_im));
     let dc = HDRComplex(dc_re, dc_im);
@@ -497,18 +560,30 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let z_m_mag_sq = hdr_to_f32(hdr_complex_norm_sq_hdr(HDRComplex(z_m_hdr_re, z_m_hdr_im)));
 
         // Escape check - use HDRFloat comparison
-        let escape_radius_sq_hdr = hdr_from_f32_const(uniforms.escape_radius_sq);
+        let escape_radius_sq_hdr = hdr_from_f32(uniforms.escape_radius_sq);
         if hdr_greater_than(z_mag_sq_hdr, escape_radius_sq_hdr) {
             // Compute full derivative: ρ = Der_m + δρ
             let rho_re = hdr_add(der_m_hdr_re, drho.re);
             let rho_im = hdr_add(der_m_hdr_im, drho.im);
 
-            // Store final values as f32 (packed: z_re, z_im, der_re, der_im)
+            // Compute surface normal direction u = z/ρ on GPU to preserve precision.
+            // Surface normal u = z × conj(ρ) / |ρ|². Since we normalize to unit vector,
+            // we compute z × conj(ρ) in HDRFloat and then extract normalized direction.
+            // u_unnorm = (z_re + i·z_im) × (ρ_re - i·ρ_im)
+            //          = (z_re·ρ_re + z_im·ρ_im) + i·(z_im·ρ_re - z_re·ρ_im)
+            let u_unnorm_re = hdr_add(hdr_mul(z_re_full, rho_re), hdr_mul(z_im_full, rho_im));
+            let u_unnorm_im = hdr_sub(hdr_mul(z_im_full, rho_re), hdr_mul(z_re_full, rho_im));
+            let u_unnorm = HDRComplex(u_unnorm_re, u_unnorm_im);
+
+            // Get normalized direction as f32 unit vector (preserves ratio even at extreme exponents)
+            let surface_normal = hdr_complex_direction(u_unnorm);
+
+            // Store final values as f32 (packed: z_re, z_im, surface_normal_re, surface_normal_im)
             let final_base = linear_idx * 4u;
             final_values[final_base] = hdr_to_f32(z_re_full);
             final_values[final_base + 1u] = hdr_to_f32(z_im_full);
-            final_values[final_base + 2u] = hdr_to_f32(rho_re);
-            final_values[final_base + 3u] = hdr_to_f32(rho_im);
+            final_values[final_base + 2u] = surface_normal.x;
+            final_values[final_base + 3u] = surface_normal.y;
 
             flags_buf[linear_idx] = 1u | select(0u, 2u, glitched);
             results[linear_idx] = n;
