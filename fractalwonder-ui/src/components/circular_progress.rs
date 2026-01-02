@@ -40,7 +40,7 @@ pub fn CircularProgress(
     let should_show = create_memo(move |_| {
         let progress_signal = progress.get();
         let p = progress_signal.get();
-        p.total_steps > 0 && !p.is_complete && !is_ui_visible.get()
+        p.total_steps > 0 && !p.is_complete() && !is_ui_visible.get()
     });
 
     let opacity_class = move || {

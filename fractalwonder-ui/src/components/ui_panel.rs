@@ -208,7 +208,7 @@ pub fn UIPanel(
                                 let progress_signal = render_progress.get();
                                 let progress = progress_signal.get();
 
-                                if progress.total_steps > 0 && !progress.is_complete {
+                                if progress.total_steps > 0 && !progress.is_complete() {
                                     // During render: show progress and elapsed time
                                     format!(
                                         "Rendering: {}/{} ({:.1}s)",
@@ -216,7 +216,7 @@ pub fn UIPanel(
                                         progress.total_steps,
                                         progress.elapsed_ms / 1000.0
                                     )
-                                } else if progress.is_complete && progress.total_steps > 0 {
+                                } else if progress.is_complete() && progress.total_steps > 0 {
                                     // After completion: show total render time
                                     format!("Rendered in {:.2}s", progress.elapsed_ms / 1000.0)
                                 } else {
@@ -228,7 +228,7 @@ pub fn UIPanel(
                         {move || {
                             let progress_signal = render_progress.get();
                             let progress = progress_signal.get();
-                            let is_rendering = progress.total_steps > 0 && !progress.is_complete;
+                            let is_rendering = progress.total_steps > 0 && !progress.is_complete();
 
                             if is_rendering {
                                 view! {

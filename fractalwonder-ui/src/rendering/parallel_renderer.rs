@@ -565,7 +565,9 @@ fn schedule_row_set(
                 progress.update(|p| {
                     p.completed_steps += 1;
                     p.elapsed_ms = elapsed_ms;
-                    p.is_complete = is_final;
+                    if is_final {
+                        p.set_complete();
+                    }
                 });
 
                 if is_final {

@@ -244,8 +244,10 @@ impl WorkerPool {
             self.progress.update(|p| {
                 p.completed_steps += 1;
                 p.elapsed_ms = elapsed;
-                p.is_complete = p.completed_steps >= p.total_steps;
-                complete = p.is_complete;
+                if p.completed_steps >= p.total_steps {
+                    p.set_complete();
+                }
+                complete = p.is_complete();
             });
             complete
         };
@@ -542,7 +544,7 @@ impl WorkerPool {
 
     pub fn cancel(&mut self) {
         let pending_count = self.pending_tiles.len();
-        if pending_count == 0 && self.progress.get_untracked().is_complete {
+        if pending_count == 0 && self.progress.get_untracked().is_complete() {
             return;
         }
 
@@ -560,7 +562,7 @@ impl WorkerPool {
         self.recreate_workers();
 
         self.progress.update(|p| {
-            p.is_complete = true;
+            p.set_complete();
         });
 
         self.current_render_id = self.current_render_id.wrapping_add(1);
