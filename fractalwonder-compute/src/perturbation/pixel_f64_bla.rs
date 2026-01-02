@@ -115,13 +115,20 @@ pub fn compute_pixel_perturbation_f64_bla(
 
         // 4. Try BLA acceleration (with f64 coefficients)
         if let Some(bla) = bla_table.find_valid_f64(m, dz_mag_sq, dc_max) {
-            // Apply BLA: dz_new = A*dz + B*dc (f64 complex multiply)
+            // Apply BLA to position: dz_new = A*dz + B*dc
             let a_dz = complex_mul_f64(bla.a, dz);
             let b_dc = complex_mul_f64(bla.b, delta_c);
-            dz = (a_dz.0 + b_dc.0, a_dz.1 + b_dc.1);
+            let new_dz = (a_dz.0 + b_dc.0, a_dz.1 + b_dc.1);
 
-            // Note: drho derivative tracking not implemented for BLA path
-            // This is acceptable since surface normals are computed at escape
+            // Apply BLA to derivative: drho_new = A*drho + D*dz + E*dc
+            // (C = A mathematically, so we use bla.a for the drho coefficient)
+            let a_drho = complex_mul_f64(bla.a, drho);
+            let d_dz = complex_mul_f64(bla.d, dz);
+            let e_dc = complex_mul_f64(bla.e, delta_c);
+            let new_drho = (a_drho.0 + d_dz.0 + e_dc.0, a_drho.1 + d_dz.1 + e_dc.1);
+
+            dz = new_dz;
+            drho = new_drho;
 
             bla_iters += bla.l;
             m += bla.l as usize;
