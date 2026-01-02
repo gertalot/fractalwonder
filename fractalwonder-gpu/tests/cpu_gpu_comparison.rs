@@ -4,7 +4,6 @@
 //! field-by-field to diagnose rendering differences.
 
 #[cfg(not(target_arch = "wasm32"))]
-#[allow(unused_imports, dead_code)] // Staged for subsequent implementation tasks
 mod tests {
     use fractalwonder_compute::{render_tile_hdr, BlaTable, ReferenceOrbit, TileConfig};
     use fractalwonder_core::{BigFloat, ComputeData, HDRFloat, MandelbrotData, Viewport};
