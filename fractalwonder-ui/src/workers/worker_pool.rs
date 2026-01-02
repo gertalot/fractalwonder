@@ -568,9 +568,7 @@ impl WorkerPool {
 
         self.recreate_workers();
 
-        self.progress.update(|p| {
-            p.set_complete();
-        });
+        self.progress.update(|p| p.reset());
 
         self.current_render_id = self.current_render_id.wrapping_add(1);
     }
