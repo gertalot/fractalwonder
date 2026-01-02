@@ -1,0 +1,849 @@
+[
+  {
+    "name": "Classic",
+    "gradient": {
+      "stops": [
+        {
+          "position": 0.0,
+          "color": [0, 7, 100]
+        },
+        {
+          "position": 0.16,
+          "color": [0, 2, 0]
+        },
+        {
+          "position": 0.33,
+          "color": [0, 7, 100]
+        },
+        {
+          "position": 0.5,
+          "color": [32, 107, 203]
+        },
+        {
+          "position": 0.66,
+          "color": [255, 170, 0]
+        },
+        {
+          "position": 1.0,
+          "color": [237, 255, 255]
+        }
+      ],
+      "midpoints": [0.5, 0.5, 0.5, 0.5, 0.5]
+    },
+    "transfer_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 0.8,
+          "y": 0.1
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "histogram_enabled": true,
+    "smooth_enabled": true,
+    "shading_enabled": true,
+    "falloff_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 1.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "lighting": {
+      "ambient": 0.75,
+      "diffuse": 0.5,
+      "specular": 0.9,
+      "shininess": 64.0,
+      "strength": 1.5,
+      "azimuth": -1.5707963267948966,
+      "elevation": 0.7853981633974483
+    }
+  },
+  {
+    "name": "Fire",
+    "gradient": {
+      "stops": [
+        {
+          "position": 0.0,
+          "color": [0, 0, 0]
+        },
+        {
+          "position": 0.2,
+          "color": [128, 0, 0]
+        },
+        {
+          "position": 0.4,
+          "color": [255, 0, 0]
+        },
+        {
+          "position": 0.6,
+          "color": [255, 128, 0]
+        },
+        {
+          "position": 0.8,
+          "color": [255, 255, 0]
+        },
+        {
+          "position": 1.0,
+          "color": [255, 255, 255]
+        }
+      ],
+      "midpoints": [0.5, 0.5, 0.5, 0.5, 0.5]
+    },
+    "transfer_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "histogram_enabled": true,
+    "smooth_enabled": true,
+    "shading_enabled": true,
+    "falloff_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "lighting": {
+      "ambient": 0.75,
+      "diffuse": 0.5,
+      "specular": 0.9,
+      "shininess": 64.0,
+      "strength": 1.5,
+      "azimuth": -1.5707963267948966,
+      "elevation": 0.7853981633974483
+    }
+  },
+  {
+    "name": "Ocean",
+    "gradient": {
+      "stops": [
+        {
+          "position": 0.0,
+          "color": [0, 0, 64]
+        },
+        {
+          "position": 0.25,
+          "color": [0, 64, 128]
+        },
+        {
+          "position": 0.5,
+          "color": [0, 128, 192]
+        },
+        {
+          "position": 0.75,
+          "color": [64, 192, 255]
+        },
+        {
+          "position": 1.0,
+          "color": [255, 255, 255]
+        }
+      ],
+      "midpoints": [0.5, 0.5, 0.5, 0.5]
+    },
+    "transfer_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "histogram_enabled": true,
+    "smooth_enabled": true,
+    "shading_enabled": true,
+    "falloff_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "lighting": {
+      "ambient": 0.75,
+      "diffuse": 0.5,
+      "specular": 0.9,
+      "shininess": 64.0,
+      "strength": 1.5,
+      "azimuth": -1.5707963267948966,
+      "elevation": 0.7853981633974483
+    }
+  },
+  {
+    "name": "Electric",
+    "gradient": {
+      "stops": [
+        {
+          "position": 0.0,
+          "color": [32, 0, 64]
+        },
+        {
+          "position": 0.2,
+          "color": [64, 0, 128]
+        },
+        {
+          "position": 0.4,
+          "color": [0, 0, 255]
+        },
+        {
+          "position": 0.6,
+          "color": [0, 255, 255]
+        },
+        {
+          "position": 0.8,
+          "color": [0, 255, 0]
+        },
+        {
+          "position": 1.0,
+          "color": [255, 255, 0]
+        }
+      ],
+      "midpoints": [0.5, 0.5, 0.5, 0.5, 0.5]
+    },
+    "transfer_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "histogram_enabled": true,
+    "smooth_enabled": true,
+    "shading_enabled": true,
+    "falloff_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "lighting": {
+      "ambient": 0.75,
+      "diffuse": 0.5,
+      "specular": 0.9,
+      "shininess": 64.0,
+      "strength": 1.5,
+      "azimuth": -1.5707963267948966,
+      "elevation": 0.7853981633974483
+    }
+  },
+  {
+    "name": "Grayscale",
+    "gradient": {
+      "stops": [
+        {
+          "position": 0.0,
+          "color": [0, 0, 0]
+        },
+        {
+          "position": 1.0,
+          "color": [255, 255, 255]
+        }
+      ],
+      "midpoints": [0.5]
+    },
+    "transfer_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "histogram_enabled": true,
+    "smooth_enabled": true,
+    "shading_enabled": true,
+    "falloff_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "lighting": {
+      "ambient": 0.75,
+      "diffuse": 0.5,
+      "specular": 0.9,
+      "shininess": 64.0,
+      "strength": 1.5,
+      "azimuth": -1.5707963267948966,
+      "elevation": 0.7853981633974483
+    }
+  },
+  {
+    "name": "Rainbow",
+    "gradient": {
+      "stops": [
+        {
+          "position": 0.0,
+          "color": [255, 0, 0]
+        },
+        {
+          "position": 0.17,
+          "color": [255, 127, 0]
+        },
+        {
+          "position": 0.33,
+          "color": [255, 255, 0]
+        },
+        {
+          "position": 0.5,
+          "color": [0, 255, 0]
+        },
+        {
+          "position": 0.67,
+          "color": [0, 0, 255]
+        },
+        {
+          "position": 0.83,
+          "color": [75, 0, 130]
+        },
+        {
+          "position": 1.0,
+          "color": [148, 0, 211]
+        }
+      ],
+      "midpoints": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+    },
+    "transfer_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "histogram_enabled": true,
+    "smooth_enabled": true,
+    "shading_enabled": true,
+    "falloff_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "lighting": {
+      "ambient": 0.75,
+      "diffuse": 0.5,
+      "specular": 0.9,
+      "shininess": 64.0,
+      "strength": 1.5,
+      "azimuth": -1.5707963267948966,
+      "elevation": 0.7853981633974483
+    }
+  },
+  {
+    "name": "Neon",
+    "gradient": {
+      "stops": [
+        {
+          "position": 0.0,
+          "color": [255, 0, 255]
+        },
+        {
+          "position": 0.33,
+          "color": [0, 255, 255]
+        },
+        {
+          "position": 0.67,
+          "color": [255, 255, 0]
+        },
+        {
+          "position": 1.0,
+          "color": [255, 0, 255]
+        }
+      ],
+      "midpoints": [0.5, 0.5, 0.5]
+    },
+    "transfer_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "histogram_enabled": true,
+    "smooth_enabled": true,
+    "shading_enabled": true,
+    "falloff_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "lighting": {
+      "ambient": 0.75,
+      "diffuse": 0.5,
+      "specular": 0.9,
+      "shininess": 64.0,
+      "strength": 1.5,
+      "azimuth": -1.5707963267948966,
+      "elevation": 0.7853981633974483
+    }
+  },
+  {
+    "name": "Twilight",
+    "gradient": {
+      "stops": [
+        {
+          "position": 0.0,
+          "color": [255, 100, 50]
+        },
+        {
+          "position": 0.111,
+          "color": [255, 50, 100]
+        },
+        {
+          "position": 0.222,
+          "color": [200, 50, 150]
+        },
+        {
+          "position": 0.333,
+          "color": [150, 50, 200]
+        },
+        {
+          "position": 0.444,
+          "color": [80, 80, 220]
+        },
+        {
+          "position": 0.556,
+          "color": [50, 150, 255]
+        },
+        {
+          "position": 0.667,
+          "color": [80, 200, 200]
+        },
+        {
+          "position": 0.778,
+          "color": [150, 200, 150]
+        },
+        {
+          "position": 0.889,
+          "color": [200, 180, 100]
+        },
+        {
+          "position": 1.0,
+          "color": [255, 100, 50]
+        }
+      ],
+      "midpoints": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+    },
+    "transfer_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "histogram_enabled": true,
+    "smooth_enabled": true,
+    "shading_enabled": true,
+    "falloff_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "lighting": {
+      "ambient": 0.75,
+      "diffuse": 0.5,
+      "specular": 0.9,
+      "shininess": 64.0,
+      "strength": 1.5,
+      "azimuth": -1.5707963267948966,
+      "elevation": 0.7853981633974483
+    }
+  },
+  {
+    "name": "Candy",
+    "gradient": {
+      "stops": [
+        {
+          "position": 0.0,
+          "color": [255, 180, 200]
+        },
+        {
+          "position": 0.143,
+          "color": [200, 180, 255]
+        },
+        {
+          "position": 0.286,
+          "color": [180, 220, 255]
+        },
+        {
+          "position": 0.429,
+          "color": [180, 255, 220]
+        },
+        {
+          "position": 0.571,
+          "color": [220, 255, 180]
+        },
+        {
+          "position": 0.714,
+          "color": [255, 240, 180]
+        },
+        {
+          "position": 0.857,
+          "color": [255, 200, 180]
+        },
+        {
+          "position": 1.0,
+          "color": [255, 180, 200]
+        }
+      ],
+      "midpoints": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+    },
+    "transfer_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "histogram_enabled": true,
+    "smooth_enabled": true,
+    "shading_enabled": true,
+    "falloff_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "lighting": {
+      "ambient": 0.75,
+      "diffuse": 0.5,
+      "specular": 0.9,
+      "shininess": 64.0,
+      "strength": 1.5,
+      "azimuth": -1.5707963267948966,
+      "elevation": 0.7853981633974483
+    }
+  },
+  {
+    "name": "Inferno",
+    "gradient": {
+      "stops": [
+        {
+          "position": 0.0,
+          "color": [5, 0, 10]
+        },
+        {
+          "position": 0.04,
+          "color": [200, 150, 100]
+        },
+        {
+          "position": 0.08,
+          "color": [5, 0, 10]
+        },
+        {
+          "position": 0.12,
+          "color": [200, 150, 100]
+        },
+        {
+          "position": 0.16,
+          "color": [5, 0, 10]
+        },
+        {
+          "position": 0.2,
+          "color": [200, 150, 100]
+        },
+        {
+          "position": 0.24,
+          "color": [5, 0, 10]
+        },
+        {
+          "position": 0.28,
+          "color": [200, 150, 100]
+        },
+        {
+          "position": 0.32,
+          "color": [5, 0, 10]
+        },
+        {
+          "position": 0.36,
+          "color": [200, 150, 100]
+        },
+        {
+          "position": 0.4,
+          "color": [5, 0, 10]
+        },
+        {
+          "position": 0.44,
+          "color": [200, 150, 100]
+        },
+        {
+          "position": 0.48,
+          "color": [5, 0, 10]
+        },
+        {
+          "position": 0.52,
+          "color": [200, 150, 100]
+        },
+        {
+          "position": 0.56,
+          "color": [5, 0, 10]
+        },
+        {
+          "position": 0.6,
+          "color": [200, 150, 100]
+        },
+        {
+          "position": 0.64,
+          "color": [5, 0, 10]
+        },
+        {
+          "position": 0.68,
+          "color": [200, 150, 100]
+        },
+        {
+          "position": 0.72,
+          "color": [5, 0, 10]
+        },
+        {
+          "position": 0.76,
+          "color": [40, 0, 20]
+        },
+        {
+          "position": 0.8,
+          "color": [100, 10, 10]
+        },
+        {
+          "position": 0.84,
+          "color": [180, 40, 0]
+        },
+        {
+          "position": 0.88,
+          "color": [255, 100, 0]
+        },
+        {
+          "position": 0.92,
+          "color": [255, 180, 50]
+        },
+        {
+          "position": 0.96,
+          "color": [200, 150, 100]
+        },
+        {
+          "position": 1.0,
+          "color": [255, 255, 255]
+        }
+      ],
+      "midpoints": [
+        0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+        0.5, 0.5, 0.5
+      ]
+    },
+    "transfer_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "histogram_enabled": true,
+    "smooth_enabled": true,
+    "shading_enabled": true,
+    "falloff_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "lighting": {
+      "ambient": 0.75,
+      "diffuse": 0.5,
+      "specular": 0.9,
+      "shininess": 64.0,
+      "strength": 1.5,
+      "azimuth": -1.5707963267948966,
+      "elevation": 0.7853981633974483
+    }
+  },
+  {
+    "name": "Aurora",
+    "gradient": {
+      "stops": [
+        {
+          "position": 0.0,
+          "color": [50, 255, 100]
+        },
+        {
+          "position": 0.125,
+          "color": [50, 255, 180]
+        },
+        {
+          "position": 0.25,
+          "color": [50, 200, 255]
+        },
+        {
+          "position": 0.375,
+          "color": [80, 120, 255]
+        },
+        {
+          "position": 0.5,
+          "color": [150, 80, 255]
+        },
+        {
+          "position": 0.625,
+          "color": [200, 100, 200]
+        },
+        {
+          "position": 0.75,
+          "color": [150, 150, 150]
+        },
+        {
+          "position": 0.875,
+          "color": [100, 200, 100]
+        },
+        {
+          "position": 1.0,
+          "color": [50, 255, 100]
+        }
+      ],
+      "midpoints": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+    },
+    "transfer_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "histogram_enabled": true,
+    "smooth_enabled": true,
+    "shading_enabled": true,
+    "falloff_curve": {
+      "points": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 1.0,
+          "y": 1.0
+        }
+      ]
+    },
+    "lighting": {
+      "ambient": 0.75,
+      "diffuse": 0.5,
+      "specular": 0.9,
+      "shininess": 64.0,
+      "strength": 1.5,
+      "azimuth": -1.5707963267948966,
+      "elevation": 0.7853981633974483
+    }
+  }
+]
