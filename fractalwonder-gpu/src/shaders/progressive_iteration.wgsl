@@ -334,14 +334,18 @@ struct Uniforms {
 @group(0) @binding(9) var<storage, read_write> final_values: array<f32>;
 
 // BLA (Bivariate Linear Approximation) data
-// 16 f32s per entry: A (6), B (6), r_sq (3), l (1)
+// 28 f32s per entry: A (6), B (6), D (6), E (6), r_sq (3), l (1)
 @group(0) @binding(10) var<storage, read> bla_data: array<f32>;
 
+// BLA entry: 28 f32s (112 bytes)
+// Note: C = A mathematically for derivative computation, so not stored.
 struct BlaEntry {
-    a: HDRComplex,
-    b: HDRComplex,
-    r_sq: HDRFloat,
-    l: u32,
+    a: HDRComplex,      // Multiplies δz and δρ (C = A)
+    b: HDRComplex,      // Multiplies δc for position
+    d: HDRComplex,      // δz contribution to δρ
+    e: HDRComplex,      // δc contribution to δρ
+    r_sq: HDRFloat,     // Validity radius squared
+    l: u32,             // Iterations to skip
 }
 
 struct BlaResult {
@@ -350,18 +354,32 @@ struct BlaResult {
 }
 
 fn bla_load(idx: u32) -> BlaEntry {
-    let base = idx * 16u;
+    let base = idx * 28u;
     return BlaEntry(
+        // A: indices 0-5
         HDRComplex(
             HDRFloat(bla_data[base], bla_data[base + 1u], bitcast<i32>(bitcast<u32>(bla_data[base + 2u]))),
             HDRFloat(bla_data[base + 3u], bla_data[base + 4u], bitcast<i32>(bitcast<u32>(bla_data[base + 5u])))
         ),
+        // B: indices 6-11
         HDRComplex(
             HDRFloat(bla_data[base + 6u], bla_data[base + 7u], bitcast<i32>(bitcast<u32>(bla_data[base + 8u]))),
             HDRFloat(bla_data[base + 9u], bla_data[base + 10u], bitcast<i32>(bitcast<u32>(bla_data[base + 11u])))
         ),
-        HDRFloat(bla_data[base + 12u], bla_data[base + 13u], bitcast<i32>(bitcast<u32>(bla_data[base + 14u]))),
-        bitcast<u32>(bla_data[base + 15u])
+        // D: indices 12-17
+        HDRComplex(
+            HDRFloat(bla_data[base + 12u], bla_data[base + 13u], bitcast<i32>(bitcast<u32>(bla_data[base + 14u]))),
+            HDRFloat(bla_data[base + 15u], bla_data[base + 16u], bitcast<i32>(bitcast<u32>(bla_data[base + 17u])))
+        ),
+        // E: indices 18-23
+        HDRComplex(
+            HDRFloat(bla_data[base + 18u], bla_data[base + 19u], bitcast<i32>(bitcast<u32>(bla_data[base + 20u]))),
+            HDRFloat(bla_data[base + 21u], bla_data[base + 22u], bitcast<i32>(bitcast<u32>(bla_data[base + 23u])))
+        ),
+        // r_sq: indices 24-26
+        HDRFloat(bla_data[base + 24u], bla_data[base + 25u], bitcast<i32>(bitcast<u32>(bla_data[base + 26u]))),
+        // l: index 27
+        bitcast<u32>(bla_data[base + 27u])
     );
 }
 
@@ -369,7 +387,7 @@ fn bla_find_valid(m: u32, dz_mag_sq: HDRFloat, orbit_len: u32) -> BlaResult {
     let num_levels = uniforms.bla_num_levels;
 
     // Empty result for early returns
-    let empty_entry = BlaEntry(HDR_COMPLEX_ZERO, HDR_COMPLEX_ZERO, HDR_ZERO, 0u);
+    let empty_entry = BlaEntry(HDR_COMPLEX_ZERO, HDR_COMPLEX_ZERO, HDR_COMPLEX_ZERO, HDR_COMPLEX_ZERO, HDR_ZERO, 0u);
 
     if num_levels == 0u {
         return BlaResult(false, empty_entry);
