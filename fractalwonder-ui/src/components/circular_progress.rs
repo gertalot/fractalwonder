@@ -20,12 +20,25 @@ fn create_pie_path(percent: f64) -> String {
     )
 }
 
+/// Generate SVG path for a 90-degree arc (used for indeterminate spinner).
+fn create_arc_path() -> &'static str {
+    // Arc from 12 o'clock (0°) to 3 o'clock (90°)
+    // Start at top (12, 2), arc to right (22, 12)
+    "M 12 2 A 10 10 0 0 1 22 12"
+}
+
 #[component]
 pub fn CircularProgress(
     progress: Signal<RwSignal<RenderProgress>>,
     is_ui_visible: ReadSignal<bool>,
 ) -> impl IntoView {
-    // Calculate progress percentage
+    // Get current phase
+    let current_phase = create_memo(move |_| {
+        let progress_signal = progress.get();
+        progress_signal.get().phase
+    });
+
+    // Calculate progress percentage (for determinate mode)
     let progress_percent = create_memo(move |_| {
         let progress_signal = progress.get();
         let p = progress_signal.get();
@@ -36,11 +49,11 @@ pub fn CircularProgress(
         }
     });
 
-    // Visibility: show when rendering AND UI is hidden
+    // Visibility: show when active AND UI is hidden
     let should_show = create_memo(move |_| {
         let progress_signal = progress.get();
         let p = progress_signal.get();
-        p.total_steps > 0 && !p.is_complete() && !is_ui_visible.get()
+        p.is_active() && !is_ui_visible.get()
     });
 
     let opacity_class = move || {
@@ -51,6 +64,9 @@ pub fn CircularProgress(
         }
     };
 
+    // Check if current phase is indeterminate
+    let is_indeterminate = move || current_phase.get().is_indeterminate();
+
     view! {
         <div
             class=move || format!(
@@ -60,7 +76,7 @@ pub fn CircularProgress(
         >
             <div class="w-6 h-6 bg-black/50 backdrop-blur-sm rounded-full flex items-center justify-center">
                 <svg width="24" height="24" viewBox="0 0 24 24" class="transform">
-                    // Background circle (unfilled portion)
+                    // Background circle
                     <circle
                         cx="12"
                         cy="12"
@@ -71,11 +87,26 @@ pub fn CircularProgress(
                         opacity="0.2"
                     />
 
-                    // Progress pie slice
-                    <path
-                        d={move || create_pie_path(progress_percent.get())}
-                        fill="rgb(244,244,244)"
-                    />
+                    // Indeterminate: rotating arc
+                    {move || is_indeterminate().then(|| view! {
+                        <g class="animate-spin" style="transform-origin: center; animation-duration: 1s;">
+                            <path
+                                d=create_arc_path()
+                                fill="none"
+                                stroke="rgb(244,244,244)"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                            />
+                        </g>
+                    })}
+
+                    // Determinate: pie slice
+                    {move || (!is_indeterminate()).then(|| view! {
+                        <path
+                            d={move || create_pie_path(progress_percent.get())}
+                            fill="rgb(244,244,244)"
+                        />
+                    })}
                 </svg>
             </div>
         </div>
@@ -118,5 +149,12 @@ mod tests {
         let path = create_pie_path(100.0);
         // At 100%, large arc flag should be 1 (>180 degrees)
         assert!(path.contains("A 10 10 0 1 1"));
+    }
+
+    #[test]
+    fn test_arc_path_format() {
+        let path = create_arc_path();
+        assert!(path.starts_with("M 12 2"));
+        assert!(path.contains("A 10 10"));
     }
 }
