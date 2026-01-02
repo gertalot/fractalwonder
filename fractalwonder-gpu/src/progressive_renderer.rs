@@ -195,46 +195,33 @@ impl ProgressiveGpuRenderer {
             iterations,
             glitch_data,
             z_norm_sq_data,
-            final_z_re_data,
-            final_z_im_data,
-            final_der_re_data,
-            final_der_im_data,
+            _final_z_re_data,
+            _final_z_im_data,
+            surface_normal_re_data,
+            surface_normal_im_data,
         ) = self.read_results(row_set_pixel_count as usize).await?;
 
-        // Convert to ComputeData with normalized surface direction
+        // Convert to ComputeData - surface normals are pre-computed on GPU
         let data: Vec<ComputeData> = iterations
             .iter()
             .zip(glitch_data.iter())
             .zip(z_norm_sq_data.iter())
-            .zip(final_z_re_data.iter())
-            .zip(final_z_im_data.iter())
-            .zip(final_der_re_data.iter())
-            .zip(final_der_im_data.iter())
-            .map(
-                |((((((iter, glitch), z_sq), z_re), z_im), der_re), der_im)| {
-                    let escaped = *iter < max_iterations;
-                    // Compute normalized surface direction for 3D lighting
-                    let (sn_re, sn_im) = if escaped {
-                        Self::compute_surface_normal_direction(
-                            *z_re as f64,
-                            *z_im as f64,
-                            *der_re as f64,
-                            *der_im as f64,
-                        )
-                    } else {
-                        (0.0, 0.0)
-                    };
-                    ComputeData::Mandelbrot(MandelbrotData {
-                        iterations: *iter,
-                        max_iterations,
-                        escaped,
-                        glitched: *glitch != 0,
-                        final_z_norm_sq: *z_sq,
-                        surface_normal_re: sn_re,
-                        surface_normal_im: sn_im,
-                    })
-                },
-            )
+            .zip(surface_normal_re_data.iter())
+            .zip(surface_normal_im_data.iter())
+            .map(|((((iter, glitch), z_sq), sn_re), sn_im)| {
+                let escaped = *iter < max_iterations;
+                ComputeData::Mandelbrot(MandelbrotData {
+                    iterations: *iter,
+                    max_iterations,
+                    escaped,
+                    glitched: *glitch != 0,
+                    final_z_norm_sq: *z_sq,
+                    // GPU computes normalized surface direction in HDRFloat space
+                    // to preserve precision at extreme zoom levels
+                    surface_normal_re: if escaped { *sn_re } else { 0.0 },
+                    surface_normal_im: if escaped { *sn_im } else { 0.0 },
+                })
+            })
             .collect();
 
         let end = Self::now();
@@ -575,17 +562,18 @@ impl ProgressiveGpuRenderer {
         };
 
         // Unpack into separate vectors
+        // GPU now computes and stores surface normal directly (not raw derivative)
         let mut final_z_re_data = Vec::with_capacity(count);
         let mut final_z_im_data = Vec::with_capacity(count);
-        let mut final_der_re_data = Vec::with_capacity(count);
-        let mut final_der_im_data = Vec::with_capacity(count);
+        let mut surface_normal_re_data = Vec::with_capacity(count);
+        let mut surface_normal_im_data = Vec::with_capacity(count);
 
         for i in 0..count {
             let base = i * 4;
             final_z_re_data.push(final_values_data[base]);
             final_z_im_data.push(final_values_data[base + 1]);
-            final_der_re_data.push(final_values_data[base + 2]);
-            final_der_im_data.push(final_values_data[base + 3]);
+            surface_normal_re_data.push(final_values_data[base + 2]);
+            surface_normal_im_data.push(final_values_data[base + 3]);
         }
 
         buffers.staging_results.unmap();
@@ -599,35 +587,9 @@ impl ProgressiveGpuRenderer {
             z_norm_sq_data,
             final_z_re_data,
             final_z_im_data,
-            final_der_re_data,
-            final_der_im_data,
+            surface_normal_re_data,
+            surface_normal_im_data,
         ))
-    }
-
-    /// Compute normalized z/ρ direction for 3D lighting.
-    /// Returns (re, im) of the unit vector, or (0, 0) if degenerate.
-    fn compute_surface_normal_direction(
-        z_re: f64,
-        z_im: f64,
-        rho_re: f64,
-        rho_im: f64,
-    ) -> (f32, f32) {
-        // u = z / ρ (complex division)
-        let rho_norm_sq = rho_re * rho_re + rho_im * rho_im;
-        if !rho_norm_sq.is_finite() || rho_norm_sq == 0.0 {
-            return (0.0, 0.0);
-        }
-
-        let u_re = (z_re * rho_re + z_im * rho_im) / rho_norm_sq;
-        let u_im = (z_im * rho_re - z_re * rho_im) / rho_norm_sq;
-
-        // Normalize to unit vector
-        let u_norm = (u_re * u_re + u_im * u_im).sqrt();
-        if !u_norm.is_finite() || u_norm == 0.0 {
-            return (0.0, 0.0);
-        }
-
-        ((u_re / u_norm) as f32, (u_im / u_norm) as f32)
     }
 
     #[cfg(target_arch = "wasm32")]

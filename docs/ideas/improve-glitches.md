@@ -354,5 +354,63 @@ that affected every pixel uniformly. Adding more reference orbits wouldn't have 
 2. Every pixel had the same bug, regardless of which reference was used
 3. The streaks followed coordinate/iteration gradients, not embedded Julia set patterns
 
-These GPU precision bugs have now been fixed (see Summary above). If streaking artifacts persist,
-they may be caused by remaining issues not yet identified.
+These GPU precision bugs have now been fixed (see Summary above). However, **streaking artifacts persist**
+due to a newly identified issue with surface normal computation.
+
+---
+
+## Surface Normal Clamping Bug (2026-01-02) ✅ FIXED
+
+### Root Cause
+
+At deep zoom levels, the derivative ρ = Der_m + δρ can have magnitude ~10^86 or higher.
+The GPU stores final ρ values via `hdr_to_f32()` which clamps exp > 127 to ±1e38:
+
+```wgsl
+// progressive_iteration.wgsl:543-548
+final_values[final_base + 2u] = hdr_to_f32(rho_re);  // Clamps independently!
+final_values[final_base + 3u] = hdr_to_f32(rho_im);
+```
+
+**Problem:** Independent clamping destroys the ratio between ρ_re and ρ_im.
+
+Example from diagnostic test at 10^-281 zoom:
+- Original: ρ = (3.54e85, -1.01e86), ratio = -0.35
+- Clamped: ρ = (1e38, -1e38), ratio = -1.0
+
+This corrupts the direction of ρ, which corrupts the surface normal `u = z/ρ`.
+
+### Evidence (Before Fix)
+
+CPU/GPU comparison test at row 350, cols 580-611 (32 pixels):
+- Iterations: identical (6786)
+- final_z_norm_sq: CPU 613820700 vs GPU 613820600 (diff: 64, ~0.00001%)
+- surface_normal: CPU (-0.043, -0.999) vs GPU (-0.472, -0.882) ← **WRONG DIRECTION**
+
+### Fix (Implemented)
+
+Compute surface normal direction **ON THE GPU** before converting to f32. Added
+`hdr_complex_direction()` function that scales both components to a common exponent
+before normalizing, preserving the ratio even at extreme magnitudes:
+
+```wgsl
+// progressive_iteration.wgsl - at escape
+// Compute u = z × conj(ρ) in HDRFloat (direction preserved, magnitude irrelevant)
+let u_unnorm_re = hdr_add(hdr_mul(z_re_full, rho_re), hdr_mul(z_im_full, rho_im));
+let u_unnorm_im = hdr_sub(hdr_mul(z_im_full, rho_re), hdr_mul(z_re_full, rho_im));
+let u_unnorm = HDRComplex(u_unnorm_re, u_unnorm_im);
+
+// Get normalized direction - scales to common exponent then normalizes in f32
+let surface_normal = hdr_complex_direction(u_unnorm);
+final_values[final_base + 2u] = surface_normal.x;  // Unit vector fits in f32
+final_values[final_base + 3u] = surface_normal.y;
+```
+
+The `hdr_complex_direction()` function finds the max exponent of both components, scales
+them to that common exponent (preserving ratio), converts to f32, and normalizes.
+
+### Verification
+
+CPU/GPU comparison test after fix:
+- Surface normal: CPU (-0.043, -0.999) vs GPU (-0.043, -0.999) ✓
+- Difference: ~1e-8 (f32 precision, acceptable)

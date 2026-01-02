@@ -170,6 +170,32 @@ fn hdr_complex_norm_sq_hdr(a: HDRComplex) -> HDRFloat {
     return hdr_add(re_sq, im_sq);
 }
 
+// Compute normalized direction of HDRComplex as (f32, f32) unit vector.
+// This preserves direction even for values with extreme exponents by scaling
+// both components to a common exponent before converting to f32.
+fn hdr_complex_direction(a: HDRComplex) -> vec2<f32> {
+    // Handle zero case
+    if a.re.head == 0.0 && a.im.head == 0.0 {
+        return vec2<f32>(0.0, 0.0);
+    }
+
+    // Find the larger exponent (use max to preserve relative magnitudes)
+    let max_exp = max(a.re.exp, a.im.exp);
+
+    // Scale both components to have exponent relative to max_exp
+    // This brings them into a comparable range for f32 conversion
+    let re_scaled = (a.re.head + a.re.tail) * hdr_exp2(a.re.exp - max_exp);
+    let im_scaled = (a.im.head + a.im.tail) * hdr_exp2(a.im.exp - max_exp);
+
+    // Normalize to unit vector in f32 space
+    let norm = sqrt(re_scaled * re_scaled + im_scaled * im_scaled);
+    if norm == 0.0 {
+        return vec2<f32>(0.0, 0.0);
+    }
+
+    return vec2<f32>(re_scaled / norm, im_scaled / norm);
+}
+
 // Compare two HDRFloat values: a < b
 // For magnitude comparisons, both values are non-negative
 fn hdr_less_than(a: HDRFloat, b: HDRFloat) -> bool {
@@ -540,12 +566,24 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             let rho_re = hdr_add(der_m_hdr_re, drho.re);
             let rho_im = hdr_add(der_m_hdr_im, drho.im);
 
-            // Store final values as f32 (packed: z_re, z_im, der_re, der_im)
+            // Compute surface normal direction u = z/ρ on GPU to preserve precision.
+            // Surface normal u = z × conj(ρ) / |ρ|². Since we normalize to unit vector,
+            // we compute z × conj(ρ) in HDRFloat and then extract normalized direction.
+            // u_unnorm = (z_re + i·z_im) × (ρ_re - i·ρ_im)
+            //          = (z_re·ρ_re + z_im·ρ_im) + i·(z_im·ρ_re - z_re·ρ_im)
+            let u_unnorm_re = hdr_add(hdr_mul(z_re_full, rho_re), hdr_mul(z_im_full, rho_im));
+            let u_unnorm_im = hdr_sub(hdr_mul(z_im_full, rho_re), hdr_mul(z_re_full, rho_im));
+            let u_unnorm = HDRComplex(u_unnorm_re, u_unnorm_im);
+
+            // Get normalized direction as f32 unit vector (preserves ratio even at extreme exponents)
+            let surface_normal = hdr_complex_direction(u_unnorm);
+
+            // Store final values as f32 (packed: z_re, z_im, surface_normal_re, surface_normal_im)
             let final_base = linear_idx * 4u;
             final_values[final_base] = hdr_to_f32(z_re_full);
             final_values[final_base + 1u] = hdr_to_f32(z_im_full);
-            final_values[final_base + 2u] = hdr_to_f32(rho_re);
-            final_values[final_base + 3u] = hdr_to_f32(rho_im);
+            final_values[final_base + 2u] = surface_normal.x;
+            final_values[final_base + 3u] = surface_normal.y;
 
             flags_buf[linear_idx] = 1u | select(0u, 2u, glitched);
             results[linear_idx] = n;
