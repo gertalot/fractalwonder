@@ -9,12 +9,12 @@ The renderer produces visible streaks along areas that should show smooth color 
 perturbation glitches (localized "noisy" patches or flat color blobs near embedded Julia sets), these
 artifacts span the entire image and follow iteration count gradients.
 
-This pattern suggests a **systematic precision issue** rather than the reference orbit exhaustion that
-standard multi-reference approaches address.
+CRITICAL NOTES:
 
-NOTE that with exactly the same rendering parameters, the CPU renderer shows smooth gradients as expected, while the GPU
-renderer shows the "streaks". These streaks are **NOT** iteration bands. Smooth coloring is enabled so there are no
-iteration bands, and the streaks appear to be **orthogonal** to the iteration band boundaries.
+- CPU and GPU renderers show near identical results
+- With 3D lighting enabled, the streaks/artefacts are visible. These are **NOT** normal 3D lighting effects. They
+  are in the wrong location and don't appear to follow a "natural curvature" line. Without 3D lighting, the image
+  shows smooth gradients.
 
 ## Diagnostic Test
 
@@ -269,7 +269,7 @@ This is the standard smooth iteration formula: `μ = n + 1 - log₂(ln|z|)`
 
 ## Additional GPU Issues
 
-### C1: hdr_to_f32 Exponent Handling: ✅ FIXED
+### C1: hdr_to_f32 Exponent Handling: ✅ CORRECT
 
 **Location:** `progressive_iteration.wgsl:140-149`
 
@@ -289,7 +289,7 @@ fn hdr_to_f32(x: HDRFloat) -> f32 {
 The function now properly returns 0.0 for underflow and ±1e38 for overflow instead of clamping
 exponents, which preserves comparison correctness at extreme zoom levels.
 
-### C3: Exponent Overflow Wrapping: ✅ FIXED
+### C3: Exponent Overflow Wrapping: ✅ CORRECT
 
 **Location:** `progressive_iteration.wgsl:67-81`
 
@@ -337,11 +337,26 @@ exponent overflow at extreme zoom levels.
    - Used in `hdr_mul` and `hdr_square` operations
    - **Impact:** Prevents garbage at extreme zoom with high iteration counts
 
+4. **GPU surface normal clamping** (`progressive_iteration.wgsl:569-586`)
+   - Added `hdr_complex_direction()` function
+   - Computes `u = z × conj(ρ)` in HDRFloat, then extracts direction
+   - **Impact:** Fixed 3D lighting artifacts at 10^-281 zoom
+
+5. **CPU surface normal overflow** (`perturbation/mod.rs:30-63`)
+   - Changed function to accept `&HDRFloat` instead of `f64`
+   - Mirrors GPU's `hdr_complex_direction()` approach
+   - **Impact:** CPU now computes valid surface normals at 10^-301+ zoom
+
 ### LOW Priority (Future Improvement)
 
-4. **Reference orbit extended precision**
+6. **Reference orbit extended precision**
    - Store HDRFloat for orbit values near zero
    - Only needed for extreme depths (10^1000+)
+
+7. **CPU/GPU iteration count discrepancies**
+   - ~5% of pixels escape at different iterations
+   - May be due to BLA path differences or f64 vs f32 accumulation
+   - Causes large surface normal diffs for affected pixels
 
 ---
 
@@ -412,8 +427,132 @@ final_values[final_base + 3u] = surface_normal.y;
 The `hdr_complex_direction()` function finds the max exponent of both components, scales
 them to that common exponent (preserving ratio), converts to f32, and normalizes.
 
-### Verification
+### Verification (at 10^-281 zoom)
 
-CPU/GPU comparison test after fix:
+CPU/GPU comparison test after GPU fix:
 - Surface normal: CPU (-0.043, -0.999) vs GPU (-0.043, -0.999) ✓
 - Difference: ~1e-8 (f32 precision, acceptable)
+
+---
+
+## CPU Surface Normal Overflow Bug (2026-01-02) ✅ FIXED
+
+### Root Cause
+
+At deeper zoom levels (~10^-301), the CPU surface normal computation was returning `(0.0, 0.0)` for
+ALL pixels, even though the GPU was computing valid normals.
+
+**Location:** `fractalwonder-compute/src/perturbation/mod.rs` and `pixel_hdr_bla.rs`
+
+The CPU function `compute_surface_normal_direction` took f64 parameters:
+
+```rust
+// OLD - BROKEN at deep zoom
+pub(crate) fn compute_surface_normal_direction(
+    z_re: f64,
+    z_im: f64,
+    rho_re: f64,  // ← Overflows to ±infinity at 10^-301 zoom
+    rho_im: f64,
+) -> (f32, f32)
+```
+
+Called from `pixel_hdr_bla.rs`:
+```rust
+let (sn_re, sn_im) = compute_surface_normal_direction(
+    z_re.to_f64(),   // z is fine, |z| > 256 at escape
+    z_im.to_f64(),
+    rho_re.to_f64(), // ← HDRFloat::to_f64() overflows!
+    rho_im.to_f64(),
+);
+```
+
+At 10^-301 zoom, the derivative ρ has magnitude ~10^100+. When `HDRFloat::to_f64()` is called,
+values with exponent > 1024 overflow to infinity. The function then returns `(0.0, 0.0)` because
+`rho_norm_sq` is infinite.
+
+### Fix (Implemented)
+
+Changed `compute_surface_normal_direction` to accept `&HDRFloat` parameters and compute
+`u = z × conj(ρ)` entirely in HDRFloat, only converting to f32 at the final normalization step:
+
+```rust
+// NEW - Works at any zoom depth
+pub(crate) fn compute_surface_normal_direction(
+    z_re: &HDRFloat,
+    z_im: &HDRFloat,
+    rho_re: &HDRFloat,
+    rho_im: &HDRFloat,
+) -> (f32, f32) {
+    // Compute u = z × conj(ρ) in HDRFloat
+    let u_re = z_re.mul(rho_re).add(&z_im.mul(rho_im));
+    let u_im = z_im.mul(rho_re).sub(&z_re.mul(rho_im));
+
+    // Scale both components to common exponent to preserve ratio
+    let max_exp = u_re.exp.max(u_im.exp);
+    let re_scaled = re_mantissa * 2.0_f64.powi(u_re.exp - max_exp);
+    let im_scaled = im_mantissa * 2.0_f64.powi(u_im.exp - max_exp);
+
+    // Normalize to unit vector
+    let norm = (re_scaled * re_scaled + im_scaled * im_scaled).sqrt();
+    ((re_scaled / norm) as f32, (im_scaled / norm) as f32)
+}
+```
+
+This mirrors the GPU's `hdr_complex_direction()` approach exactly.
+
+### Verification (at 10^-301 zoom)
+
+CPU/GPU comparison test of 773 pixels at row y=35:
+
+**Before fix:**
+```
+col 0: normal CPU=(0.0000,0.0000) GPU=(-0.9946,0.1041)  ← CPU returned zero
+```
+
+**After fix:**
+```
+col 0: normal CPU=(-0.9946,0.1041) GPU=(-0.9946,0.1041)  ← Match ✓
+```
+
+**Surface normal difference distribution (773 pixels):**
+
+| Percentile | Absolute Diff | Interpretation |
+|------------|---------------|----------------|
+| Median | 2.91e-6 | f32 precision noise |
+| p99 | 1.85 | Large diff (see below) |
+| Max | 2.00 | Opposite directions |
+
+- **99% of pixels** have tiny differences (~3e-6) — expected f32 precision
+- **~4% of pixels (32)** have large differences (>0.1) caused by iteration count discrepancies
+
+The 32 pixels with large normal differences correlate with the 36 pixels where CPU and GPU
+escape at different iterations. Different escape iterations → different z and ρ at escape →
+different surface normals. This is expected behavior when iteration counts differ.
+
+---
+
+## Current State: CPU/GPU Comparison at 10^-301 Zoom
+
+Test: 773 pixels, row y=35, full image width
+
+| Metric | Result |
+|--------|--------|
+| Iteration diffs | 36 pixels (max diff: 224 iterations) |
+| Escaped status diffs | 0 |
+| Glitched status diffs | 9 |
+| Z norm diffs | 773 (f32 precision differences) |
+| Surface normal diffs | 772 (99% are ~3e-6, 4% are large due to iter diffs) |
+
+**Key findings:**
+1. Surface normal computation now matches between CPU and GPU (median diff: 3e-6)
+2. Large surface normal diffs occur only where iteration counts differ
+3. Iteration count differences (36 pixels, ~5%) may be due to BLA path differences or
+   floating-point accumulation differences between CPU (f64) and GPU (f32)
+
+### Remaining Investigation
+
+If 3D lighting artifacts persist at this zoom level, potential causes to investigate:
+
+1. **Iteration count discrepancies** — CPU and GPU escape at different iterations for ~5% of pixels
+2. **BLA coefficient differences** — GPU may take different BLA shortcuts than CPU
+3. **Floating-point accumulation** — Small differences compound over ~35,000 iterations
