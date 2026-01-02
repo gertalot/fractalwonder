@@ -32,14 +32,35 @@ mod tests {
             .expect("valid viewport parameters")
     }
 
+    fn compute_orbit_and_bla(viewport: &Viewport) -> (ReferenceOrbit, BlaTable) {
+        println!("Computing reference orbit at center...");
+        let c_ref = (viewport.center.0.clone(), viewport.center.1.clone());
+        let orbit = ReferenceOrbit::compute(&c_ref, MAX_ITERATIONS);
+        println!("  Orbit length: {}", orbit.orbit.len());
+        println!("  Escaped at: {:?}", orbit.escaped_at);
+
+        // Compute dc_max as half the viewport diagonal (conservative)
+        let half_w = HDRFloat::from_bigfloat(&viewport.width).mul(&HDRFloat::from_f64(0.5));
+        let half_h = HDRFloat::from_bigfloat(&viewport.height).mul(&HDRFloat::from_f64(0.5));
+        let dc_max = half_w.add(&half_h);
+
+        println!("Computing BLA table...");
+        let bla_table = BlaTable::compute(&orbit, &dc_max);
+        println!("  BLA entries: {}", bla_table.entries.len());
+        println!("  BLA levels: {}", bla_table.num_levels);
+
+        (orbit, bla_table)
+    }
+
     #[test]
     fn compare_cpu_gpu_mandelbrot_output() {
         let viewport = parse_viewport();
-        println!("Viewport parsed:");
         println!(
-            "  width exponent: ~10^{}",
-            viewport.width.log2_approx() as i32 * 301 / 1000
+            "Viewport parsed (width ~10^{})",
+            (viewport.width.log2_approx() * 0.301) as i32
         );
-        println!("  precision: {} bits", PRECISION_BITS);
+
+        let (_orbit, _bla_table) = compute_orbit_and_bla(&viewport);
+        println!("Orbit and BLA ready.");
     }
 }
