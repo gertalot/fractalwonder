@@ -1,0 +1,358 @@
+# Improving Glitches and Rendering Artifacts
+
+This document analyzes the current perturbation implementation to identify causes of rendering artifacts,
+particularly "streaks along gradients" that appear across the entire image rather than localized glitches.
+
+## Problem Statement
+
+The renderer produces visible streaks along areas that should show smooth color gradients. Unlike typical
+perturbation glitches (localized "noisy" patches or flat color blobs near embedded Julia sets), these
+artifacts span the entire image and follow iteration count gradients.
+
+This pattern suggests a **systematic precision issue** rather than the reference orbit exhaustion that
+standard multi-reference approaches address.
+
+NOTE that with exactly the same rendering parameters, the CPU renderer shows smooth gradients as expected, while the GPU
+renderer shows the "streaks". These streaks are **NOT** iteration bands. Smooth coloring is enabled so there are no
+iteration bands, and the streaks appear to be **orthogonal** to the iteration band boundaries.
+
+## Diagnostic Test
+
+We propose implementing a diagnostic test to see the difference between CPU and GPU renderers' MandelbrotData output
+structure from the core algorithms.
+
+We want to compute a row of 32 pixels for each renderer and compare any differences, based on the following:
+
+  Viewport (full precision):
+  Center X:  0.273000307495579097715200094310253922494103490187797182966812629706330340783242
+  Center Y:  0.005838718497531293679839354462882728828030188792949767250660666951674130465532
+  Width:     1.38277278476513331960149825811900065907944121299848E-281
+  Height:    7.97822331184022584815185255533429968247789646588334E-282
+  Precision: 1067 bits
+
+  Image dimensions needed: (from actual canvas - appears to be ~766×432 based on aspect ratio)
+
+  32-pixel horizontal line in lower-right quadrant:
+  Row y = 350, columns x = 580..611
+
+  For each pixel (x, y), delta_c is computed as:
+  norm_x = (x + 0.5) / image_width - 0.5
+  norm_y = (y + 0.5) / image_height - 0.5
+  delta_c_re = norm_x * viewport_width   (BigFloat → HDRFloat)
+  delta_c_im = norm_y * viewport_height  (BigFloat → HDRFloat)
+
+  Both renderers need (from production code):
+  1. ReferenceOrbit - computed at viewport center with ReferenceOrbit::compute(&center, max_iterations)
+  2. BlaTable - built from orbit with BlaTable::build(&orbit, dc_max)
+  3. delta_c for each pixel (computed as above)
+  4. max_iterations = 10_000_000
+  5. tau_sq (glitch threshold, typically 1e-6)
+
+  Production code paths to call:
+  - CPU: fractalwonder_compute::perturbation::compute_pixel_perturbation_hdr_bla()
+  - GPU: Need to extract from GPU result buffers after render_row_set()
+
+---
+
+## How Professional Renderers Handle Reference Orbits
+
+### Pre-2021: Multi-Reference with Iterative Refinement
+
+Renderers like Kalles Fraktaler use this approach:
+
+1. Render with single reference at viewport center
+2. Detect glitches using Pauldelbrot criterion: `|Z + δz|² < τ² × |Z|²`
+3. Select new reference point within glitched region
+4. Re-render only glitched pixels with closer reference
+5. Repeat until zero glitches (up to 10,000 references for complex images)
+
+**Reference selection methods (Kalles Fraktaler):**
+- Original method: Center-based selection
+- argmin|z|: Select point with minimum orbit magnitude
+- Random: Sometimes works better for pathological cases
+
+**Threshold values (τ) for Pauldelbrot criterion:**
+| Value | Behavior |
+|-------|----------|
+| 10⁻² | Very conservative, catches everything, slow |
+| 10⁻³ | Standard default |
+| 10⁻⁶ | Moderate |
+| 10⁻⁸ | Aggressive, fast but may miss edge cases |
+
+### Post-2021: Rebasing (Zhuoran's Breakthrough)
+
+Modern approach that avoids glitches rather than detecting/correcting them:
+
+1. Use single reference orbit
+2. When `|Z + δz| < |δz|` (delta dominates full value), reset:
+   - Set `δz = Z + δz` (absorb reference into delta)
+   - Reset reference iteration `m = 0`
+   - Continue with same iteration count `n`
+3. Only need as many reference orbits as critical points (1 for Mandelbrot)
+
+**Sources:**
+- [Deep zoom theory and practice (mathr)](https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html)
+- [Deep zoom theory and practice again (mathr)](https://mathr.co.uk/blog/2022-02-21_deep_zoom_theory_and_practice_again.html)
+- [Imagina (GitHub)](https://github.com/5E-324/Imagina)
+
+---
+
+## Current Implementation Analysis
+
+### 1. Delta Precision (δc and δz)
+
+#### CPU Implementation: ✅ CORRECT
+
+**Location:** `fractalwonder-compute/src/perturbation/pixel_hdr_bla.rs`
+
+Uses `HDRComplex` (pair of `HDRFloat`) for delta values:
+```rust
+let mut dz = HDRComplex::ZERO;
+// ...
+let dz_mag_sq = dz.norm_sq_hdr();  // Uses HDRFloat for magnitude
+```
+
+`HDRFloat` provides:
+- ~48-bit mantissa precision (head + tail as f32 pair)
+- Extended exponent range (i32 exp, unlimited range)
+- Proper saturating arithmetic
+
+#### GPU Implementation: ✅ FIXED
+
+**Location:** `fractalwonder-gpu/src/shaders/progressive_iteration.wgsl:463-464`
+
+```wgsl
+let x_hdr = hdr_from_f32(f32(col));
+let y_hdr = hdr_from_f32(f32(global_row));
+let dc_re = hdr_add(dc_origin_re, hdr_mul(x_hdr, dc_step_re));
+let dc_im = hdr_add(dc_origin_im, hdr_mul(y_hdr, dc_step_im));
+```
+
+The `hdr_from_f32` function (lines 199-217) properly normalizes f32 values to HDRFloat format,
+ensuring `head` is in the [0.5, 1.0) range as required by HDRFloat arithmetic:
+
+```wgsl
+fn hdr_from_f32(val: f32) -> HDRFloat {
+    if val == 0.0 { return HDR_ZERO; }
+
+    let bits = bitcast<u32>(val);
+    let sign = bits & 0x80000000u;
+    let biased_exp = i32((bits >> 23u) & 0xFFu);
+
+    if biased_exp == 0 {
+        // Subnormal - use normalize path
+        return hdr_normalize(HDRFloat(val, 0.0, 0));
+    }
+
+    // Normal: adjust mantissa to [0.5, 1.0) range
+    let exp = biased_exp - 126;
+    let new_mantissa_bits = (bits & 0x807FFFFFu) | 0x3F000000u;
+    let head = bitcast<f32>(new_mantissa_bits | sign);
+
+    return HDRFloat(head, 0.0, exp);
+}
+```
+
+---
+
+### 2. Rebasing Logic
+
+#### CPU Implementation: ✅ CORRECT
+
+**Location:** `fractalwonder-compute/src/perturbation/pixel_hdr_bla.rs:109-120`
+
+```rust
+if z_mag_sq_hdr.sub(&dz_mag_sq).is_negative() {
+    dz = HDRComplex { re: z_re, im: z_im };  // δz_new = Z + δz
+    drho = HDRComplex { re: rho_re, im: rho_im };
+    m = 0;  // Reset reference iteration
+    rebase_count += 1;
+    continue;  // Don't increment n
+}
+```
+
+Correctly implements:
+1. ✅ Sets `δz = Z + δz` (absorbs reference into delta)
+2. ✅ Resets `m = 0` (restarts reference orbit index)
+3. ✅ Does NOT reset `n` (iteration count continues)
+4. ✅ Uses HDRFloat comparison to avoid f64 underflow
+
+#### GPU Implementation: ✅ CORRECT
+
+**Location:** `fractalwonder-gpu/src/shaders/progressive_iteration.wgsl:572-581`
+
+```wgsl
+if hdr_less_than(z_mag_sq_hdr, dz_mag_sq_hdr) {
+    dz = z;
+    // Also rebase derivative
+    drho = HDRComplex(
+        hdr_add(der_m_hdr_re, drho.re),
+        hdr_add(der_m_hdr_im, drho.im)
+    );
+    m = 0u;
+    continue;
+}
+```
+
+Same correct logic as CPU.
+
+---
+
+### 3. Reference Orbit Storage
+
+#### Current Approach
+
+**Location:** `fractalwonder-compute/src/perturbation/reference_orbit.rs:44-46`
+
+```rust
+// Computed with BigFloat, stored as f64
+let orbit_val = (x.to_f64(), y.to_f64());
+let der_val = (der_x.to_f64(), der_y.to_f64());
+```
+
+**CPU rendering** uses these f64 values directly and converts to HDRFloat on access:
+```rust
+let z_re = HDRFloat::from_f64(z_m_re).add(&dz.re);
+```
+
+**GPU rendering** receives orbit as full HDRFloat representation (12 floats per point):
+```wgsl
+// Z_re: head, tail, exp; Z_im: head, tail, exp
+// Der_re: head, tail, exp; Der_im: head, tail, exp
+```
+
+#### Analysis
+
+For orbit values (bounded by escape radius ~256), f64 storage is generally sufficient.
+
+**Potential issue:** When Z_m passes very close to zero during iteration (near critical points),
+f64 precision may be insufficient. Professional renderers like Nanoscope use **sparse wide-exponent
+storage** where they store a pointer to extended-precision values for iterations where f64 would
+underflow.
+
+**Current status:** Not a major concern for typical deep zoom, but could cause issues at extreme
+depths (10^1000+) near critical points.
+
+---
+
+### 4. Smooth Coloring
+
+#### Implementation: ✅ CORRECT
+
+**Location:** `fractalwonder-ui/src/rendering/colorizers/smooth_iteration.rs:26-39`
+
+```rust
+pub fn compute_smooth_iteration(data: &MandelbrotData) -> f64 {
+    if !data.escaped || data.max_iterations == 0 {
+        return data.max_iterations as f64;
+    }
+
+    if data.final_z_norm_sq > 1.0 {
+        let z_norm_sq = data.final_z_norm_sq as f64;
+        let log_z = z_norm_sq.ln() / 2.0;
+        let nu = log_z.ln() / std::f64::consts::LN_2;
+        data.iterations as f64 + 1.0 - nu
+    } else {
+        data.iterations as f64
+    }
+}
+```
+
+This is the standard smooth iteration formula: `μ = n + 1 - log₂(ln|z|)`
+
+**Data source:** `final_z_norm_sq` is stored as f32, computed at escape time from HDRFloat magnitude.
+
+---
+
+## Additional GPU Issues
+
+### C1: hdr_to_f32 Exponent Handling: ✅ FIXED
+
+**Location:** `progressive_iteration.wgsl:140-149`
+
+```wgsl
+fn hdr_to_f32(x: HDRFloat) -> f32 {
+    if x.head == 0.0 { return 0.0; }
+    // Return 0 for underflow, ±infinity for overflow (instead of clamping)
+    if x.exp < -149 { return 0.0; }
+    if x.exp > 127 {
+        return select(f32(-1e38), f32(1e38), x.head > 0.0);
+    }
+    let mantissa = x.head + x.tail;
+    return mantissa * hdr_exp2(x.exp);
+}
+```
+
+The function now properly returns 0.0 for underflow and ±1e38 for overflow instead of clamping
+exponents, which preserves comparison correctness at extreme zoom levels.
+
+### C3: Exponent Overflow Wrapping: ✅ FIXED
+
+**Location:** `progressive_iteration.wgsl:67-81`
+
+The GPU now uses saturating exponent arithmetic matching CPU behavior:
+
+```wgsl
+// Saturating exponent addition (prevents i32 overflow wrapping)
+fn saturating_exp_add(a: i32, b: i32) -> i32 {
+    let sum = a + b;
+    // Detect overflow: if signs of a and b match but differ from sum
+    if a > 0 && b > 0 && sum < 0 { return 2147483647; }  // i32::MAX
+    if a < 0 && b < 0 && sum > 0 { return -2147483648; } // i32::MIN
+    return sum;
+}
+
+// Saturating exponent multiplication (for squaring: exp * 2)
+fn saturating_exp_mul2(a: i32) -> i32 {
+    if a > 1073741823 { return 2147483647; }   // a * 2 would overflow
+    if a < -1073741824 { return -2147483648; } // a * 2 would underflow
+    return a * 2;
+}
+```
+
+These functions are used in `hdr_mul` (line 88) and `hdr_square` (line 96) to prevent
+exponent overflow at extreme zoom levels.
+
+---
+
+## Summary: Implementation Status
+
+### ✅ COMPLETED Fixes
+
+1. **GPU Un-normalized δc** (`progressive_iteration.wgsl:463-464`)
+   - Added `hdr_from_f32()` function (lines 199-217)
+   - Pixel coordinates now properly normalized to HDRFloat format
+   - **Impact:** Fixed systematic precision loss that was affecting every pixel
+
+2. **GPU hdr_to_f32 exponent handling** (`progressive_iteration.wgsl:140-149`)
+   - Returns 0.0 for underflow instead of clamping
+   - Returns ±1e38 for overflow
+   - **Impact:** Fixed comparisons at extreme zoom
+
+3. **GPU exponent overflow** (`progressive_iteration.wgsl:67-81`)
+   - Added `saturating_exp_add()` and `saturating_exp_mul2()` functions
+   - Used in `hdr_mul` and `hdr_square` operations
+   - **Impact:** Prevents garbage at extreme zoom with high iteration counts
+
+### LOW Priority (Future Improvement)
+
+4. **Reference orbit extended precision**
+   - Store HDRFloat for orbit values near zero
+   - Only needed for extreme depths (10^1000+)
+
+---
+
+## Why QuadTree Multi-Reference Won't Help
+
+The QuadTree-based multi-reference approach (documented in `docs/archive/2025-01-27-multi-reference-*`)
+is designed for **localized glitches** where specific regions have reference orbit exhaustion issues.
+
+The original symptoms (whole-image streaks along gradients) indicated **systematic precision loss**
+that affected every pixel uniformly. Adding more reference orbits wouldn't have helped because:
+
+1. The error was in δc computation, not reference selection
+2. Every pixel had the same bug, regardless of which reference was used
+3. The streaks followed coordinate/iteration gradients, not embedded Julia set patterns
+
+These GPU precision bugs have now been fixed (see Summary above). If streaking artifacts persist,
+they may be caused by remaining issues not yet identified.
