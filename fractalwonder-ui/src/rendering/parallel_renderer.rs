@@ -4,7 +4,7 @@ use crate::rendering::canvas_utils::{
 };
 use crate::rendering::colorizers::{ColorPipeline, Palette, RenderSettings};
 use crate::rendering::tiles::{calculate_tile_size, generate_tiles};
-use crate::rendering::RenderProgress;
+use crate::rendering::{RenderPhase, RenderProgress};
 use crate::workers::{OrbitCompleteData, TileResult, WorkerPool};
 use fractalwonder_core::{ComputeData, HDRFloat, MandelbrotData, PixelRect, Viewport};
 use fractalwonder_gpu::{GpuAvailability, GpuContext, ProgressiveGpuRenderer};
@@ -92,7 +92,11 @@ impl ParallelRenderer {
         let canvas_size_complete = Rc::clone(&canvas_size);
         let current_viewport: Rc<RefCell<Option<Viewport>>> = Rc::new(RefCell::new(None));
         let pipeline_complete = Rc::clone(&pipeline);
+        let progress_complete = progress;
         worker_pool.borrow().set_render_complete_callback(move || {
+            // Transition to Colorizing phase
+            progress_complete.update(|p| p.set_phase(RenderPhase::Colorizing));
+
             let ctx_ref = canvas_ctx_complete.borrow();
             let Some(ctx) = ctx_ref.as_ref() else {
                 return;
@@ -111,6 +115,9 @@ impl ParallelRenderer {
             // Draw full frame
             let pixel_bytes: Vec<u8> = final_pixels.into_iter().flatten().collect();
             let _ = draw_full_frame(ctx, &pixel_bytes, width, height);
+
+            // Render complete
+            progress_complete.update(|p| p.set_phase(RenderPhase::Complete));
         });
 
         Ok(Self {
@@ -256,8 +263,8 @@ impl ParallelRenderer {
 
         let row_set_count = self.config.gpu_progressive_row_sets;
 
-        // Initialize progress (row-sets instead of tiles)
-        self.progress.set(RenderProgress::new(row_set_count));
+        // Initialize progress - starts in ComputingOrbit phase
+        self.progress.set(RenderProgress::start());
 
         // Initialize full-image result buffer
         *self.gpu_result_buffer.borrow_mut() =
@@ -286,6 +293,12 @@ impl ParallelRenderer {
                     orbit_data.orbit.len(),
                     row_set_count
                 );
+
+                // Transition to Rendering phase
+                progress.update(|p| {
+                    p.set_phase(RenderPhase::Rendering);
+                    p.set_total_steps(row_set_count);
+                });
 
                 let orbit_data = Rc::new(orbit_data);
 
@@ -561,16 +574,15 @@ fn schedule_row_set(
                 }
 
                 // Update progress
-                let elapsed_ms = performance_now() - render_start_time;
                 progress.update(|p| {
-                    p.completed_steps += 1;
-                    p.elapsed_ms = elapsed_ms;
-                    if is_final {
-                        p.set_complete();
-                    }
+                    p.increment_step();
                 });
 
                 if is_final {
+                    // Transition to Colorizing phase
+                    progress.update(|p| p.set_phase(RenderPhase::Colorizing));
+
+                    let elapsed_ms = performance_now() - render_start_time;
                     let (final_pixels, full_buffer_clone) = {
                         let full_buffer = gpu_result_buffer_spawn.borrow();
 
@@ -594,6 +606,9 @@ fn schedule_row_set(
                         let pixel_bytes: Vec<u8> = final_pixels.into_iter().flatten().collect();
                         let _ = draw_full_frame(&ctx, &pixel_bytes, width, height);
                     }
+
+                    // Render complete
+                    progress.update(|p| p.set_phase(RenderPhase::Complete));
 
                     log::info!(
                         "Progressive render complete: {} row-sets in {:.1}ms",
