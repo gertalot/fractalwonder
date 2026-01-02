@@ -106,6 +106,88 @@ mod tests {
             .collect()
     }
 
+    async fn render_gpu_pixels(
+        viewport: &Viewport,
+        orbit: &ReferenceOrbit,
+        bla_table: &BlaTable,
+    ) -> Option<Vec<MandelbrotData>> {
+        println!("Initializing GPU...");
+        let ctx = match GpuContext::try_init().await {
+            GpuAvailability::Available(ctx) => ctx,
+            GpuAvailability::Unavailable(reason) => {
+                println!("GPU unavailable: {}", reason);
+                return None;
+            }
+        };
+
+        let mut renderer = ProgressiveGpuRenderer::new(ctx);
+        println!("Rendering GPU pixels (full image, extracting row {})...", TEST_ROW);
+
+        // Compute dc_origin and dc_step
+        // Matches parallel_renderer.rs:411-431
+        let vp_width = HDRFloat::from_bigfloat(&viewport.width);
+        let vp_height = HDRFloat::from_bigfloat(&viewport.height);
+        let half = HDRFloat::from_f64(0.5);
+        let origin_re = vp_width.mul(&half).neg();
+        let origin_im = vp_height.mul(&half).neg();
+        let step_re = vp_width.div_f64(IMAGE_WIDTH as f64);
+        let step_im = vp_height.div_f64(IMAGE_HEIGHT as f64);
+
+        let dc_origin = (
+            (origin_re.head, origin_re.tail, origin_re.exp),
+            (origin_im.head, origin_im.tail, origin_im.exp),
+        );
+        let dc_step = (
+            (step_re.head, step_re.tail, step_re.exp),
+            (step_im.head, step_im.tail, step_im.exp),
+        );
+
+        let reference_escaped = orbit.escaped_at.is_some();
+
+        // Render entire image in one row-set to simplify extraction
+        let result = renderer
+            .render_row_set(
+                &orbit.orbit,
+                &orbit.derivative,
+                1, // orbit_id
+                dc_origin,
+                dc_step,
+                IMAGE_WIDTH,
+                IMAGE_HEIGHT,
+                0,  // row_set_index
+                1,  // row_set_count (all rows in one set)
+                MAX_ITERATIONS,
+                10000, // iterations_per_dispatch
+                TAU_SQ as f32,
+                reference_escaped,
+                Some(bla_table),
+            )
+            .await;
+
+        match result {
+            Ok(result) => {
+                // Extract row TEST_ROW, columns TEST_COL_START..=TEST_COL_END
+                let start_idx = (TEST_ROW * IMAGE_WIDTH + TEST_COL_START) as usize;
+                let end_idx = (TEST_ROW * IMAGE_WIDTH + TEST_COL_END + 1) as usize;
+
+                let pixels: Vec<MandelbrotData> = result.data[start_idx..end_idx]
+                    .iter()
+                    .map(|cd| {
+                        let ComputeData::Mandelbrot(m) = cd;
+                        m.clone()
+                    })
+                    .collect();
+
+                println!("GPU extracted {} pixels from row {}", pixels.len(), TEST_ROW);
+                Some(pixels)
+            }
+            Err(e) => {
+                println!("GPU render failed: {:?}", e);
+                None
+            }
+        }
+    }
+
     #[test]
     fn compare_cpu_gpu_mandelbrot_output() {
         let viewport = parse_viewport();
@@ -118,6 +200,20 @@ mod tests {
 
         let cpu_pixels = render_cpu_pixels(&viewport, &orbit, &bla_table);
         println!("CPU rendered {} pixels", cpu_pixels.len());
-        println!("  First pixel iterations: {}", cpu_pixels[0].iterations);
+
+        let gpu_pixels = pollster::block_on(render_gpu_pixels(&viewport, &orbit, &bla_table));
+
+        match gpu_pixels {
+            Some(gpu) => {
+                println!("GPU rendered {} pixels", gpu.len());
+                println!(
+                    "  First pixel iterations: CPU={}, GPU={}",
+                    cpu_pixels[0].iterations, gpu[0].iterations
+                );
+            }
+            None => {
+                println!("GPU not available, skipping comparison");
+            }
+        }
     }
 }
