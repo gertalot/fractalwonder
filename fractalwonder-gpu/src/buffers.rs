@@ -299,10 +299,10 @@ impl ProgressiveGpuBuffers {
             mapped_at_creation: false,
         });
 
-        // BLA data: 16 f32s per entry (64 bytes)
+        // BLA data: 28 f32s per entry (112 bytes)
         let bla_data = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("progressive_bla_data"),
-            size: (bla_entry_count as usize * 16 * std::mem::size_of::<f32>()) as u64,
+            size: (bla_entry_count as usize * 28 * std::mem::size_of::<f32>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
