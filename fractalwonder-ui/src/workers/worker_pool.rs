@@ -315,6 +315,12 @@ impl WorkerPool {
         if self.gpu_mode {
             web_sys::console::log_1(&"[WorkerPool] GPU mode: triggering orbit callback".into());
 
+            // Transition to BLA phase for GPU mode
+            if self.perturbation.bla_enabled() {
+                self.progress
+                    .update(|p| p.set_phase(RenderPhase::BuildingBla));
+            }
+
             // Compute BLA table for GPU acceleration
             let dc_max = self.perturbation.dc_max();
             let bla_table = if self.perturbation.bla_enabled() && !orbit.is_empty() {
