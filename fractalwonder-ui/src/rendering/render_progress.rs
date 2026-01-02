@@ -233,7 +233,7 @@ mod tests {
         progress.total_steps = 10;
         assert_eq!(progress.completed_steps, 0);
 
-        progress.completed_steps += 1;
+        progress.increment_step();
         assert_eq!(progress.completed_steps, 1);
     }
 

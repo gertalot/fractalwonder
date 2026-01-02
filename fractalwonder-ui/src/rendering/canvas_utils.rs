@@ -23,12 +23,19 @@ pub async fn yield_to_browser() {
 }
 
 /// Get the current time in milliseconds (for elapsed time tracking).
+#[cfg(not(test))]
 pub fn performance_now() -> f64 {
     web_sys::window()
         .expect("should have window")
         .performance()
         .expect("should have performance")
         .now()
+}
+
+/// Mock version of performance_now for tests (returns 0.0).
+#[cfg(test)]
+pub fn performance_now() -> f64 {
+    0.0
 }
 
 /// Get 2D rendering context from canvas.
