@@ -106,6 +106,7 @@ mod tests {
             .collect()
     }
 
+    #[allow(dead_code)]
     fn print_comparison(col: u32, cpu: &MandelbrotData, gpu: &MandelbrotData) {
         println!("Pixel {}:", col);
         println!(
