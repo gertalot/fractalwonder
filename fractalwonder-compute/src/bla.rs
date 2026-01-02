@@ -7,16 +7,22 @@ use crate::ReferenceOrbit;
 use fractalwonder_core::{HDRComplex, HDRFloat};
 
 /// Single BLA entry: skips `l` iterations.
-/// Applies: δz_new = A·δz + B·δc
 ///
-/// Uses HDRFloat for A, B, and r_sq to prevent overflow during deep zoom
-/// where coefficients multiply together across many iterations.
+/// Position formula: δz_new = A·δz + B·δc
+/// Derivative formula: δρ_new = C·δρ + D·δz + E·δc
+///
+/// Note: C = A mathematically (both derive from 2·Z_m with identical merge formulas),
+/// so C is not stored separately.
 #[derive(Clone, Debug)]
 pub struct BlaEntry {
-    /// Complex coefficient A (multiplies δz)
+    /// Complex coefficient A (multiplies δz for position, δρ for derivative)
     pub a: HDRComplex,
-    /// Complex coefficient B (multiplies δc)
+    /// Complex coefficient B (multiplies δc for position)
     pub b: HDRComplex,
+    /// Complex coefficient D (δz contribution to δρ)
+    pub d: HDRComplex,
+    /// Complex coefficient E (δc contribution to δρ)
+    pub e: HDRComplex,
     /// Number of iterations to skip
     pub l: u32,
     /// Validity radius squared
