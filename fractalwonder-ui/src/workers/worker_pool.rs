@@ -1,5 +1,5 @@
 use crate::config::{get_config, get_cpu_threads};
-use crate::rendering::RenderProgress;
+use crate::rendering::{RenderPhase, RenderProgress};
 use crate::workers::perturbation::{OrbitData, PerturbationCoordinator};
 use crate::workers::worker_pool_types::{
     performance_now, OrbitCompleteCallback, OrbitCompleteData, PendingOrbitRequest,
@@ -235,19 +235,11 @@ impl WorkerPool {
             }
         }
 
-        let elapsed = self
-            .render_start_time
-            .map(|start| performance_now() - start)
-            .unwrap_or(0.0);
         let is_complete = {
             let mut complete = false;
             self.progress.update(|p| {
-                p.completed_steps += 1;
-                p.elapsed_ms = elapsed;
-                if p.completed_steps >= p.total_steps {
-                    p.set_complete();
-                }
-                complete = p.is_complete();
+                p.increment_step();
+                complete = p.completed_steps >= p.total_steps;
             });
             complete
         };
@@ -313,6 +305,12 @@ impl WorkerPool {
             escaped_at,
         };
         self.pending_orbit_data = Some(orbit_data.clone());
+
+        // Transition to BLA phase (or skip if BLA disabled)
+        if self.perturbation.bla_enabled() && !self.gpu_mode {
+            self.progress
+                .update(|p| p.set_phase(RenderPhase::BuildingBla));
+        }
 
         if self.gpu_mode {
             web_sys::console::log_1(&"[WorkerPool] GPU mode: triggering orbit callback".into());
@@ -411,6 +409,10 @@ impl WorkerPool {
                 )
                 .into(),
             );
+            self.progress.update(|p| {
+                p.set_phase(RenderPhase::Rendering);
+                p.set_total_steps(self.pending_tiles.len() as u32);
+            });
             for worker_id in 0..self.workers.len() {
                 if self.initialized_workers.contains(&worker_id) {
                     self.dispatch_work(worker_id);
@@ -518,8 +520,7 @@ impl WorkerPool {
         self.canvas_size = canvas_size;
         self.pending_tiles = tiles.into();
         self.render_start_time = Some(performance_now());
-        self.progress
-            .set(RenderProgress::new(self.pending_tiles.len() as u32));
+        self.progress.set(RenderProgress::start());
 
         if let Some(&worker_id) = self.initialized_workers.iter().next() {
             self.pending_orbit_request = None;
