@@ -641,10 +641,20 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             let bla = bla_find_valid(m, dz_mag_sq_hdr, orbit_len);
 
             if bla.valid {
-                // Apply: δz_new = A·δz + B·δc
+                // Apply BLA to position: δz_new = A·δz + B·δc
                 let a_dz = hdr_complex_mul(bla.entry.a, dz);
                 let b_dc = hdr_complex_mul(bla.entry.b, dc);
-                dz = hdr_complex_add(a_dz, b_dc);
+                let new_dz = hdr_complex_add(a_dz, b_dc);
+
+                // Apply BLA to derivative: δρ_new = A·δρ + D·δz + E·δc
+                // (C = A mathematically, so we use bla.entry.a for the δρ coefficient)
+                let a_drho = hdr_complex_mul(bla.entry.a, drho);
+                let d_dz = hdr_complex_mul(bla.entry.d, dz);
+                let e_dc = hdr_complex_mul(bla.entry.e, dc);
+                let new_drho = hdr_complex_add(hdr_complex_add(a_drho, d_dz), e_dc);
+
+                dz = new_dz;
+                drho = new_drho;
 
                 // Skip iterations
                 m = m + bla.entry.l;
