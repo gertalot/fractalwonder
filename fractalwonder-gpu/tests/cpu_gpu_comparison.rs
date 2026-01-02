@@ -106,6 +106,97 @@ mod tests {
             .collect()
     }
 
+    fn print_comparison(col: u32, cpu: &MandelbrotData, gpu: &MandelbrotData) {
+        println!("Pixel {}:", col);
+        println!(
+            "  CPU: iterations={}, max_iterations={}, escaped={}, glitched={},",
+            cpu.iterations, cpu.max_iterations, cpu.escaped, cpu.glitched
+        );
+        println!(
+            "       final_z_norm_sq={}, surface_normal_re={}, surface_normal_im={}",
+            cpu.final_z_norm_sq, cpu.surface_normal_re, cpu.surface_normal_im
+        );
+        println!(
+            "  GPU: iterations={}, max_iterations={}, escaped={}, glitched={},",
+            gpu.iterations, gpu.max_iterations, gpu.escaped, gpu.glitched
+        );
+        println!(
+            "       final_z_norm_sq={}, surface_normal_re={}, surface_normal_im={}",
+            gpu.final_z_norm_sq, gpu.surface_normal_re, gpu.surface_normal_im
+        );
+
+        let mut diffs = Vec::new();
+        if cpu.iterations != gpu.iterations {
+            diffs.push(format!(
+                "iterations={}",
+                (cpu.iterations as i64 - gpu.iterations as i64).abs()
+            ));
+        }
+        if cpu.max_iterations != gpu.max_iterations {
+            diffs.push("max_iterations".to_string());
+        }
+        if cpu.escaped != gpu.escaped {
+            diffs.push("escaped".to_string());
+        }
+        if cpu.glitched != gpu.glitched {
+            diffs.push("glitched".to_string());
+        }
+        if cpu.final_z_norm_sq != gpu.final_z_norm_sq {
+            diffs.push(format!(
+                "final_z_norm_sq={:.7}",
+                (cpu.final_z_norm_sq - gpu.final_z_norm_sq).abs()
+            ));
+        }
+        if cpu.surface_normal_re != gpu.surface_normal_re {
+            diffs.push(format!(
+                "surface_normal_re={:.7}",
+                (cpu.surface_normal_re - gpu.surface_normal_re).abs()
+            ));
+        }
+        if cpu.surface_normal_im != gpu.surface_normal_im {
+            diffs.push(format!(
+                "surface_normal_im={:.7}",
+                (cpu.surface_normal_im - gpu.surface_normal_im).abs()
+            ));
+        }
+
+        if diffs.is_empty() {
+            println!("  (identical)");
+        } else {
+            println!("  DIFF: {}", diffs.join(", "));
+        }
+        println!();
+    }
+
+    fn compare_all_pixels(cpu_pixels: &[MandelbrotData], gpu_pixels: &[MandelbrotData]) {
+        println!("\n========== CPU/GPU COMPARISON ==========\n");
+
+        let mut diff_count = 0;
+        for (i, (cpu, gpu)) in cpu_pixels.iter().zip(gpu_pixels.iter()).enumerate() {
+            let col = TEST_COL_START + i as u32;
+            print_comparison(col, cpu, gpu);
+
+            // Count pixels with any difference
+            if cpu.iterations != gpu.iterations
+                || cpu.escaped != gpu.escaped
+                || cpu.glitched != gpu.glitched
+                || cpu.final_z_norm_sq != gpu.final_z_norm_sq
+                || cpu.surface_normal_re != gpu.surface_normal_re
+                || cpu.surface_normal_im != gpu.surface_normal_im
+            {
+                diff_count += 1;
+            }
+        }
+
+        println!("========================================");
+        println!(
+            "SUMMARY: {} of {} pixels have differences",
+            diff_count,
+            cpu_pixels.len()
+        );
+        println!("========================================\n");
+    }
+
     async fn render_gpu_pixels(
         viewport: &Viewport,
         orbit: &ReferenceOrbit,
@@ -190,29 +281,44 @@ mod tests {
 
     #[test]
     fn compare_cpu_gpu_mandelbrot_output() {
+        println!("\n========== CPU/GPU DIAGNOSTIC TEST ==========\n");
+
         let viewport = parse_viewport();
         println!(
-            "Viewport parsed (width ~10^{})",
-            (viewport.width.log2_approx() * 0.301) as i32
+            "Viewport: width ~10^{}, precision {} bits",
+            (viewport.width.log2_approx() * 0.301) as i32,
+            PRECISION_BITS
         );
+        println!(
+            "Image: {}x{}, testing row {}, cols {}..{}",
+            IMAGE_WIDTH, IMAGE_HEIGHT, TEST_ROW, TEST_COL_START, TEST_COL_END
+        );
+        println!("Max iterations: {}, tau_sq: {}\n", MAX_ITERATIONS, TAU_SQ);
 
         let (orbit, bla_table) = compute_orbit_and_bla(&viewport);
 
         let cpu_pixels = render_cpu_pixels(&viewport, &orbit, &bla_table);
-        println!("CPU rendered {} pixels", cpu_pixels.len());
 
         let gpu_pixels = pollster::block_on(render_gpu_pixels(&viewport, &orbit, &bla_table));
 
         match gpu_pixels {
             Some(gpu) => {
-                println!("GPU rendered {} pixels", gpu.len());
-                println!(
-                    "  First pixel iterations: CPU={}, GPU={}",
-                    cpu_pixels[0].iterations, gpu[0].iterations
+                assert_eq!(
+                    cpu_pixels.len(),
+                    gpu.len(),
+                    "CPU and GPU should produce same number of pixels"
                 );
+                compare_all_pixels(&cpu_pixels, &gpu);
             }
             None => {
-                println!("GPU not available, skipping comparison");
+                println!("\nGPU not available - cannot compare. Printing CPU results only:\n");
+                for (i, cpu) in cpu_pixels.iter().enumerate() {
+                    let col = TEST_COL_START + i as u32;
+                    println!(
+                        "Pixel {}: iterations={}, escaped={}, final_z_norm_sq={}",
+                        col, cpu.iterations, cpu.escaped, cpu.final_z_norm_sq
+                    );
+                }
             }
         }
     }
