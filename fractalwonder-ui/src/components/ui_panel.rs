@@ -1,7 +1,7 @@
 // fractalwonder-ui/src/components/ui_panel.rs
 use crate::components::{FullscreenButton, HomeButton, InfoMenu, OptionsMenu, PaletteMenu};
 use crate::config::FractalConfig;
-use crate::rendering::RenderProgress;
+use crate::rendering::{RenderPhase, RenderProgress};
 use fractalwonder_core::{calculate_max_iterations, BigFloat, Viewport};
 use leptos::*;
 
@@ -209,10 +209,10 @@ pub fn UIPanel(
                                 let progress = progress_signal.get();
 
                                 match progress.phase {
-                                    crate::rendering::RenderPhase::Idle => String::new(),
-                                    crate::rendering::RenderPhase::ComputingOrbit
-                                    | crate::rendering::RenderPhase::BuildingBla
-                                    | crate::rendering::RenderPhase::Colorizing => {
+                                    RenderPhase::Idle => String::new(),
+                                    RenderPhase::ComputingOrbit
+                                    | RenderPhase::BuildingBla
+                                    | RenderPhase::Colorizing => {
                                         // Indeterminate phases: show label + elapsed time
                                         format!(
                                             "{} ({:.1}s)",
@@ -220,7 +220,7 @@ pub fn UIPanel(
                                             progress.elapsed_ms / 1000.0
                                         )
                                     }
-                                    crate::rendering::RenderPhase::Rendering => {
+                                    RenderPhase::Rendering => {
                                         // Determinate phase: show progress + elapsed time
                                         format!(
                                             "{}: {}/{} ({:.1}s)",
@@ -230,7 +230,7 @@ pub fn UIPanel(
                                             progress.elapsed_ms / 1000.0
                                         )
                                     }
-                                    crate::rendering::RenderPhase::Complete => {
+                                    RenderPhase::Complete => {
                                         // Complete: show total time
                                         format!(
                                             "{} in {:.2}s",

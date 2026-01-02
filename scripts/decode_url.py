@@ -89,10 +89,7 @@ def format_bigfloat(bf: dict) -> str:
     if isinstance(bf, dict) and "value" in bf:
         binary_value = bf["value"]
         decimal_value = binary_to_decimal(binary_value)
-        # Format with scientific notation if very small
-        if abs(decimal_value) < Decimal("1e-10") and decimal_value != 0:
-            return f"{decimal_value:.50E}"
-        return str(decimal_value)[:80]  # Truncate for display
+        return str(decimal_value)
     return str(bf)
 
 
