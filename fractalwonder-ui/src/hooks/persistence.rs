@@ -433,7 +433,9 @@ mod tests {
 
         assert_eq!(decoded.palette_name, "Fire");
         assert_eq!(decoded.render_settings.cycle_count, 64);
-        assert!(!decoded.render_settings.use_gpu);
+        // Note: use_gpu is #[serde(skip)] - stored in localStorage separately, not in URL
+        // It deserializes to default (true), regardless of input value
+        assert!(decoded.render_settings.use_gpu);
         assert!(decoded.render_settings.xray_enabled);
     }
 }

@@ -8,11 +8,15 @@ use std::cell::Cell;
 
 #[cfg(target_arch = "wasm32")]
 const CPU_THREADS_STORAGE_KEY: &str = "fractalwonder_cpu_threads";
+#[cfg(target_arch = "wasm32")]
+const GPU_SETTING_STORAGE_KEY: &str = "fractalwonder_use_gpu";
 
 // Runtime cache for CPU threads setting
 thread_local! {
     /// Cached CPU thread count. None = not yet loaded from localStorage.
     static CPU_THREADS_CACHE: Cell<Option<i32>> = const { Cell::new(None) };
+    /// Cached GPU setting. None = not yet loaded from localStorage.
+    static GPU_SETTING_CACHE: Cell<Option<bool>> = const { Cell::new(None) };
 }
 
 /// Load CPU threads setting from localStorage.
@@ -72,6 +76,75 @@ pub fn get_cpu_threads_override() -> Option<i32> {
         // Load from localStorage on first access
         if cell.get().is_none() {
             if let Some(stored) = load_cpu_threads_from_storage() {
+                cell.set(Some(stored));
+                return Some(stored);
+            }
+        }
+        cell.get()
+    })
+}
+
+// =============================================================================
+// GPU Setting Persistence (localStorage only, not in URL)
+// =============================================================================
+
+/// Load GPU setting from localStorage.
+fn load_gpu_setting_from_storage() -> Option<bool> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let window = web_sys::window()?;
+        let storage = window.local_storage().ok()??;
+        let value = storage.get_item(GPU_SETTING_STORAGE_KEY).ok()??;
+        value.parse().ok()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        None
+    }
+}
+
+/// Save GPU setting to localStorage.
+fn save_gpu_setting_to_storage(value: bool) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(window) = web_sys::window() {
+            if let Ok(Some(storage)) = window.local_storage() {
+                let _ = storage.set_item(GPU_SETTING_STORAGE_KEY, &value.to_string());
+            }
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = value;
+    }
+}
+
+/// Get the current GPU setting, falling back to config default.
+pub fn get_gpu_enabled(config: Option<&FractalConfig>) -> bool {
+    GPU_SETTING_CACHE.with(|cell| {
+        // Load from localStorage on first access
+        if cell.get().is_none() {
+            if let Some(stored) = load_gpu_setting_from_storage() {
+                cell.set(Some(stored));
+            }
+        }
+        cell.get()
+            .unwrap_or_else(|| config.map(|c| c.gpu_enabled).unwrap_or(true))
+    })
+}
+
+/// Set the GPU setting and persist to localStorage.
+pub fn set_gpu_enabled(value: bool) {
+    GPU_SETTING_CACHE.with(|cell| cell.set(Some(value)));
+    save_gpu_setting_to_storage(value);
+}
+
+/// Get the raw GPU setting value (None if using default).
+pub fn get_gpu_enabled_override() -> Option<bool> {
+    GPU_SETTING_CACHE.with(|cell| {
+        // Load from localStorage on first access
+        if cell.get().is_none() {
+            if let Some(stored) = load_gpu_setting_from_storage() {
                 cell.set(Some(stored));
                 return Some(stored);
             }

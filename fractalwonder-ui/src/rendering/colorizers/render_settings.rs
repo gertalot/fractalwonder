@@ -6,11 +6,18 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RenderSettings {
     pub cycle_count: u32,
+    /// GPU setting is persisted to localStorage only, not in URL.
+    /// Skipped during serialization - managed separately via config::get_gpu_enabled/set_gpu_enabled.
+    #[serde(skip_serializing, default = "default_use_gpu")]
     pub use_gpu: bool,
     pub xray_enabled: bool,
     /// Force HDRFloat for all calculations (debug option)
     #[serde(default)]
     pub force_hdr_float: bool,
+}
+
+fn default_use_gpu() -> bool {
+    true
 }
 
 impl Default for RenderSettings {

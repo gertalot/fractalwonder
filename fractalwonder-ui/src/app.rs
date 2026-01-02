@@ -5,7 +5,10 @@ use wasm_bindgen::prelude::Closure;
 
 use crate::components::PaletteEditorState;
 use crate::components::{CircularProgress, InteractiveCanvas, PaletteEditor, Toast, UIPanel};
-use crate::config::{default_config, get_config, get_cpu_threads_override, set_cpu_threads};
+use crate::config::{
+    default_config, get_config, get_cpu_threads_override, get_gpu_enabled_override,
+    set_cpu_threads, set_gpu_enabled,
+};
 use crate::hooks::{
     apply_palette_order, load_palette_order, load_state, save_palette_order, save_state,
     use_hashchange_listener, use_ui_visibility, PersistedState,
@@ -27,10 +30,14 @@ pub fn App() -> impl IntoView {
         .as_ref()
         .map(|s| s.palette_name.clone())
         .unwrap_or_else(|| "Classic".to_string());
-    let initial_render_settings = persisted
+    let mut initial_render_settings = persisted
         .as_ref()
         .map(|s| s.render_settings.clone())
         .unwrap_or_default();
+    // GPU setting is persisted separately in localStorage (not URL), so load it here
+    if let Some(gpu_enabled) = get_gpu_enabled_override() {
+        initial_render_settings.use_gpu = gpu_enabled;
+    }
     let persisted_viewport = persisted.map(|s| s.viewport);
 
     // Store persisted viewport for use in effect (consumed on first use)
@@ -266,7 +273,10 @@ pub fn App() -> impl IntoView {
             let fitted = fit_viewport_to_canvas(&state.viewport, size);
             set_viewport.set(fitted);
             set_palette_id.set(state.palette_name.clone());
-            set_render_settings.set(state.render_settings.clone());
+            // Preserve current GPU setting (it's stored in localStorage, not URL)
+            let mut new_settings = state.render_settings.clone();
+            new_settings.use_gpu = render_settings.get_untracked().use_gpu;
+            set_render_settings.set(new_settings);
             log::info!("Restored viewport, palette, and render settings from URL hash change");
         }
     });
@@ -410,6 +420,7 @@ pub fn App() -> impl IntoView {
                     // Toggle GPU rendering
                     set_render_settings.update(|settings| {
                         settings.use_gpu = !settings.use_gpu;
+                        set_gpu_enabled(settings.use_gpu);
                         let msg = if settings.use_gpu {
                             "GPU: On"
                         } else {
@@ -518,6 +529,7 @@ pub fn App() -> impl IntoView {
             on_gpu_toggle=Callback::new(move |_| {
                 set_render_settings.update(|settings| {
                     settings.use_gpu = !settings.use_gpu;
+                    set_gpu_enabled(settings.use_gpu);
                     let msg = if settings.use_gpu { "GPU: On" } else { "GPU: Off" };
                     set_toast_message.set(Some(msg.to_string()));
                 });
