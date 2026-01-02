@@ -91,8 +91,14 @@ impl BlaEntryF64 {
 }
 
 impl BlaEntry {
-    /// Create a single-iteration BLA from a reference orbit point Z = (z_re, z_im).
-    pub fn from_orbit_point(z_re: f64, z_im: f64) -> Self {
+    /// Create a single-iteration BLA from a reference orbit point.
+    ///
+    /// Single-step coefficients:
+    ///   A = 2·Z_m (multiplies δz for position, δρ for derivative)
+    ///   B = 1 (multiplies δc for position)
+    ///   D = 2·Der_m (δz contribution to δρ)
+    ///   E = 0 (δc contribution to δρ, zero at single step)
+    pub fn from_orbit_point(z_re: f64, z_im: f64, der_re: f64, der_im: f64) -> Self {
         let epsilon = 2.0_f64.powi(-53);
         let z_mag = (z_re * z_re + z_im * z_im).sqrt();
         let r = epsilon * z_mag;
@@ -106,8 +112,10 @@ impl BlaEntry {
                 re: HDRFloat::from_f64(1.0),
                 im: HDRFloat::ZERO,
             },
-            // D and E are placeholders - proper initialization in Task 3
-            d: HDRComplex::ZERO,
+            d: HDRComplex {
+                re: HDRFloat::from_f64(2.0 * der_re),
+                im: HDRFloat::from_f64(2.0 * der_im),
+            },
             e: HDRComplex::ZERO,
             l: 1,
             r_sq: HDRFloat::from_f64(r * r),
