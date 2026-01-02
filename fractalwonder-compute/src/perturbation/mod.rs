@@ -16,33 +16,50 @@ pub use pixel_f64_bla::compute_pixel_perturbation_f64_bla;
 pub use pixel_hdr_bla::{compute_pixel_perturbation_hdr_bla, BlaStats};
 pub use reference_orbit::ReferenceOrbit;
 
-/// Compute normalized z/ρ direction for 3D lighting.
-/// Returns (re, im) of the unit vector, or (0, 0) if degenerate.
-/// This works at any zoom level since we normalize to a unit vector.
+use fractalwonder_core::HDRFloat;
+
+/// Compute surface normal direction for 3D lighting using HDRFloat arithmetic.
+///
+/// Computes u = z × conj(ρ) and returns the normalized direction as (f32, f32).
+/// Uses HDRFloat throughout to preserve precision at deep zoom where ρ can have
+/// magnitude ~10^100+. Only converts to f32 at the final normalization step.
+///
+/// This mirrors the GPU's hdr_complex_direction() approach: scale both components
+/// to a common exponent before normalizing, preserving the ratio at any magnitude.
 #[inline]
 pub(crate) fn compute_surface_normal_direction(
-    z_re: f64,
-    z_im: f64,
-    rho_re: f64,
-    rho_im: f64,
+    z_re: &HDRFloat,
+    z_im: &HDRFloat,
+    rho_re: &HDRFloat,
+    rho_im: &HDRFloat,
 ) -> (f32, f32) {
-    // u = z / ρ (complex division)
-    // u = z * conj(ρ) / |ρ|²
-    let rho_norm_sq = rho_re * rho_re + rho_im * rho_im;
-    if !rho_norm_sq.is_finite() || rho_norm_sq == 0.0 {
+    // Compute u = z × conj(ρ) in HDRFloat
+    // u_re = z_re × ρ_re + z_im × ρ_im
+    // u_im = z_im × ρ_re - z_re × ρ_im
+    let u_re = z_re.mul(rho_re).add(&z_im.mul(rho_im));
+    let u_im = z_im.mul(rho_re).sub(&z_re.mul(rho_im));
+
+    // Handle zero case
+    if u_re.is_zero() && u_im.is_zero() {
         return (0.0, 0.0);
     }
 
-    let u_re = (z_re * rho_re + z_im * rho_im) / rho_norm_sq;
-    let u_im = (z_im * rho_re - z_re * rho_im) / rho_norm_sq;
+    // Scale both components to common exponent to preserve ratio
+    // exp - max_exp is always <= 0, so 2^(exp - max_exp) is in (0, 1]
+    let max_exp = u_re.exp.max(u_im.exp);
+    let re_mantissa = (u_re.head as f64) + (u_re.tail as f64);
+    let im_mantissa = (u_im.head as f64) + (u_im.tail as f64);
+
+    let re_scaled = re_mantissa * 2.0_f64.powi(u_re.exp - max_exp);
+    let im_scaled = im_mantissa * 2.0_f64.powi(u_im.exp - max_exp);
 
     // Normalize to unit vector
-    let u_norm = (u_re * u_re + u_im * u_im).sqrt();
-    if !u_norm.is_finite() || u_norm == 0.0 {
+    let norm = (re_scaled * re_scaled + im_scaled * im_scaled).sqrt();
+    if norm == 0.0 || !norm.is_finite() {
         return (0.0, 0.0);
     }
 
-    ((u_re / u_norm) as f32, (u_im / u_norm) as f32)
+    ((re_scaled / norm) as f32, (im_scaled / norm) as f32)
 }
 
 #[cfg(test)]

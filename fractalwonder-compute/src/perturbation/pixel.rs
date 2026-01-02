@@ -4,7 +4,7 @@
 //! delta types via the `ComplexDelta` trait.
 
 use super::{compute_surface_normal_direction, ReferenceOrbit};
-use fractalwonder_core::{ComplexDelta, MandelbrotData};
+use fractalwonder_core::{ComplexDelta, HDRFloat, MandelbrotData};
 
 /// Generic perturbation iteration for any ComplexDelta type.
 pub fn compute_pixel_perturbation<D: ComplexDelta>(
@@ -51,7 +51,12 @@ pub fn compute_pixel_perturbation<D: ComplexDelta>(
         if z_norm_sq > 65536.0 {
             let (z_re, z_im) = z.to_f64_pair();
             let (rho_re, rho_im) = rho.to_f64_pair();
-            let (sn_re, sn_im) = compute_surface_normal_direction(z_re, z_im, rho_re, rho_im);
+            let (sn_re, sn_im) = compute_surface_normal_direction(
+                &HDRFloat::from_f64(z_re),
+                &HDRFloat::from_f64(z_im),
+                &HDRFloat::from_f64(rho_re),
+                &HDRFloat::from_f64(rho_im),
+            );
             return MandelbrotData::new(
                 n,
                 max_iterations,

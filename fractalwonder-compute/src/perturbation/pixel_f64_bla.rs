@@ -5,7 +5,7 @@
 
 use super::{compute_surface_normal_direction, ReferenceOrbit};
 use crate::bla::BlaTable;
-use fractalwonder_core::MandelbrotData;
+use fractalwonder_core::{HDRFloat, MandelbrotData};
 
 pub use super::pixel_hdr_bla::BlaStats;
 
@@ -74,7 +74,12 @@ pub fn compute_pixel_perturbation_f64_bla(
 
         // 1. Escape check
         if z_mag_sq > 65536.0 {
-            let (sn_re, sn_im) = compute_surface_normal_direction(z_re, z_im, rho_re, rho_im);
+            let (sn_re, sn_im) = compute_surface_normal_direction(
+                &HDRFloat::from_f64(z_re),
+                &HDRFloat::from_f64(z_im),
+                &HDRFloat::from_f64(rho_re),
+                &HDRFloat::from_f64(rho_im),
+            );
 
             return (
                 MandelbrotData::new(

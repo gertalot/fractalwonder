@@ -76,12 +76,7 @@ pub fn compute_pixel_perturbation_hdr_bla(
 
         // 1. Escape check
         if z_mag_sq > 65536.0 {
-            let (sn_re, sn_im) = compute_surface_normal_direction(
-                z_re.to_f64(),
-                z_im.to_f64(),
-                rho_re.to_f64(),
-                rho_im.to_f64(),
-            );
+            let (sn_re, sn_im) = compute_surface_normal_direction(&z_re, &z_im, &rho_re, &rho_im);
 
             return (
                 MandelbrotData::new(

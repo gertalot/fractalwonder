@@ -265,6 +265,69 @@ mod tests {
         }
         println!();
 
+        // Surface normal difference analysis
+        println!("Surface normal difference analysis:");
+        let mut normal_abs_diffs: Vec<f32> = Vec::new();
+        let mut normal_rel_diffs: Vec<f32> = Vec::new();
+        let mut large_normal_diff_cols: Vec<(u32, f32, i64)> = Vec::new(); // (col, normal_diff, iter_diff)
+
+        for (i, (cpu, gpu)) in cpu_pixels.iter().zip(gpu_pixels.iter()).enumerate() {
+            let abs_re = (cpu.surface_normal_re - gpu.surface_normal_re).abs();
+            let abs_im = (cpu.surface_normal_im - gpu.surface_normal_im).abs();
+            let abs_diff = (abs_re * abs_re + abs_im * abs_im).sqrt();
+            normal_abs_diffs.push(abs_diff);
+
+            // Track large normal diffs with their iteration diffs
+            if abs_diff > 0.1 {
+                let iter_diff = cpu.iterations as i64 - gpu.iterations as i64;
+                large_normal_diff_cols.push((i as u32, abs_diff, iter_diff));
+            }
+
+            // Relative diff (surface normals are unit vectors, so magnitude ~1)
+            let cpu_mag = (cpu.surface_normal_re.powi(2) + cpu.surface_normal_im.powi(2)).sqrt();
+            if cpu_mag > 1e-10 {
+                normal_rel_diffs.push(abs_diff / cpu_mag);
+            }
+        }
+        normal_abs_diffs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        normal_rel_diffs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let n = normal_abs_diffs.len();
+        if n > 0 {
+            println!(
+                "  Absolute diff: min={:.2e}, median={:.2e}, p99={:.2e}, max={:.2e}",
+                normal_abs_diffs[0],
+                normal_abs_diffs[n / 2],
+                normal_abs_diffs[n * 99 / 100],
+                normal_abs_diffs[n - 1]
+            );
+        }
+        let n = normal_rel_diffs.len();
+        if n > 0 {
+            println!(
+                "  Relative diff: min={:.2e}, median={:.2e}, p99={:.2e}, max={:.2e}",
+                normal_rel_diffs[0],
+                normal_rel_diffs[n / 2],
+                normal_rel_diffs[n * 99 / 100],
+                normal_rel_diffs[n - 1]
+            );
+        }
+
+        // Show pixels with large normal differences
+        if !large_normal_diff_cols.is_empty() {
+            println!(
+                "\n  {} pixels with normal diff > 0.1 (showing first 10):",
+                large_normal_diff_cols.len()
+            );
+            for (col, normal_diff, iter_diff) in large_normal_diff_cols.iter().take(10) {
+                println!(
+                    "    col {}: normal_diff={:.2}, iter_diff={}",
+                    col, normal_diff, iter_diff
+                );
+            }
+        }
+        println!();
+
         println!("========================================");
         println!(
             "SUMMARY: {} of {} pixels have differences",
