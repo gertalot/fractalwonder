@@ -118,10 +118,20 @@ pub fn compute_pixel_perturbation_hdr_bla(
         let bla_entry = bla_table.find_valid(m, &dz_mag_sq, bla_table.dc_max());
 
         if let Some(bla) = bla_entry {
-            // Apply BLA: δz_new = A·δz + B·δc
+            // Apply BLA to position: δz_new = A·δz + B·δc
             let a_dz = bla.a.mul(&dz);
             let b_dc = bla.b.mul(&delta_c);
-            dz = a_dz.add(&b_dc);
+            let new_dz = a_dz.add(&b_dc);
+
+            // Apply BLA to derivative: δρ_new = A·δρ + D·δz + E·δc
+            // (C = A mathematically, so we use bla.a for the δρ coefficient)
+            let a_drho = bla.a.mul(&drho);
+            let d_dz = bla.d.mul(&dz);
+            let e_dc = bla.e.mul(&delta_c);
+            let new_drho = a_drho.add(&d_dz).add(&e_dc);
+
+            dz = new_dz;
+            drho = new_drho;
 
             bla_iters += bla.l;
             m += bla.l as usize;
