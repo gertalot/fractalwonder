@@ -31,12 +31,18 @@ pub struct BlaEntry {
 
 /// BLA entry with f64 coefficients for fast-path rendering.
 /// Created from HDR entry when coefficients fit in f64 range.
+///
+/// Note: C = A mathematically, so not stored separately.
 #[derive(Clone, Debug)]
 pub struct BlaEntryF64 {
     /// Complex coefficient A as (re, im)
     pub a: (f64, f64),
     /// Complex coefficient B as (re, im)
     pub b: (f64, f64),
+    /// Complex coefficient D as (re, im) - δz contribution to δρ
+    pub d: (f64, f64),
+    /// Complex coefficient E as (re, im) - δc contribution to δρ
+    pub e: (f64, f64),
     /// Number of iterations to skip
     pub l: u32,
     /// Validity radius squared
@@ -50,6 +56,10 @@ impl BlaEntryF64 {
         let a_im = entry.a.im.to_f64();
         let b_re = entry.b.re.to_f64();
         let b_im = entry.b.im.to_f64();
+        let d_re = entry.d.re.to_f64();
+        let d_im = entry.d.im.to_f64();
+        let e_re = entry.e.re.to_f64();
+        let e_im = entry.e.im.to_f64();
         let r_sq = entry.r_sq.to_f64();
 
         // Check for overflow (inf) or underflow to zero when non-zero
@@ -59,6 +69,12 @@ impl BlaEntryF64 {
         if !b_re.is_finite() || !b_im.is_finite() {
             return None;
         }
+        if !d_re.is_finite() || !d_im.is_finite() {
+            return None;
+        }
+        if !e_re.is_finite() || !e_im.is_finite() {
+            return None;
+        }
         if !r_sq.is_finite() {
             return None;
         }
@@ -66,6 +82,8 @@ impl BlaEntryF64 {
         Some(Self {
             a: (a_re, a_im),
             b: (b_re, b_im),
+            d: (d_re, d_im),
+            e: (e_re, e_im),
             l: entry.l,
             r_sq,
         })
@@ -88,6 +106,9 @@ impl BlaEntry {
                 re: HDRFloat::from_f64(1.0),
                 im: HDRFloat::ZERO,
             },
+            // D and E are placeholders - proper initialization in Task 3
+            d: HDRComplex::ZERO,
+            e: HDRComplex::ZERO,
             l: 1,
             r_sq: HDRFloat::from_f64(r * r),
         }
@@ -133,6 +154,9 @@ impl BlaEntry {
         BlaEntry {
             a,
             b,
+            // D and E are placeholders - proper merge formula in Task 4
+            d: HDRComplex::ZERO,
+            e: HDRComplex::ZERO,
             l: x.l + y.l,
             r_sq: r.square(),
         }
@@ -542,6 +566,8 @@ mod tests {
                 re: HDRFloat::from_f64(1.0),
                 im: HDRFloat::ZERO,
             },
+            d: HDRComplex::ZERO,
+            e: HDRComplex::ZERO,
             l: 1,
             r_sq: HDRFloat::from_f64(1e-10),
         };
