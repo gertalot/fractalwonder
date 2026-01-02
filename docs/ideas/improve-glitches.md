@@ -11,10 +11,16 @@ artifacts span the entire image and follow iteration count gradients.
 
 CRITICAL NOTES:
 
-- CPU and GPU renderers show near identical results
+- CPU and GPU renderers show identical results (there are tiny difference in escape values in the test but the images
+  look the same)
 - With 3D lighting enabled, the streaks/artefacts are visible. These are **NOT** normal 3D lighting effects. They
   are in the wrong location and don't appear to follow a "natural curvature" line. Without 3D lighting, the image
   shows smooth gradients.
+- The streaks with 3D lighting seem to be semi-circular in nature, with the center of curvature in or near the center
+  of the canvas. This is most prominent in the upper half of the image. In the lower part, the 3D effect is much
+  smoother, but still wrong. The difference between upper and lower half of the image (in terms of 3D lighting effect)
+  is along a diagonal starting a bit below halway on the left side of the image and ends a bit above halfway on the
+  right.
 
 ## Diagnostic Test
 
