@@ -1,6 +1,7 @@
 //! Types for the worker pool.
 
 use crate::workers::perturbation::OrbitRequest;
+use fractalwonder_compute::BlaTable;
 use fractalwonder_core::{ComputeData, PixelRect};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -21,6 +22,7 @@ pub struct OrbitCompleteData {
     pub orbit_id: u32,
     pub max_iterations: u32,
     pub escaped_at: Option<u32>,
+    pub bla_table: Option<BlaTable>,
 }
 
 /// Type alias for orbit complete callback.

@@ -277,13 +277,10 @@ impl ProgressiveGpuRenderer {
             .write_buffer(&buffers.iter_count, 0, bytemuck::cast_slice(&zeros_u32));
         self.context
             .queue
-            .write_buffer(&buffers.escaped, 0, bytemuck::cast_slice(&zeros_u32));
+            .write_buffer(&buffers.flags_buf, 0, bytemuck::cast_slice(&zeros_u32));
         self.context
             .queue
             .write_buffer(&buffers.orbit_index, 0, bytemuck::cast_slice(&zeros_u32));
-        self.context
-            .queue
-            .write_buffer(&buffers.glitch_flags, 0, bytemuck::cast_slice(&zeros_u32));
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -356,7 +353,7 @@ impl ProgressiveGpuRenderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 4,
-                        resource: buffers.escaped.as_entire_binding(),
+                        resource: buffers.flags_buf.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 5,
@@ -368,22 +365,18 @@ impl ProgressiveGpuRenderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 7,
-                        resource: buffers.glitch_flags.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 8,
                         resource: buffers.z_norm_sq.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 9,
+                        binding: 8,
                         resource: buffers.drho_state.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 10,
+                        binding: 9,
                         resource: buffers.final_values.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 11,
+                        binding: 10,
                         resource: buffers.bla_data.as_entire_binding(),
                     },
                 ],
@@ -494,9 +487,9 @@ impl ProgressiveGpuRenderer {
             u32_byte_size,
         );
         encoder.copy_buffer_to_buffer(
-            &buffers.glitch_flags,
+            &buffers.flags_buf,
             0,
-            &buffers.staging_glitches,
+            &buffers.staging_flags,
             0,
             u32_byte_size,
         );
@@ -519,7 +512,7 @@ impl ProgressiveGpuRenderer {
 
         // Map and read
         let results_slice = buffers.staging_results.slice(..u32_byte_size);
-        let glitches_slice = buffers.staging_glitches.slice(..u32_byte_size);
+        let flags_slice = buffers.staging_flags.slice(..u32_byte_size);
         let z_norm_sq_slice = buffers.staging_z_norm_sq.slice(..f32_byte_size);
         let final_values_slice = buffers.staging_final_values.slice(..final_values_byte_size);
 
@@ -531,7 +524,7 @@ impl ProgressiveGpuRenderer {
         results_slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx1.send(r);
         });
-        glitches_slice.map_async(wgpu::MapMode::Read, move |r| {
+        flags_slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx2.send(r);
         });
         z_norm_sq_slice.map_async(wgpu::MapMode::Read, move |r| {
@@ -564,9 +557,11 @@ impl ProgressiveGpuRenderer {
             let view = results_slice.get_mapped_range();
             bytemuck::cast_slice(&view).to_vec()
         };
+        // Extract glitch flag (bit 1) from flags_buf
         let glitch_data: Vec<u32> = {
-            let view = glitches_slice.get_mapped_range();
-            bytemuck::cast_slice(&view).to_vec()
+            let view = flags_slice.get_mapped_range();
+            let flags: &[u32] = bytemuck::cast_slice(&view);
+            flags.iter().map(|f| (f >> 1) & 1).collect()
         };
         let z_norm_sq_data: Vec<f32> = {
             let view = z_norm_sq_slice.get_mapped_range();
@@ -594,7 +589,7 @@ impl ProgressiveGpuRenderer {
         }
 
         buffers.staging_results.unmap();
-        buffers.staging_glitches.unmap();
+        buffers.staging_flags.unmap();
         buffers.staging_z_norm_sq.unmap();
         buffers.staging_final_values.unmap();
 

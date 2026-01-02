@@ -238,6 +238,8 @@ struct Uniforms {
 
     bla_enabled: u32,
     bla_num_levels: u32,
+    _pad7a: u32,
+    _pad7b: u32,
     // Packed as vec4s for uniform buffer 16-byte alignment requirement
     // Access: bla_level_offsets[level / 4][level % 4]
     bla_level_offsets: array<vec4<u32>, 8>,
@@ -254,23 +256,23 @@ struct Uniforms {
 // z_state: 6 f32s per pixel (z_re head/tail/exp, z_im head/tail/exp)
 @group(0) @binding(2) var<storage, read_write> z_state: array<f32>;
 @group(0) @binding(3) var<storage, read_write> iter_count: array<u32>;
-@group(0) @binding(4) var<storage, read_write> escaped_buf: array<u32>;
+// flags_buf: bit 0 = escaped, bit 1 = glitched (packed to stay within 10 storage buffer limit)
+@group(0) @binding(4) var<storage, read_write> flags_buf: array<u32>;
 @group(0) @binding(5) var<storage, read_write> orbit_index: array<u32>;
 
 // Result buffers
 @group(0) @binding(6) var<storage, read_write> results: array<u32>;
-@group(0) @binding(7) var<storage, read_write> glitch_flags: array<u32>;
-@group(0) @binding(8) var<storage, read_write> z_norm_sq: array<f32>;
+@group(0) @binding(7) var<storage, read_write> z_norm_sq: array<f32>;
 
 // Derivative state buffer: 6 f32s per pixel (drho_re head/tail/exp, drho_im head/tail/exp)
-@group(0) @binding(9) var<storage, read_write> drho_state: array<f32>;
+@group(0) @binding(8) var<storage, read_write> drho_state: array<f32>;
 
 // Final value output buffer: 4 f32s per pixel (z_re, z_im, der_re, der_im)
-@group(0) @binding(10) var<storage, read_write> final_values: array<f32>;
+@group(0) @binding(9) var<storage, read_write> final_values: array<f32>;
 
 // BLA (Bivariate Linear Approximation) data
 // 16 f32s per entry: A (6), B (6), r_sq (3), l (1)
-@group(0) @binding(11) var<storage, read> bla_data: array<f32>;
+@group(0) @binding(10) var<storage, read> bla_data: array<f32>;
 
 struct BlaEntry {
     a: HDRComplex,
@@ -406,7 +408,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     // Check if already escaped
-    if escaped_buf[linear_idx] != 0u {
+    if (flags_buf[linear_idx] & 1u) != 0u {
         return;
     }
 
@@ -432,7 +434,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     var drho = HDRComplex(load_drho_re(linear_idx), load_drho_im(linear_idx));
     var n = iter_count[linear_idx];
     var m = orbit_index[linear_idx];
-    var glitched = glitch_flags[linear_idx] != 0u;
+    var glitched = (flags_buf[linear_idx] & 2u) != 0u;
 
     let orbit_len = uniforms.orbit_len;
     let reference_escaped = uniforms.reference_escaped != 0u;
@@ -508,9 +510,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             final_values[final_base + 2u] = hdr_to_f32(rho_re);
             final_values[final_base + 3u] = hdr_to_f32(rho_im);
 
-            escaped_buf[linear_idx] = 1u;
+            flags_buf[linear_idx] = 1u | select(0u, 2u, glitched);
             results[linear_idx] = n;
-            glitch_flags[linear_idx] = select(0u, 1u, glitched);
             z_norm_sq[linear_idx] = z_mag_sq;
             store_z_re(linear_idx, dz.re);
             store_z_im(linear_idx, dz.im);
@@ -602,11 +603,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     store_drho_im(linear_idx, drho.im);
     iter_count[linear_idx] = n;
     orbit_index[linear_idx] = m;
-    glitch_flags[linear_idx] = select(0u, 1u, glitched);
+    flags_buf[linear_idx] = (flags_buf[linear_idx] & 1u) | select(0u, 2u, glitched);
 
     // If we reached max_iterations, write final results
     if n >= uniforms.max_iterations {
-        escaped_buf[linear_idx] = 1u;  // Mark as "done" even though didn't escape
+        flags_buf[linear_idx] = flags_buf[linear_idx] | 1u;  // Mark as "done" even though didn't escape
         results[linear_idx] = uniforms.max_iterations;
         z_norm_sq[linear_idx] = 0.0;
     }

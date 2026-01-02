@@ -485,7 +485,7 @@ fn schedule_row_set(
                 config.gpu_iterations_per_dispatch,
                 tau_sq,
                 reference_escaped,
-                None, // BLA table not yet integrated with GPU rendering
+                orbit_data_spawn.bla_table.as_ref(),
             )
             .await;
 

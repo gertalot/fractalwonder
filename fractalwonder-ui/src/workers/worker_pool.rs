@@ -5,6 +5,7 @@ use crate::workers::worker_pool_types::{
     performance_now, OrbitCompleteCallback, OrbitCompleteData, PendingOrbitRequest,
     RenderCompleteCallback, TileResult,
 };
+use fractalwonder_compute::{BlaTable, ReferenceOrbit};
 use fractalwonder_core::{ComputeData, MainToWorker, PixelRect, Viewport, WorkerToMain};
 use leptos::*;
 use std::cell::RefCell;
@@ -313,6 +314,34 @@ impl WorkerPool {
 
         if self.gpu_mode {
             web_sys::console::log_1(&"[WorkerPool] GPU mode: triggering orbit callback".into());
+
+            // Compute BLA table for GPU acceleration
+            let dc_max = self.perturbation.dc_max();
+            let bla_table = if self.perturbation.bla_enabled() && !orbit.is_empty() {
+                let start = performance_now();
+                // Create ReferenceOrbit for BLA computation
+                let ref_orbit = ReferenceOrbit {
+                    c_ref,
+                    orbit: orbit.clone(),
+                    derivative: derivative.clone(),
+                    escaped_at,
+                };
+                let table = BlaTable::compute(&ref_orbit, &dc_max);
+                let elapsed = performance_now() - start;
+                web_sys::console::log_1(
+                    &format!(
+                        "[WorkerPool] BLA table computed: {} entries, {} levels in {:.1}ms",
+                        table.entries.len(),
+                        table.num_levels,
+                        elapsed
+                    )
+                    .into(),
+                );
+                Some(table)
+            } else {
+                None
+            };
+
             if let Some(callback) = self.on_orbit_complete.borrow().as_ref() {
                 callback(OrbitCompleteData {
                     orbit,
@@ -320,6 +349,7 @@ impl WorkerPool {
                     orbit_id,
                     max_iterations: self.perturbation.max_iterations(),
                     escaped_at,
+                    bla_table,
                 });
             }
             return;

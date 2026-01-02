@@ -52,6 +52,7 @@ pub struct ProgressiveGpuUniforms {
     // BLA configuration
     pub bla_enabled: u32,
     pub bla_num_levels: u32,
+    pub _pad7: [u32; 2], // Padding for 16-byte alignment of bla_level_offsets
     pub bla_level_offsets: [u32; 32],
 }
 
@@ -109,6 +110,7 @@ impl ProgressiveGpuUniforms {
             _pad6: [0, 0],
             bla_enabled: if bla_enabled { 1 } else { 0 },
             bla_num_levels,
+            _pad7: [0, 0],
             bla_level_offsets: {
                 let mut offsets = [0u32; 32];
                 for (i, &offset) in bla_level_offsets.iter().take(32).enumerate() {
@@ -123,6 +125,7 @@ impl ProgressiveGpuUniforms {
 /// GPU buffers for progressive row-set rendering.
 /// Includes persistent state buffers for iteration chunking.
 /// Buffer consolidation: Uses 10 storage buffers to fit within WebGPU browser limits.
+/// escaped+glitch → flags_buf (bit 0 = escaped, bit 1 = glitch)
 pub struct ProgressiveGpuBuffers {
     pub uniforms: wgpu::Buffer,
     pub reference_orbit: wgpu::Buffer,
@@ -133,12 +136,12 @@ pub struct ProgressiveGpuBuffers {
     // drho_state: combined drho_re + drho_im (6 f32s per pixel)
     pub drho_state: wgpu::Buffer,
     pub iter_count: wgpu::Buffer,
-    pub escaped: wgpu::Buffer,
+    // flags_buf: bit 0 = escaped, bit 1 = glitch (packed to stay within 10 storage buffer limit)
+    pub flags_buf: wgpu::Buffer,
     pub orbit_index: wgpu::Buffer,
 
     // Results (read back on row-set completion)
     pub results: wgpu::Buffer,
-    pub glitch_flags: wgpu::Buffer,
     pub z_norm_sq: wgpu::Buffer,
     // final_values: combined z_re, z_im, der_re, der_im (4 f32s per pixel)
     pub final_values: wgpu::Buffer,
@@ -149,7 +152,7 @@ pub struct ProgressiveGpuBuffers {
 
     // Staging buffers for CPU readback
     pub staging_results: wgpu::Buffer,
-    pub staging_glitches: wgpu::Buffer,
+    pub staging_flags: wgpu::Buffer, // For reading back flags_buf (glitch = bit 1)
     pub staging_z_norm_sq: wgpu::Buffer,
     pub staging_final_values: wgpu::Buffer,
 
@@ -212,10 +215,13 @@ impl ProgressiveGpuBuffers {
             mapped_at_creation: false,
         });
 
-        let escaped = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("progressive_escaped"),
+        // flags_buf: bit 0 = escaped, bit 1 = glitch (packed to stay within 10 storage buffer limit)
+        let flags_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_flags_buf"),
             size: (pixel_count * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -229,15 +235,6 @@ impl ProgressiveGpuBuffers {
         // Result buffers - need COPY_DST for clear_state_buffers, COPY_SRC for read_results
         let results = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("progressive_results"),
-            size: (pixel_count * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_SRC
-                | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let glitch_flags = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("progressive_glitch_flags"),
             size: (pixel_count * std::mem::size_of::<u32>()) as u64,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
@@ -272,8 +269,8 @@ impl ProgressiveGpuBuffers {
             mapped_at_creation: false,
         });
 
-        let staging_glitches = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("progressive_staging_glitches"),
+        let staging_flags = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("progressive_staging_flags"),
             size: (pixel_count * std::mem::size_of::<u32>()) as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -316,14 +313,13 @@ impl ProgressiveGpuBuffers {
             z_state,
             drho_state,
             iter_count,
-            escaped,
+            flags_buf,
             orbit_index,
             results,
-            glitch_flags,
             z_norm_sq,
             final_values,
             staging_results,
-            staging_glitches,
+            staging_flags,
             staging_z_norm_sq,
             staging_final_values,
             sync_staging,

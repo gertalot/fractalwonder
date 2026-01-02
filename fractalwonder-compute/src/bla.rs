@@ -134,6 +134,7 @@ impl BlaEntry {
 }
 
 /// BLA table for a reference orbit, organized as a binary tree.
+#[derive(Clone)]
 pub struct BlaTable {
     pub entries: Vec<BlaEntry>,
     pub level_offsets: Vec<usize>,

@@ -164,8 +164,8 @@ pub static FRACTAL_CONFIGS: &[FractalConfig] = &[FractalConfig {
     bigfloat_threshold_bits: 1024, // ~10^300 zoom
     bla_enabled: true,
     gpu_enabled: true,
-    gpu_iterations_per_dispatch: 50_000,
-    gpu_progressive_row_sets: 32, // 0 = use old tiled renderer, >0 = progressive
+    gpu_iterations_per_dispatch: 100_000,
+    gpu_progressive_row_sets: 16, // 0 = use old tiled renderer, >0 = progressive
 }];
 
 /// Look up a fractal configuration by ID.

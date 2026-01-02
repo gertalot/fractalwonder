@@ -17,7 +17,8 @@ impl ProgressiveGpuPipeline {
 
         // Bind group layout uses 10 storage buffers to fit within WebGPU browser limits.
         // Buffer consolidation: z_re+z_im → z_state, drho_re+drho_im → drho_state,
-        // final_z_re+final_z_im+final_der_re+final_der_im → final_values
+        // final_z_re+final_z_im+final_der_re+final_der_im → final_values,
+        // escaped+glitch → flags_buf (bit 0 = escaped, bit 1 = glitch)
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("progressive_layout"),
             entries: &[
@@ -65,7 +66,7 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 4: escaped (read-write storage)
+                // binding 4: flags_buf (packed escaped + glitch, read-write storage)
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -98,7 +99,7 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 7: glitch_flags (read-write storage)
+                // binding 7: z_norm_sq (read-write storage)
                 wgpu::BindGroupLayoutEntry {
                     binding: 7,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -109,7 +110,7 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 8: z_norm_sq (read-write storage)
+                // binding 8: drho_state (combined drho_re + drho_im, 6 f32s per pixel)
                 wgpu::BindGroupLayoutEntry {
                     binding: 8,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -120,7 +121,7 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 9: drho_state (combined drho_re + drho_im, 6 f32s per pixel)
+                // binding 9: final_values (combined z_re, z_im, der_re, der_im, 4 f32s per pixel)
                 wgpu::BindGroupLayoutEntry {
                     binding: 9,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -131,20 +132,9 @@ impl ProgressiveGpuPipeline {
                     },
                     count: None,
                 },
-                // binding 10: final_values (combined z_re, z_im, der_re, der_im, 4 f32s per pixel)
+                // binding 10: bla_data (read-only storage)
                 wgpu::BindGroupLayoutEntry {
                     binding: 10,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // binding 11: bla_data (read-only storage)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 11,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
