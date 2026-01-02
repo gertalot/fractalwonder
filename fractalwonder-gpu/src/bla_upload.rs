@@ -68,7 +68,7 @@ mod tests {
 
     #[test]
     fn gpu_bla_entry_from_bla_entry_preserves_values() {
-        let entry = BlaEntry::from_orbit_point(1.5, 0.5);
+        let entry = BlaEntry::from_orbit_point(1.5, 0.5, 1.0, 0.0);
         let gpu_entry = GpuBlaEntry::from_bla_entry(&entry);
 
         // Coefficient A (real)

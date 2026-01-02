@@ -210,8 +210,10 @@ impl BlaTable {
 
         // Level 0: single-iteration BLAs
         level_offsets.push(0);
-        for &(z_re, z_im) in &orbit.orbit {
-            entries.push(BlaEntry::from_orbit_point(z_re, z_im));
+        for i in 0..m {
+            let (z_re, z_im) = orbit.orbit[i];
+            let (der_re, der_im) = orbit.derivative[i];
+            entries.push(BlaEntry::from_orbit_point(z_re, z_im, der_re, der_im));
         }
 
         // Build higher levels by merging pairs
@@ -398,11 +400,12 @@ mod tests {
 
     #[test]
     fn bla_entry_from_orbit_point() {
-        // Z = (1.0, 0.5), ε = 2^-53
+        // Z = (1.0, 0.5), Der = (1.0, 0.0), ε = 2^-53
         // A = 2Z = (2.0, 1.0)
         // B = 1
+        // D = 2*Der = (2.0, 0.0)
         // r = ε·|Z| = ε·√(1 + 0.25) ≈ ε·1.118
-        let entry = BlaEntry::from_orbit_point(1.0, 0.5);
+        let entry = BlaEntry::from_orbit_point(1.0, 0.5, 1.0, 0.0);
 
         assert!((entry.a.re.to_f64() - 2.0).abs() < 1e-14);
         assert!((entry.a.im.to_f64() - 1.0).abs() < 1e-14);
@@ -419,8 +422,8 @@ mod tests {
     #[test]
     fn bla_entry_merge_two_single_iterations() {
         // Two single-iteration BLAs should merge into one that skips 2
-        let x = BlaEntry::from_orbit_point(1.0, 0.0); // Z = 1
-        let y = BlaEntry::from_orbit_point(0.5, 0.0); // Z = 0.5
+        let x = BlaEntry::from_orbit_point(1.0, 0.0, 1.0, 0.0); // Z = 1, Der = 1
+        let y = BlaEntry::from_orbit_point(0.5, 0.0, 1.0, 0.0); // Z = 0.5, Der = 1
 
         let dc_max = HDRFloat::from_f64(0.001); // Small delta_c
         let merged = BlaEntry::merge(&x, &y, &dc_max);
@@ -452,7 +455,8 @@ mod tests {
 
         // First entry should match first orbit point
         let z0 = orbit.orbit[0];
-        let expected = BlaEntry::from_orbit_point(z0.0, z0.1);
+        let der0 = orbit.derivative[0];
+        let expected = BlaEntry::from_orbit_point(z0.0, z0.1, der0.0, der0.1);
         assert_eq!(table.entries[0].l, expected.l);
         assert!((table.entries[0].a.re.to_f64() - expected.a.re.to_f64()).abs() < 1e-14);
     }
@@ -550,7 +554,7 @@ mod tests {
 
     #[test]
     fn bla_entry_f64_from_hdr_entry() {
-        let entry = BlaEntry::from_orbit_point(1.0, 0.5);
+        let entry = BlaEntry::from_orbit_point(1.0, 0.5, 1.0, 0.0);
         let f64_entry = BlaEntryF64::try_from_hdr(&entry);
 
         assert!(f64_entry.is_some());
